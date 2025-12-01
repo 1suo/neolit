@@ -7,7 +7,18 @@
    :PROPERTIES:
    :CREATED: [YYYY-MM-DD]
    :PRIORITY: High|Medium|Low
+   :CONTEXT: [Schema/Module/Endpoint if relevant]
+   :RELATED: [File or ADR if relevant]
    :END:
+   
+*** Context for Agent
+    **If data-related, specify:**
+    - Affected schema: Entity { fields }
+    - Expected invariant: [what should be true]
+    
+    **If code-related, specify:**
+    - File: path/to/file.js
+    - Pattern in use: [pattern name]
    
 *** Context
     Description of the bug:
@@ -74,7 +85,24 @@
    :CREATED: [YYYY-MM-DD]
    :PRIORITY: High|Medium|Low
    :ESTIMATE: Small|Medium|Large
+   :CONTEXT: User schema, Auth module, POST /api/users
+   :PATTERNS: Service layer, Repository pattern
+   :RELATED: src/auth/README.md, ADR-002
    :END:
+   
+*** Context for Agent
+    **Required reading:**
+    - src/auth/README.md (authentication flow)
+    - docs/architecture.md#user-schema
+    - docs/adr/0002-authentication.md
+    
+    **Data structures:**
+    - User: { id, email, password, role }
+    - Session: { userId, token, expiresAt }
+    
+    **API endpoints to use:**
+    - POST /api/auth/verify - For token validation
+    - GET /api/users/:id - For user lookup
    
 *** Requirements
     - Requirement 1

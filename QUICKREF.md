@@ -9,12 +9,10 @@ cp -r templates/docs /project/
 ```
 
 **BEFORE coding:**
-1. Document data schema (docs/architecture.md)
-2. Create ADRs for core decisions
-3. Map workflows
-4. Fill MUST constraints in AGENTS.md
-
-*Tip: AI can help - ask it to draft these based on your description*
+1. Data schema: entities, relationships, invariants
+2. ADRs: one per major decision (why/alternatives/tradeoffs)
+3. Workflows: 3-5 critical paths with data transformations
+4. MUST constraints in AGENTS.md (from above)
 
 ## Usage
 

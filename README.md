@@ -33,18 +33,25 @@ cp -r templates/docs /path/to/your/project/
 
 ### 2. Document Foundations (BEFORE coding)
 
-In `docs/architecture.md`:
-- Data schema (entities, relationships, invariants)
-- Core workflows (user journeys, data flows)
+**Data Schema** (`docs/architecture.md`):
+- List entities: User, Post, Comment, etc.
+- For each: attributes, types, relationships
+- State invariants: "User.email must be unique", "Post.authorId must exist"
+- Define keys and indexes
 
-Create ADRs for:
-- Database choice
-- Authentication method
-- Key architectural patterns
+**Architectural Decisions** (create ADRs):
+- One ADR per major decision
+- Include: Why this choice? What alternatives? What tradeoffs?
+- Must have: Database, Authentication, API design, State management
 
-Fill MUST constraints in `AGENTS.md`
+**Critical Workflows** (`docs/architecture.md`):
+- Pick 3-5 most important user journeys
+- For each: Step-by-step flow with data transformations
+- Show: Input → Validation → Processing → Storage → Output
 
-**AI can help:** Point agent to templates and ask: "Help me document the data schema for [describe your system]"
+**Fill MUST constraints** (`AGENTS.md`):
+- From schema: "MUST respect User.email uniqueness"
+- From ADRs: "MUST use JWT per ADR-002"
 
 ### 3. Integrate
 

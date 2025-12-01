@@ -84,6 +84,43 @@ interface MainType {
 - Constraint 1
 - Constraint 2
 
+**Related Schemas:** (from docs/architecture.md)
+- EntityName - Brief description, link to section
+- OtherEntity - Brief description, link to section
+
+---
+
+## Related Context
+
+### Related Modules
+- `../other-module` - For [purpose] - See [link to README]
+- `../another-module` - For [purpose]
+
+### Related API Endpoints
+**Endpoints this module uses:**
+- `GET /api/resource` - To fetch X
+- `POST /api/other` - To create Y
+
+**Endpoints this module provides:**
+- `GET /api/this-resource` - Returns Z
+
+### Related ADRs
+- [ADR-XXX: Decision Name](../../docs/adr/XXX-name.md) - Why relevant
+
+---
+
+## Data Flow (This Module)
+
+```
+Input → Validation → Processing → Storage → Output
+  ↓         ↓            ↓           ↓         ↓
+ Type1   Rules check  Transform    DB call   Type2
+```
+
+**Components involved:**
+1. Component A - Does X
+2. Component B - Does Y
+
 ---
 
 ## API

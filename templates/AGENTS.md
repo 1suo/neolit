@@ -60,6 +60,31 @@ Add user authentication endpoint
 
 ---
 
+## Finding Context for Your Task
+
+**Workflow:**
+1. Read task in `TODO.org` - Check `:CONTEXT:` property for required reading
+2. Read module `README.md` - Local patterns, data structures, constraints
+3. Follow "Related" sections - Dependencies, schemas, APIs, other modules
+4. Read only referenced sections in `docs/architecture.md` - Don't read entire doc
+5. Read only referenced ADRs - Listed in task or module README
+
+**Don't:**
+- Read entire architecture.md (too much context)
+- Guess which schemas are relevant
+- Search for patterns - they're in module README
+
+**Example:**
+```
+Task says: :CONTEXT: User schema, Auth module
+→ Read src/auth/README.md (local context)
+→ Check "Related Schemas" section for User
+→ Check "Related Modules" section
+→ Read only those sections
+```
+
+---
+
 ## Working with This Codebase
 
 ### Order of Operations

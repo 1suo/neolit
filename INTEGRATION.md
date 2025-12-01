@@ -38,10 +38,24 @@ cp templates/src/module/TODO.org src/module-name/
 
 **Why:** AI agents need these foundations to make consistent decisions. Without them, each feature drifts in different directions.
 
-**How to create:** You can use AI to help draft these. Example prompts:
-- "Based on [system description], help me document the data schema in docs/architecture.md"
-- "Create an ADR for choosing PostgreSQL over MongoDB for [use case]"
-- "Map the user workflow for [feature] showing all steps and data transformations"
+**What to document:**
+
+1. **Data Schema** - For each entity:
+   - Attributes and types
+   - Relationships (has-many, belongs-to)
+   - Invariants (what MUST always be true)
+   - Keys and indexes
+
+2. **Key Decisions** - One ADR per major choice:
+   - Context: What problem?
+   - Decision: What we chose
+   - Why: Rationale and alternatives considered
+   - Required: Database, Auth, API design, State management
+
+3. **Critical Workflows** - 3-5 most important paths:
+   - Step-by-step with data at each step
+   - Input → Validation → Processing → Storage → Output
+   - Components involved at each step
 
 ## Workflows First
 
