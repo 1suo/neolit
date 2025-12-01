@@ -1,0 +1,142 @@
+#+title: [PROJECT_NAME] - Strategic Planning and Index
+#+date: [DATE]
+
+* Top-Level TODOs and Milestones
+  High-level tracking of major project goals and deliverables.
+  
+** TODO [Milestone 0: Architectural Foundations]
+   DEADLINE: <YYYY-MM-DD>
+   CRITICAL: Complete before coding
+   - [ ] Document data schema (entities, relationships, invariants)
+   - [ ] Create ADRs for core decisions (database, auth, patterns)
+   - [ ] Map critical workflows (user journeys, data flows)
+   - [ ] Document integration points
+   - [ ] Define MUST constraints in AGENTS.md
+  
+** TODO [Milestone 1: Project Setup]
+   DEADLINE: <YYYY-MM-DD>
+   - [ ] Initialize project structure
+   - [ ] Set up development environment
+   - [ ] Configure CI/CD pipeline
+   - [ ] Validate foundations documentation complete
+
+** TODO [Milestone 2: Core Features]
+   DEADLINE: <YYYY-MM-DD>
+   - [ ] Implement feature A
+   - [ ] Implement feature B
+   - [ ] Integration testing
+
+** TODO [Milestone 3: Polish & Deploy]
+   DEADLINE: <YYYY-MM-DD>
+   - [ ] Performance optimization
+   - [ ] Security audit
+   - [ ] Production deployment
+
+* LLM Usage Guidelines
+  Best practices for working with AI coding agents on this project.
+  
+** When to Use AI Agents
+   - Implementing well-defined features from TODO.org files
+   - Writing boilerplate code following established patterns
+   - Debugging issues with clear reproduction steps
+   - Updating documentation alongside code changes
+
+** When NOT to Use AI Agents
+   - Making architectural decisions (requires human judgment)
+   - Handling security-critical code (requires expert review)
+   - Refactoring large sections without clear plan
+   - Making breaking changes without discussion
+
+** AI Agent Workflow
+   1. Agent reads AGENTS.md for instructions
+   2. Agent checks module README.md and TODO.org
+   3. Agent implements following existing patterns
+   4. Agent updates documentation in same commit
+   5. Agent updates TODO.org status
+   6. Human reviews and approves changes
+
+* Testing Strategy
+  
+** Unit Tests
+   - Framework: [e.g., Jest, pytest, etc.]
+   - Location: [e.g., src/**/__tests__/]
+   - Coverage goal: [e.g., 80% for critical paths]
+   - Run: [command to run unit tests]
+
+** Integration Tests
+   - Framework: [e.g., Cypress, Playwright, etc.]
+   - Location: [e.g., tests/integration/]
+   - Coverage goal: [e.g., all critical user flows]
+   - Run: [command to run integration tests]
+
+** End-to-End Tests
+   - Framework: [e.g., Selenium, Puppeteer, etc.]
+   - Location: [e.g., tests/e2e/]
+   - Coverage goal: [e.g., smoke tests for production]
+   - Run: [command to run e2e tests]
+
+* Documentation Index
+  
+** Core Documentation
+   - [[file:README.md][README.md]] - Project overview for humans
+   - [[file:AGENTS.md][AGENTS.md]] - Instructions for AI agents
+   - [[file:docs/architecture.md][Architecture]] - System architecture
+   - [[file:docs/api.md][API Documentation]] - API specifications
+   - [[file:docs/contributing.md][Contributing]] - Contribution guidelines
+
+** Architecture Decision Records
+   - [[file:docs/adr/][ADR Directory]] - All architectural decisions
+   - Latest ADRs:
+     - [[file:docs/adr/0001-example.md][ADR-0001: Example Decision]]
+
+** Module Documentation
+   - [[file:src/module1/README.md][Module 1]] - [Brief description]
+   - [[file:src/module2/README.md][Module 2]] - [Brief description]
+
+* Project Conventions
+
+** File Naming
+   - Source files: [e.g., camelCase.js, snake_case.py]
+   - Test files: [e.g., feature.test.js, test_feature.py]
+   - Documentation: [e.g., kebab-case.md]
+
+** Branch Naming
+   - Features: feature/description
+   - Fixes: fix/description
+   - Docs: docs/description
+
+** Commit Message Format
+   #+BEGIN_EXAMPLE
+   Brief description (50 chars max)
+   
+   - Detailed change 1
+   - Detailed change 2
+   - Updated documentation
+   #+END_EXAMPLE
+
+* Known Issues & Technical Debt
+  
+** High Priority
+   - [ ] [Issue description and link to tracking]
+
+** Medium Priority
+   - [ ] [Issue description and link to tracking]
+
+** Low Priority
+   - [ ] [Issue description and link to tracking]
+
+* Resources
+  
+** Development
+   - Development server: [URL or command]
+   - Staging environment: [URL]
+   - Production environment: [URL]
+
+** Tools
+   - Issue tracker: [URL]
+   - CI/CD: [URL]
+   - Documentation: [URL]
+
+** References
+   - [Relevant external documentation]
+   - [Team wiki or knowledge base]

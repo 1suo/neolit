@@ -1,0 +1,162 @@
+NEOLIT - AI-Driven Development Scaffolding System
+==================================================
+
+BOILERPLATE TEMPLATES (templates/)
+───────────────────────────────────
+
+  AGENTS.md                      ← Master prompt for AI agents
+  SYSTEM.org                     ← Strategic planning document
+  
+  docs/
+  ├── architecture.md            ← System architecture
+  ├── api.md                     ← API documentation  
+  ├── contributing.md            ← Contribution guide
+  └── adr/
+      └── template.md            ← Architecture decision record template
+  
+  src/
+  └── module/
+      ├── README.md              ← Module documentation
+      └── TODO.org               ← Task tracking
+
+
+INFORMATION FLOW
+────────────────
+
+  AGENTS.md (global rules)
+      ↓
+  docs/architecture.md (system patterns)
+      ↓
+  src/module/README.md (module patterns)
+      ↓
+  TODO.org (task details)
+
+
+TASK LIFECYCLE
+──────────────
+
+  TODO → IN-PROGRESS → WAITING → DONE
+         (complex)     (review)   (complete)
+         
+  TODO → WAITING → DONE
+         (simple)   (obvious)
+
+
+DOCUMENTATION TYPES
+───────────────────
+
+  .org files  → Planning, TODOs, ephemeral (human + AI)
+  .md files   → Documentation, permanent (human + AI + render)
+  ADRs        → Decision records (why, not what)
+
+
+KEY PRINCIPLES
+──────────────
+
+  ✓ Documentation-first development
+  ✓ Layered context (global → specific)
+  ✓ Patterns over prescription
+  ✓ Minimal but complete changes
+  ✓ Brief but sufficient
+
+
+MODAL VERBS
+───────────
+
+  MUST    → Invariants, critical constraints
+  SHOULD  → Preferences, guidelines
+  MAY     → Optional, nice-to-have
+
+
+PROJECT INTEGRATION
+───────────────────
+
+  1. Copy templates to project
+  2. Customize AGENTS.md with project specifics
+  3. Fill SYSTEM.org with milestones
+  4. Document architecture in docs/
+  5. Create module structures as needed
+  6. Point AI agents to AGENTS.md
+
+
+AI AGENT WORKFLOW
+─────────────────
+
+  1. Read AGENTS.md → understand rules
+  2. Read module README.md → learn patterns
+  3. Check TODO.org → find task
+  4. Implement code → follow patterns
+  5. Update docs → same commit
+  6. Update TODO.org → mark WAITING/DONE
+
+
+CUSTOMIZATION POINTS
+────────────────────
+
+  [PROJECT_SPECIFIC] markers indicate:
+  
+  • Architecture patterns
+  • Code organization rules  
+  • Key constraints (MUST)
+  • Preferences (SHOULD)
+  • Debugging approach
+  • Testing strategy
+
+
+DOCUMENTATION MAP
+─────────────────
+
+  README.md       → Overview (what is Neolit)
+  INTEGRATION.md  → Setup guide (how to use)
+  SUMMARY.md      → Complete summary (what was built)
+  QUICKREF.md     → Quick reference (cheat sheet)
+  STRUCTURE.txt   → This file (visual summary)
+  
+  neolit.org      → Original plan
+  SYSTEM.org      → Original notes
+
+
+SUCCESS METRICS
+───────────────
+
+  ✓ AI agents follow patterns consistently
+  ✓ Documentation stays in sync with code
+  ✓ Architectural decisions documented
+  ✓ New contributors onboard quickly
+  ✓ Less context explanation needed
+  ✓ Fewer "why was it this way" questions
+
+
+NOT INCLUDED (by design)
+────────────────────────
+
+  ✗ Specific tech stack setup
+  ✗ Code generators/scripts
+  ✗ CI/CD configurations
+  ✗ Deployment procedures
+  ✗ Testing frameworks
+  
+  Reason: Too project-specific
+
+
+PHILOSOPHY
+──────────
+
+  Neolit is SCAFFOLDING, not a FRAMEWORK.
+  
+  Adapt freely. Remove what doesn't fit. Add what's missing.
+  Goal: Clarity for AI + humans, not rigid templates.
+  
+  "Be brief, but no briefer than necessary."
+
+
+QUICK START
+───────────
+
+  cp templates/AGENTS.md /project/
+  cp templates/SYSTEM.org /project/  
+  cp -r templates/docs /project/
+  
+  # Customize AGENTS.md
+  # Point AI: "Read @AGENTS.md"
+  # Start coding

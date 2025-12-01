@@ -1,0 +1,234 @@
+#+title: [Module Name] - Tasks
+#+date: [DATE]
+
+* Bugfixes
+
+** TODO [BUG-001] Brief bug description
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :PRIORITY: High|Medium|Low
+   :END:
+   
+*** Context
+    Description of the bug:
+    - What's happening
+    - Expected behavior
+    - Steps to reproduce
+    
+*** Root Cause
+    [To be filled by AI agent or developer]
+    
+*** Solution
+    [To be filled by AI agent or developer]
+    
+** IN-PROGRESS [BUG-002] Another bug description
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :PRIORITY: High
+   :STARTED: [YYYY-MM-DD]
+   :ASSIGNEE: [Name or AI]
+   :END:
+   
+*** Context
+    Bug description
+    
+*** Notes
+    [YYYY-MM-DD] Agent: Started investigation, found issue in X
+    [YYYY-MM-DD] Agent: Implemented fix in file Y
+    [YYYY-MM-DD] Agent: Awaiting review - tests passing
+    
+** WAITING [BUG-003] Bug waiting for review
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :COMPLETED: [YYYY-MM-DD]
+   :END:
+   
+*** Context
+    Bug description
+    
+*** Solution Implemented
+    - Changed file X to handle edge case
+    - Added test case in Y
+    - Updated documentation in Z
+    
+*** Review Notes
+    Human reviewer: Please verify [specific aspect]
+    
+** DONE [BUG-004] Fixed bug description
+   CLOSED: [YYYY-MM-DD]
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :COMPLETED: [YYYY-MM-DD]
+   :END:
+   
+*** Context
+    Bug description
+    
+*** Solution
+    What was fixed and how
+
+* Features
+
+** TODO [FEAT-001] Feature description
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :PRIORITY: High|Medium|Low
+   :ESTIMATE: Small|Medium|Large
+   :END:
+   
+*** Requirements
+    - Requirement 1
+    - Requirement 2
+    - Requirement 3
+    
+*** Acceptance Criteria
+    - [ ] Criterion 1
+    - [ ] Criterion 2
+    - [ ] Criterion 3
+    
+*** Implementation Notes
+    [To be filled during implementation]
+    
+*** Related
+    - ADR-XXX: [Related decision]
+    - Depends on: FEAT-XXX
+    
+** IN-PROGRESS [FEAT-002] Feature in progress
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :STARTED: [YYYY-MM-DD]
+   :ASSIGNEE: [Name or AI]
+   :END:
+   
+*** Requirements
+    Feature requirements
+    
+*** Acceptance Criteria
+    - [X] Completed criterion 1
+    - [ ] In progress criterion 2
+    - [ ] Not started criterion 3
+    
+*** Implementation Notes
+    [YYYY-MM-DD] Agent: Created service layer in src/module/service.js
+    [YYYY-MM-DD] Agent: Added API endpoint at /api/resource
+    [YYYY-MM-DD] Agent: Updated docs/api.md with new endpoint
+    [YYYY-MM-DD] Agent: Question for reviewer: Should we cache the results?
+    
+*** Files Changed
+    - src/module/service.js
+    - src/api/resource.js
+    - docs/api.md
+    - docs/architecture.md
+    
+** WAITING [FEAT-003] Feature awaiting review
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :COMPLETED: [YYYY-MM-DD]
+   :END:
+   
+*** Requirements
+    Feature requirements
+    
+*** Acceptance Criteria
+    - [X] All criteria met
+    
+*** Implementation Summary
+    - Implemented following pattern from module X
+    - Added tests with 90% coverage
+    - Updated all relevant documentation
+    
+*** Review Checklist
+    - [ ] Code follows existing patterns
+    - [ ] Tests are adequate
+    - [ ] Documentation is complete
+    - [ ] No obvious bugs
+    - [ ] Performance is acceptable
+    
+** DONE [FEAT-004] Completed feature
+   CLOSED: [YYYY-MM-DD]
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :COMPLETED: [YYYY-MM-DD]
+   :END:
+   
+*** Requirements
+    Feature requirements
+    
+*** Implementation Summary
+    - Brief description of implementation
+    - Key decisions made
+    - References to ADRs if applicable
+
+* Technical Debt
+
+** TODO [DEBT-001] Refactor X for better performance
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :PRIORITY: Low
+   :END:
+   
+*** Current Situation
+    Description of current technical debt
+    
+*** Proposed Improvement
+    How to improve it
+    
+*** Justification
+    Why this is worth doing
+
+* Documentation
+
+** TODO [DOC-001] Document X pattern
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :PRIORITY: Medium
+   :END:
+   
+*** What Needs Documentation
+    - Aspect 1
+    - Aspect 2
+    
+*** Where to Document
+    - File to update
+
+* Testing
+
+** TODO [TEST-001] Add integration tests for X
+   :PROPERTIES:
+   :CREATED: [YYYY-MM-DD]
+   :PRIORITY: Medium
+   :END:
+   
+*** Test Cases Needed
+    - Test case 1
+    - Test case 2
+    
+*** Current Coverage
+    - Unit tests: X%
+    - Integration tests: Y%
+
+* Notes
+
+** Task Status Guide for AI Agents
+
+*** When to change status:
+    - TODO → IN-PROGRESS: Starting work on complex task
+    - TODO → WAITING: Simple task finished, needs human review
+    - TODO → DONE: Simple task obviously complete
+    - IN-PROGRESS → WAITING: Complex task finished, needs review (most common)
+    - IN-PROGRESS → DONE: Complex task obviously complete
+    - WAITING → DONE: Human approves the work
+    
+*** What to add in notes:
+    - Date and "Agent:" prefix
+    - Approach taken
+    - Files modified
+    - Questions for human reviewers
+    - Links to relevant code or ADRs
+    
+*** Properties to maintain:
+    - :CREATED: When task was created
+    - :STARTED: When work began
+    - :COMPLETED: When moved to WAITING or DONE
+    - :PRIORITY: High/Medium/Low
+    - :ASSIGNEE: Who's working on it
