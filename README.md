@@ -2,17 +2,28 @@
 
 AI-driven development scaffolding. Document once, develop consistently.
 
+## Installation
+
+```bash
+npm install -g neolit
+```
+
 ## Quick Start
 
 ```bash
-# Clone and integrate
+# Initialize in your project
 cd your-project
-git clone https://github.com/you/neolit.git .neolit-src
-./.neolit-src/integrate.sh .
+neolit init
 
-# Have AI analyze and document
-# Use: neolit/prompts/ANALYZE_PROJECT.md
+# Have AI analyze and document your codebase
+# Follow: neolit/prompts/ANALYZE_PROJECT.md
 ```
+
+## Commands
+
+- `neolit init` - Set up neolit/ structure in current project
+- `neolit clean` - Remove all neolit files from project
+- `neolit extend <name>` - Copy template for customization
 
 ## Structure
 
@@ -43,6 +54,14 @@ project/
 4. **Close to code**: Context lives with code
 
 Task → prompts → docs → code
+
+## Publishing (Maintainers)
+
+```bash
+npm version patch  # or minor/major
+npm publish
+git push --follow-tags
+```
 
 ## Integration
 
