@@ -93,7 +93,7 @@ interface MainType {
 ## Related Context
 
 ### Related Modules
-- `../other-module` - For [purpose] - See [link to README]
+- `../other-module` - For [purpose] - See [CONTEXT](../other-module/CONTEXT.md)
 - `../another-module` - For [purpose]
 
 ### Related API Endpoints

@@ -20,7 +20,7 @@ Status flow:
 - 'WAITING' → 'DONE' : Done by reviewer
 
 In most cases, use `WAITING` for review instead of `DONE`.
-Tasks in 
+Top-level tasks that aren't in TODO.org are not to be changed by agents.
 
 ## Add Notes
 
