@@ -1,6 +1,6 @@
 {
   "name": "neolit",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AI-driven development scaffolding and context management",
   "main": "index.js",
   "bin": {
