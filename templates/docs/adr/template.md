@@ -153,9 +153,9 @@ Or diagrams:
 
 Optional section for things to revisit:
 
-- [ ] Review this decision in 6 months
+- [ ] Review this decision in month/week (add SCHEDULED TODO to TODO.org in this module) if in question
 - [ ] Measure performance impact after implementation
-- [ ] Gather team feedback after 3 months
+- [ ] Gather feedback after weeks/months (add SCHEDULED TODO to TODO.org in this module)
 
 ---
 

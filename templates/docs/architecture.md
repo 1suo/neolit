@@ -1,33 +1,32 @@
 # Architecture
 
-**Entry point for agent context.**
-
-Module README → Points here for domain context.
+**Entry point for understanding system structure.**
 
 ---
 
-## System Context
+## Start Here
 
-[context.md](context.md) - What system does, users, external integrations
+[system.md](system.md) - **Complete C4 model: System Context, Containers, Component organization, Interfaces**
 
-## Containers
+---
 
-[containers.md](containers.md) - Applications, services, databases that make up system
+## By Container (C4 Level 2)
 
-## Components by Domain
+- [1-web-app/](1-web-app/) - Web Application container and its components
+- [2-api-server/](2-api-server/) - API Server container and its components
+- [3-database/](3-database/) - Database container schema
 
-- [api/](api/) - API layer components
-- [ui/](ui/) - Frontend components  
-- [data/](data/) - Data layer and schemas
+---
 
-## Workflows
+## Cross-Cutting
 
-[workflows.md](workflows.md) - End-to-end user journeys, data transformations
+- [workflows.md](workflows.md) - End-to-end user journeys across containers
+- [adr/](adr/) - Architecture decisions
 
-## Integration
+---
 
-[integration.md](integration.md) - How components communicate
-
-## Decisions
-
-[adr/](adr/) - Why we made key technical choices
+**Agent workflow:**
+1. Read `system.md` for overall structure and interfaces
+2. Find which container task belongs to
+3. Read that container's README and component docs
+4. Check `system.md` interfaces if crossing container boundaries

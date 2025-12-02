@@ -6,8 +6,8 @@ Entry point for AI coding agents.
 
 ## Core Principles
 
-1. **Documentation-First**: Update docs in same commit as code
-2. **Minimal Changes**: Change only what's needed for the task
+1. **Documentation-First**: Update docs (including README) in same commit as code 
+2. **Minimal Changes**: Change only what's needed for the task if otherwise specified
 3. **Follow Patterns**: Check existing code before adding new
 4. **Complete Fully**: No half-done features or placeholders
 
@@ -46,6 +46,11 @@ Can add subtasks or checkboxes for tracking:
     - [ ] Step 1
     - [X] Step 2
 ```
+
+Can't change status to DONE if unsure. Use WAITING for review.
+Can't leave tasks IN-PROGRESS indefinitely. Use WAITING when done.
+Can't add new tasks without approval. Can't remove existing tasks without approval.
+If approved, add :ARCHIVE: tag when done, don't delete task.
 
 ---
 
