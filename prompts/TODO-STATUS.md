@@ -26,7 +26,7 @@ Status flow:
    
 *** Agent Notes
     [YYYY-MM-DD] Implemented X. Changed: src/module/file.ext
-    Updated: docs/architecture.md#section, ADR-003
+    Updated: .neolit/architecture.md#section, ADR-003
     Question: Should we also handle Y?
 ```
 

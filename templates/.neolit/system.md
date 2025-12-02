@@ -1,12 +1,39 @@
-# System Architecture (C4 Model)
+# System Architecture
 
-**Purpose:** Complete system overview using C4 model terminology.
+**Entry point for understanding system structure.**
 
-Agent reads this to understand system structure and interfaces.
+Agent reads this to understand system organization and component interfaces.
 
 ---
 
-## Level 1: System Context
+## Project Structure
+
+**[Fill based on actual project - can follow C4 or document actual structure]**
+
+### Option A: If following C4 model
+
+Document as: System Context → Containers → Components (see template below)
+
+### Option B: If existing structure differs
+
+Document actual directories and responsibilities:
+
+```
+src/
+├── controllers/ - HTTP request handlers
+├── services/ - Business logic
+├── models/ - Data access
+├── utils/ - Shared utilities
+```
+
+**For each directory, document:**
+- Responsibility: What it does
+- Key files/patterns
+- Interfaces: How it communicates with other directories
+
+---
+
+## Level 1: System Context (if using C4)
 
 **System:** [Project Name]
 

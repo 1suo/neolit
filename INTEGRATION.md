@@ -18,7 +18,7 @@ cp templates/src/module/TODO.org src/module-name/
 
 ### MUST Document First (Core Architecture)
 
-1. **Data Schema** (in `docs/architecture.md`)
+1. **Data Schema** (in `.neolit/architecture.md`)
    - Core entities and their relationships
    - Invariants (what MUST always be true)
    - Primary keys and indexes
@@ -62,7 +62,7 @@ cp templates/src/module/TODO.org src/module-name/
 Before documenting components, document workflows:
 
 ### User Workflows
-In `docs/architecture.md`:
+In `.neolit/architecture.md`:
 1. Map user journeys (from entry to goal)
 2. Show sequence diagrams
 3. Identify critical paths
@@ -122,7 +122,7 @@ Open files and replace `[PROJECT_SPECIFIC]` markers with your:
 ### Layered Context
 
 - AGENTS.md: Global rules
-- docs/*.md: System-wide context
+- .neolit/*.md: System-wide context
 - ADRs: Decision context
 - Module README.md: Module-specific patterns
 - TODO.org: Task-specific details

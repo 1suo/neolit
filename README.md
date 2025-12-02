@@ -25,7 +25,7 @@ your-project/
 ├── README.md              # For humans
 ├── AGENTS.md              # For AI agents (main entry point)
 ├── SYSTEM.org             # Strategic planning
-├── docs/
+├── .neolit/
 │   ├── architecture.md    # System architecture
 │   ├── api.md             # API documentation
 │   ├── contributing.md    # Contribution guide
@@ -51,7 +51,7 @@ Document data schema, workflows, and key decisions first. Code implements these 
 
 ### Layered Context
 - `AGENTS.md` - Global rules for AI agents
-- `docs/architecture.md` - System-wide patterns
+- `.neolit/architecture.md` - System-wide patterns
 - `src/module/README.md` - Module-specific patterns
 - `TODO.org` - Task-specific details
 
@@ -88,16 +88,16 @@ Complete all tasks from all TODO.org files in src/ until none with "TODO" status
 
 **Frequently:**
 - `TODO.org` files - Add tasks, review agent work
-- `docs/adr/` - Document decisions
+- `.neolit/adr/` - Document decisions
 
 **Occasionally:**
 - `AGENTS.md` - Refine agent instructions
-- `docs/*.md` - Update as system evolves
+- `.neolit/*.md` - Update as system evolves
 - Module `README.md` - Document new patterns that aren't fit high-level docs
 - `SYSTEM.org` - Strategic planning updates
 
 **Rarely:**
-- `docs/architecture.md` - Major architecture changes
+- `.neolit/architecture.md` - Major architecture changes
 
 ---
 
@@ -107,9 +107,9 @@ Complete all tasks from all TODO.org files in src/ until none with "TODO" status
 |----------|---------|
 | `AGENTS.md` | Master instructions for AI agents |
 | `SYSTEM.org` | Strategic planning and milestones |
-| `docs/architecture.md` | System architecture documentation |
-| `docs/api.md` | API documentation |
-| `docs/adr/template.md` | Architecture decision records |
+| `.neolit/architecture.md` | System architecture documentation |
+| `.neolit/api.md` | API documentation |
+| `.neolit/adr/template.md` | Architecture decision records |
 | `src/module/README.md` | Module-level documentation |
 | `src/module/TODO.org` | Task tracking for modules |
 

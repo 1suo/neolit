@@ -18,7 +18,9 @@
    - How does API talk to database? (SQL? MongoDB?)
    - Auth mechanism? (JWT? Session?)
 
-3. Document in `.neolit/system.md` following template
+3. Document in `.neolit/system.md` following template:
+   - If project follows C4: Use C4 structure (System Context → Containers → Components)
+   - If not: Document actual directory structure and responsibilities
 
 ---
 
@@ -146,8 +148,7 @@
 ## Output
 
 After analysis:
-- `.neolit/system.md` filled with actual containers and interfaces
-- `.neolit/structure.md` if project structure differs from C4
+- `.neolit/system.md` filled with actual structure and interfaces
 - `.neolit/3-database/schemas.md` with real entities
 - `.neolit/workflows.md` with 2-3 key workflows
 - `src/MODULE/README.md` for each module
