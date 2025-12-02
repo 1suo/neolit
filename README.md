@@ -119,10 +119,7 @@ Complete all tasks from all TODO.org files in src/ until none with "TODO" status
 
 ### Why Org-Mode?
 
-- Hierarchical task structure
-- Properties for metadata
-- Human and machine readable
-- Plain text (version control friendly)
+In complex AI-assisted projects, clear task management is crucial. It becomes easy to lose track of what needs to be done, what has been done, and what the priorities are. Main point of using orgmode here is to leverage project-wide agenda views, which help humans keep in touch with overall progress. In comparison, markdown TODO lists are isolated to individual files, making it harder to get a holistic view. Anyway, orgmode is just a suggestion - plain text TODO lists work too.
 
 ### Why Separate Planning from Docs?
 
@@ -131,10 +128,8 @@ Complete all tasks from all TODO.org files in src/ until none with "TODO" status
 
 ### Why ADRs?
 
-- Captures **why** decisions were made
 - Prevents revisiting settled questions
 - Provides context to AI agents
-- Documents tradeoffs explicitly
 
 ---
 
@@ -150,10 +145,10 @@ See original files for real-world usage:
 
 This is a **scaffolding system**, not a rigid framework:
 
-✅ Remove sections that don't apply  
-✅ Add domain-specific sections  
-✅ Change terminology to match your team  
-✅ Evolve structure as you learn  
+- Remove sections that don't apply  
+- Add domain-specific sections  
+- Change terminology to match your team  
+- Evolve structure as you learn  
 
 Goal: Clarity for AI agents, not perfection.
 

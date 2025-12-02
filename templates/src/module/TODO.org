@@ -65,26 +65,16 @@
 * Features
 
 ** TODO [#B] Add user profile management feature :feature:api:ui:
-   [YYYY-MM-DD]
+   [2025-12-02]
    
 *** Context for Agent
-    **Required reading:**
-    - src/auth/README.md (authentication flow)
-    - docs/architecture.md#user-schema
-    - docs/adr/0002-authentication.md
+    Users need to update their profile info.
+    Related: User schema, Profile component
     
-    **Data structures:**
-    - User: { id, email, password, role }
-    - Session: { userId, token, expiresAt }
-    
-    **API endpoints to use:**
-    - POST /api/auth/verify - For token validation
-    - GET /api/users/:id - For user lookup
-   
 *** Requirements
-    - Requirement 1
-    - Requirement 2
-    - Requirement 3
+    - View profile page
+    - Edit name, email, avatar
+    - Validation and save
     
 *** Acceptance Criteria
     - [ ] Criterion 1
