@@ -14,4 +14,4 @@ If schemas changed, or architecture affected:
 3. If not safe, create ADR in docs/adr/ by copying template.md and filling out
 4. Get approval for ADR before implementation
 
-Refer to docs/architecture.md only for schemas mentioned in module README.
+Refer to .neolit/system.md only for schemas listed in module README "Related Schemas".

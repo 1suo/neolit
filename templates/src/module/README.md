@@ -84,7 +84,7 @@ interface MainType {
 - Constraint 1
 - Constraint 2
 
-**Related Schemas:** (from docs/architecture.md)
+**Related Schemas:** (from .neolit/3-database/schemas.md)
 - EntityName - Brief description, link to section
 - OtherEntity - Brief description, link to section
 
