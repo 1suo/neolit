@@ -16,7 +16,7 @@ program
   .option('--format <type>', 'todo format (org|md)', 'org')
   .action(async (options) => {
     const cwd = process.cwd();
-    const templatesDir = path.join(__dirname, '../templates');
+    const templatesDir = path.join(__dirname, '../neolit');
     const neolitDir = path.join(cwd, '.neolit');
 
     console.log('Initializing neolit...');
@@ -26,10 +26,9 @@ program
 
     // Copy core files
     const coreToCopy = [
-      'AGENTS.md',
-      'HUMAN.org',
       'INTEGRATION.md',
-      'README.md'
+      'README.md',
+      'VISION.org'
     ];
 
     coreToCopy.forEach(file => {
@@ -70,17 +69,11 @@ program
     }
 
     // Copy module templates
-    const modulesDir = path.join(neolitDir, 'module-templates');
-    fs.mkdirSync(modulesDir, { recursive: true });
-    const modulesSrc = path.join(templatesDir, 'src/module');
+    const modulesDir = path.join(neolitDir, 'templates');
+    const modulesSrc = path.join(templatesDir, 'templates');
     if (fs.existsSync(modulesSrc)) {
-      fs.readdirSync(modulesSrc).forEach(file => {
-        fs.copyFileSync(
-          path.join(modulesSrc, file),
-          path.join(modulesDir, file)
-        );
-      });
-      console.log('✓ Created module-templates/');
+      fs.cpSync(modulesSrc, modulesDir, { recursive: true });
+      console.log('✓ Created templates/');
     }
 
     console.log('\n✓ Neolit initialized successfully!');
@@ -117,7 +110,7 @@ program
     
     const cwd = process.cwd();
     const neolitDir = path.join(cwd, '.neolit');
-    const templatesDir = path.join(__dirname, '../templates');
+    const templatesDir = path.join(__dirname, '../neolit');
 
     if (!fs.existsSync(neolitDir)) {
       console.error('Error: .neolit not found. Run: npx neolit init');
@@ -126,7 +119,6 @@ program
 
     // Update only core files (not user-modified docs)
     const coreToUpdate = [
-      'AGENTS.md',
       'INTEGRATION.md',
       'README.md'
     ];
@@ -154,7 +146,7 @@ program
     }
 
     console.log('\n✓ Update complete!');
-    console.log('Note: User documentation (docs/, HUMAN.org) was not modified.');
+    console.log('Note: User documentation (docs/, VISION.org, prompts/BASE.md) was not modified.');
   });
 
 program
@@ -163,7 +155,7 @@ program
   .option('--force', 'Skip confirmation')
   .action((options) => {
     const cwd = process.cwd();
-    const neolitDir = path.join(cwd, 'neolit');
+    const neolitDir = path.join(cwd, '.neolit');
 
     if (!fs.existsSync(neolitDir)) {
       console.log('No neolit installation found.');
