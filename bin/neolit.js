@@ -17,11 +17,11 @@ program
   .action(async (options) => {
     const cwd = process.cwd();
     const templatesDir = path.join(__dirname, '../neolit');
-    const neolitDir = path.join(cwd, '.neolit');
+    const neolitDir = path.join(cwd, 'neolit');
 
     console.log('Initializing neolit...');
 
-    // Create .neolit directory
+    // Create neolit directory
     fs.mkdirSync(neolitDir, { recursive: true });
 
     // Copy core files
