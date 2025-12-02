@@ -10,7 +10,7 @@ AI-driven development scaffolding. Document once, develop consistently.
 ./integrate.sh /path/to/project
 ```
 
-For new projects: AI documents foundations using `prompts/ANALYZE-EXISTING.md`
+For new projects: AI documents foundations using `prompts/ANALYZE_PROJECT.md`
 
 For existing: AI analyzes codebase and generates docs
 
@@ -32,8 +32,7 @@ project/
 ├── prompts/              # Task-type workflows
 │   ├── BUG.md
 │   ├── FEATURE.md
-│   ├── TODO-STATUS.md
-│   └── ANALYZE-EXISTING.md
+│   └── ANALYZE_PROJECT.md
 ├── src/module/
 │   ├── CONTEXT.md        # Module context for agents
 │   └── TODO.org          # Module tasks
@@ -89,7 +88,7 @@ See [INTEGRATION.md](INTEGRATION.md)
 
 **TL;DR:**
 1. Run `./integrate.sh`
-2. AI reads `prompts/ANALYZE-EXISTING.md` to document project
+2. AI reads `prompts/ANALYZE_PROJECT.md` to document project
 3. Review and refine
 4. Start assigning tasks
 

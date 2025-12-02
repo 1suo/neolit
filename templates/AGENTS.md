@@ -6,10 +6,10 @@ Entry point for AI coding agents.
 
 ## Core Principles
 
-1. **Documentation-First**: Update docs (including README) in same commit as code 
-2. **Minimal Changes**: Change only what's needed for the task if otherwise specified
-3. **Follow Patterns**: Check existing code before adding new
-4. **Complete Fully**: No half-done features or placeholders
+1. **Documentation-First**: Update docs in same commit as code
+2. **Minimal Changes**: Change only what's needed
+3. **Follow Patterns**: Check existing code first
+4. **Complete Fully**: No placeholders or half-done work
 
 ---
 
@@ -17,78 +17,97 @@ Entry point for AI coding agents.
 
 ### Finding Context
 
-Task location tells you context:
+Task location → Context:
 - Task in `src/module/TODO.org` → Read `src/module/CONTEXT.md`
-- Module CONTEXT lists: Related Schemas, Modules, APIs, ADRs
-- Follow only those references
+- Module CONTEXT → Points to `.neolit/` docs
+- Follow references from there
 
-Tags in task (`:bug:api:`) tell you which prompts to read:
-- Read `prompts/BUG.md` for bug workflow
-- Read `prompts/FEATURE.md` for feature workflow
-- Check `.neolit/` links from module CONTEXT for domain specifics
+Task tags → Prompts:
+- `:bug:` → Read `prompts/BUG.md`
+- `:feature:` → Read `prompts/FEATURE.md`
+- etc.
 
-### Task Status
+**Start here:** `.neolit/system.md` (system structure entry point)
 
-Change status in TODO.org:
-- `TODO` → `IN-PROGRESS`: Starting complex task
-- `TODO`/`IN-PROGRESS` → `WAITING`: Done, needs review (most common)
-- Any → `DONE`: Obviously complete
+### Managing Task Status
 
-Add notes under task:
+**Org-mode syntax:**
 ```org
-*** Agent Notes
-    [YYYY-MM-DD] Completed X. Changed: file.ext
+* STATUS [#PRIORITY] Description :tags:
+  <YYYY-MM-DD>
 ```
 
-Can add subtasks or checkboxes for tracking:
+**Status transitions:**
+- `TODO` → `IN-PROGRESS`: Starting complex task
+- `TODO` → `WAITING`: Simple task done, needs review
+- `IN-PROGRESS` → `WAITING`: Complex task done, needs review
+- `WAITING` → `DONE`: Only after human approval
+
+**Default:** Use `WAITING` for review. Don't assume `DONE`.
+
+**Adding progress notes:**
+```org
+* IN-PROGRESS [#A] Task description :tags:
+  <2025-12-02>
+  
+*** Agent Notes
+    [2025-12-02] Implemented X
+    Changed: src/file.js
+    Updated: .neolit/system.md
+    Question: Should we also handle Y?
+```
+
+**For tracking complex work:**
 ```org
 *** Agent Subtasks
-    - [ ] Step 1
-    - [X] Step 2
+    - [X] Completed step
+    - [ ] In progress step
+    - [ ] Not started
 ```
 
-Can't change status to DONE if unsure. Use WAITING for review.
-Can't leave tasks IN-PROGRESS indefinitely. Use WAITING when done.
-Can't add new tasks without approval. Can't remove existing tasks without approval.
-If approved, add :ARCHIVE: tag when done, don't delete task.
+**Can't:**
+- Create new top-level tasks (only subtasks/checkboxes for tracking)
+- Delete tasks
+- Mark `DONE` without certainty (use `WAITING` instead)
+
+**On task completion:**
+- Add `CLOSED: <YYYY-MM-DD>` timestamp
+- Move to `WAITING` for review
+- Document what changed
 
 ---
 
 ## Key Constraints (MUST)
 
-**[PROJECT_SPECIFIC: Filled by human during setup, not by AI]**
+**[Fill during setup with project invariants]**
 
-Example - Architectural constraints:
-- MUST follow User/Post schema in .neolit/3-database/schemas.md
-- MUST validate email uniqueness before User creation
-- MUST use JWT auth per ADR-001
-- MUST use repository pattern for data access
-
-Example - Code-level constraints:
-- MUST NOT mutate state directly
-- MUST validate all API inputs
-- MUST handle errors explicitly
-- MUST use transactions for multi-entity changes
+Example constraints (replace with actual):
+- MUST follow schemas in `.neolit/3-database/schemas.md`
+- MUST validate inputs per ADR-002
+- MUST use patterns documented in module CONTEXT
+- MUST update docs when changing APIs
 
 ---
 
 ## Preferences (SHOULD)
 
-**[PROJECT_SPECIFIC: Filled by human during setup]**
+**[Fill during setup with project style]**
 
-Example:
-- SHOULD use async/await over callbacks
+Example preferences (replace with actual):
 - SHOULD keep functions under 50 lines
-- SHOULD prefer composition over inheritance
+- SHOULD prefer async/await
+- SHOULD write self-documenting code
 
 ---
 
-## Documentation Links
+## Documentation Structure
 
-- System Architecture: `/.neolit/system.md` (start here)
-- ADRs: `/.neolit/adr/`
-- Strategic Plan: `/SYSTEM.org`
+Entry point: `.neolit/system.md`
 
----
+From system.md, navigate to:
+- Containers (e.g., `.neolit/1-web-app/`, `.neolit/2-api-server/`)
+- Components (e.g., `.neolit/2-api-server/components/controllers.md`)
+- Code (module `CONTEXT.md` files)
+- ADRs (`.neolit/adr/`)
 
-**When in doubt**: Ask for clarification, don't guess.
+**When in doubt:** Ask, don't guess.
