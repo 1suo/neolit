@@ -34,11 +34,19 @@ AI will:
 
 ## Working with AI
 
-**Assign task:** `Complete FEAT-005 from src/api/TODO.org`
+**Assign task:** `Complete "Add auth middleware" from src/api/TODO.org`
 
-**Fix bug:** `Fix BUG-003 in src/data/TODO.org`
+**Fix bug:** `Fix "Login validation" in src/auth/TODO.org`
 
 **AI reads:** AGENTS.md → module CONTEXT.md → task-specific prompts
+
+**Status workflow:**
+- `TODO` - Active work (assign these to AI)
+- `INBOX` - Frozen/not ready
+- `BACKLOG` - Maybe later
+- `IN-PROGRESS` - AI working on it
+- `WAITING` - Done, needs review
+- `DONE` - Approved and closed
 
 ---
 

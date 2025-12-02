@@ -27,7 +27,7 @@ Task tags → Prompts:
 - `:feature:` → Read `prompts/FEATURE.md`
 - etc.
 
-**Start here:** `.neolit/system.md` (system structure entry point)
+**Start here:** `.neolit/system.md` (system structure entry point; "neolit" is AI-driven documentation standard, not actual project name)
 
 ### Managing Task Status
 
@@ -36,6 +36,14 @@ Task tags → Prompts:
 * STATUS [#PRIORITY] Description :tags:
   <YYYY-MM-DD>
 ```
+
+**Status meanings:**
+- `TODO` - Ready to work on (active backlog)
+- `INBOX` - Frozen/not ready yet
+- `BACKLOG` - Maybe later/low priority
+- `IN-PROGRESS` - Currently working
+- `WAITING` - Done, needs human review
+- `DONE` - Approved and closed
 
 **Status transitions:**
 - `TODO` → `IN-PROGRESS`: Starting complex task
