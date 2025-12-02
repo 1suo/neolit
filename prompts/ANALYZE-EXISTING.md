@@ -147,7 +147,7 @@
       
    *** Context for Agent
        Auth logic in src/auth/login.js
-       Need to document in module README
+       Need to document in module CONTEXT
    ```
 
 ---
@@ -158,6 +158,6 @@ After analysis:
 - `.neolit/system.md` filled with actual structure and interfaces (MUST)
 - `.neolit/3-database/schemas.md` with real entities (adjust this and follow-ups if needed)
 - `.neolit/workflows.md` with 2-3 key workflows
-- `src/MODULE/README.md` for each module
+- `existing-dir/CONTEXT.md` for each module (in existing directories)
 - `src/MODULE/TODO.org` with initial tasks
 - `AGENTS.md` Key Constraints section filled with real invariants ()

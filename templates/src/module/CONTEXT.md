@@ -41,7 +41,7 @@ Another key concept relevant to understanding this module.
 
 ```
 module/
-  README.md       # This file
+  CONTEXT.md      # This file - Agent context for module
   TODO.org        # Task tracking
   index.js        # Public exports
   service.js      # Business logic
@@ -240,7 +240,7 @@ Current known issues or awkward aspects:
 
 - [Architecture Decision](../../docs/adr/XXXX-relevant-decision.md)
 - [API Documentation](../../docs/api.md#module-section)
-- [Parent Module](../parent-module/README.md)
+- [Parent Module](../parent-module/CONTEXT.md)
 
 ---
 

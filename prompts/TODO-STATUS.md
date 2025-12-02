@@ -15,8 +15,12 @@ Edit headline keyword:
 Status flow:
 - `TODO` → `IN-PROGRESS`: Starting complex task
 - `TODO` → `WAITING`: Simple task done, needs review
-- `IN-PROGRESS` → `WAITING`: Complex task done (most common)
-- Any → `DONE`: Obviously complete
+- `IN-PROGRESS` → `WAITING`: Complex task done
+- Any → `DONE`: Obviously complete for simple tasks
+- 'WAITING' → 'DONE' : Done by reviewer
+
+In most cases, use `WAITING` for review instead of `DONE`.
+Tasks in 
 
 ## Add Notes
 
