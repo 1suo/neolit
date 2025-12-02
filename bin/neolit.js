@@ -14,6 +14,7 @@ program
   .command('init')
   .description('Initialize neolit in current project')
   .option('--format <type>', 'todo format (org|md)', 'org')
+  .option('--git', 'add neolit files to git (default: ignored)')
   .action(async (options) => {
     const cwd = process.cwd();
     const templatesDir = path.join(__dirname, '../templates/neolit');
@@ -80,6 +81,29 @@ program
     if (fs.existsSync(modulesSrc)) {
       fs.cpSync(modulesSrc, modulesDir, { recursive: true });
       console.log('✓ Created templates/');
+    }
+
+    // Handle .gitignore
+    const gitignorePath = path.join(cwd, '.gitignore');
+    if (!options.git) {
+      const gitignoreEntries = [
+        '\n# Neolit AI documentation',
+        'neolit/',
+        '.neolit.json',
+        '**/CONTEXT.md',
+        '**/TODO.org'
+      ].join('\n') + '\n';
+
+      if (fs.existsSync(gitignorePath)) {
+        const content = fs.readFileSync(gitignorePath, 'utf-8');
+        if (!content.includes('neolit/')) {
+          fs.appendFileSync(gitignorePath, gitignoreEntries);
+          console.log('✓ Added neolit entries to .gitignore');
+        }
+      } else {
+        fs.writeFileSync(gitignorePath, gitignoreEntries);
+        console.log('✓ Created .gitignore with neolit entries');
+      }
     }
 
     console.log('\n✓ Neolit initialized successfully!');

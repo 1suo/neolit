@@ -13,20 +13,20 @@ Check ADRs listed in module CONTEXT "Related ADRs".
 
 ## Creating New Module
 
-For NEW projects only:
+For NEW modules:
 ```bash
 mkdir -p src/module-name
 cp templates/src/module/CONTEXT.md src/module-name/
 cp templates/src/module/TODO.org src/module-name/
 ```
 
-For EXISTING projects:
+For EXISTING modules without CONTEXT.md:
 - Find logical module boundaries in existing code
 - Create CONTEXT.md in that directory
 - Create TODO.org in that directory
 - Don't restructure existing code
 
-Fill CONTEXT.md:
+Fill CONTEXT.md using template it contains:
 - Purpose, key data structures
 - Related Schemas/Modules/APIs/ADRs
 - Data Flow, Constraints

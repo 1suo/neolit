@@ -15,19 +15,19 @@ Entry point for AI coding agents.
 
 ## Working with Tasks
 
+**Start here:** `neolit/system.md` (system structure entry point; "neolit" is AI-driven documentation standard, not actual project name)
+
 ### Finding Context
 
 Task location → Context:
 - Task in `src/module/TODO.org` → Read `src/module/CONTEXT.md`
-- Module CONTEXT → Points to `.neolit/` docs
+- Module CONTEXT → Points to `neolit/` docs
 - Follow references from there
 
 Task tags → Prompts:
 - `:bug:` → Read `prompts/BUG.md`
 - `:feature:` → Read `prompts/FEATURE.md`
 - etc.
-
-**Start here:** `.neolit/system.md` (system structure entry point; "neolit" is AI-driven documentation standard, not actual project name)
 
 ### Managing Task Status
 
@@ -77,6 +77,7 @@ Task tags → Prompts:
 - Create new top-level tasks (only subtasks/checkboxes for tracking)
 - Delete tasks
 - Mark `DONE` without certainty (use `WAITING` instead)
+- Modify `VISION.org`
 
 **On task completion:**
 - Add `CLOSED: <YYYY-MM-DD>` timestamp
@@ -87,13 +88,14 @@ Task tags → Prompts:
 
 ## Core Rules (MUST)
 
-- MUST read `.neolit/system.md` first (system architecture)
+- MUST read `neolit/system.md` first (system architecture)
 - MUST follow existing data structures exactly
 - MUST match existing naming conventions  
 - MUST use established patterns
 - MUST preserve existing APIs unless explicitly changing
 - MUST update documentation when changing code
 - MUST complete one task fully before next
+- MUST strictly follow existing code logic when documenting, not guessing based on names or conventions
 
 ## General Guidelines (SHOULD)
 
@@ -101,17 +103,18 @@ Task tags → Prompts:
 - SHOULD write clear commit messages
 - SHOULD add progress notes to complex tasks
 - SHOULD ask when uncertain rather than guess
+- SHOULD update related docs (CONTEXT.md, ADRs) as needed
 
 ---
 
 ## Documentation Structure
 
-Entry point: `.neolit/system.md`
+Entry point: `neolit/system.md`
 
 From system.md, navigate to:
-- Containers (e.g., `.neolit/1-web-app/`, `.neolit/2-api-server/`)
-- Components (e.g., `.neolit/2-api-server/components/controllers.md`)
+- Containers (e.g., `neolit/1-web-app/`, `.neolit/2-api-server/`)
+- Components (e.g., `neolit/2-api-server/components/controllers.md`)
 - Code (module `CONTEXT.md` files)
-- ADRs (`.neolit/adr/`)
+- ADRs (`neolit/adr/`)
 
 **When in doubt:** Ask, don't guess.

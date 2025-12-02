@@ -26,6 +26,15 @@ function init() {
     process.exit(1);
   }
   
+  // Prompt for git tracking
+  console.log('Track neolit/ in git?');
+  console.log('  y = commit docs to repo (team collaboration)');
+  console.log('  n = add to .gitignore (local only)');
+  process.stdout.write('Choice (y/n): ');
+  
+  const stdin = fs.readFileSync(0, 'utf-8');
+  const choice = stdin.trim().toLowerCase();
+  
   // Copy templates
   const templateSource = path.join(__dirname, '..', 'templates', 'neolit');
   copyRecursive(templateSource, neolitDir);
@@ -38,10 +47,23 @@ function init() {
   };
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   
+  // Handle git tracking
+  if (choice === 'n') {
+    const gitignorePath = path.join(targetDir, '.gitignore');
+    const ignoreEntry = '\n# Neolit AI documentation\nneolit/\n.neolit.json\n';
+    
+    if (fs.existsSync(gitignorePath)) {
+      fs.appendFileSync(gitignorePath, ignoreEntry);
+    } else {
+      fs.writeFileSync(gitignorePath, ignoreEntry.trim() + '\n');
+    }
+    console.log('✓ Added neolit/ to .gitignore');
+  }
+  
   console.log('✓ Neolit initialized');
   console.log('');
   console.log('Next steps:');
-  console.log('1. Fill neolit/HUMAN.org with project vision');
+  console.log('1. Fill neolit/VISION.org with project vision');
   console.log('2. Run: npx @anthropic-ai/claude-cli');
   console.log('3. Paste: @neolit/prompts/ANALYZE_PROJECT.md');
   console.log('');

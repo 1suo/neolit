@@ -1,7 +1,7 @@
 # System Architecture
 
 ## Overview
-[Brief system description - what it does, main purpose]
+[Brief system description - what it does, main purpose. If project-level README exists, summarize from there and link.]
 
 ## Containers
 [Major system components - web app, API, database, etc.]

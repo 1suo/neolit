@@ -4,9 +4,9 @@
 
 **CRITICAL RULES:**
 1. **Ignore node_modules, .git, dist, build** - never analyze generated/dependency code
-2. **Document ONLY what exists** - no guessing, no assumptions, no hallucinating features
-3. **DO NOT create TODO tasks** - only create CONTEXT.md documentation
-4. **Extract from actual code** - trace through real files, functions, schemas
+2. **Document ONLY what exists** - no guessing, no assumptions. Trace through real files, functions, schemas
+3. **DO NOT create TODO tasks** - only create CONTEXT.md and documentation files
+4. **DO NOT modify source code** - read only
 
 ---
 
@@ -27,7 +27,7 @@
    - External integrations?
 
 3. **Document in `neolit/docs/system.md`:**
-   - If clear separation exists: Present as C4 containers (ONLY if it truly fits)
+   - If clear separation exists: Present as C4 containers (ONLY if it truly fits), e.g.:
      - Container 1: Web App (what it actually does, actual tech, actual interfaces)
      - Container 2: API Server (what it actually does, actual tech, actual interfaces)
      - Container 3: Database (what it actually stores)
@@ -97,7 +97,7 @@ neolit/
 
 **Create:** `neolit/docs/workflows.md`
 
-1. **Identify 2-3 critical paths by reading code:**
+1. **Identify critical paths by reading code, e.g.:**
    - User registration/login (trace actual route handlers)
    - Main feature (trace actual implementation)
 
@@ -138,6 +138,8 @@ neolit/
    - Auth (if src/auth/ or similar exists)
    - Users (if src/users/ or similar exists)
    - Posts (if src/posts/ or similar exists)
+   - Routes, Controllers, Services, etc.
+   - Store/State (for frontend)
 
 2. **Find where code actually lives:**
    ```bash
@@ -229,7 +231,7 @@ Replace examples with actual extracted invariants from code:
    - If API docs needed and complex: Create `neolit/docs/2-api-server/components/endpoints.md`
    - If UI patterns exist and complex: Create `neolit/docs/1-web-app/components/patterns.md`
 
-**Adapt structure to match actual project, don't force templates.**
+**Adapt structure to match actual project, don't force templates, can delete unused docs templates (except TODO.org and CONTEXT.md).**
 
 ---
 
@@ -237,7 +239,7 @@ Replace examples with actual extracted invariants from code:
 
 After analysis from actual code, verify:
 - [ ] `neolit/docs/system.md` exists and describes actual structure
-- [ ] `neolit/docs/workflows.md` has 2-3 actual key flows traced through code
+- [ ] `neolit/docs/workflows.md` has actual key flows traced through code
 - [ ] Schemas documented from actual model files
 - [ ] Each major module has `CONTEXT.md` (in existing directories)
 - [ ] `neolit/prompts/BASE.md` Key Constraints filled from actual code patterns
