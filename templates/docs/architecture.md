@@ -1,43 +1,51 @@
 # Architecture
 
-Index to architectural documentation. Each domain in separate file.
+Documentation organized by C4 model levels.
 
 ---
 
-## Core Workflows
+## Level 1: System Context
 
-See: [workflows.md](workflows.md)
+See: [context.md](context.md)
 
-Critical user journeys and data flows.
-
----
-
-## Data Schemas
-
-See: [schemas.md](schemas.md)
-
-Entity definitions, relationships, invariants.
+System boundaries, external actors, integrations.
 
 ---
 
-## API Design
+## Level 2: Containers
 
-See: [api.md](api.md)
+See: [containers.md](containers.md)
 
-Endpoint patterns and conventions.
-
----
-
-## UI Patterns
-
-See: [ui.md](ui.md)
-
-Component structure and design system.
+Applications, databases, services that make up the system.
 
 ---
 
-## Architecture Decision Records
+## Level 3: Components
+
+Organized by container/domain:
+
+- [api/](api/) - API components and endpoints
+- [ui/](ui/) - UI components and patterns
+- [data/](data/) - Data schemas and relationships
+- [auth/](auth/) - Authentication components
+
+Each domain has:
+- Overview (responsibility, dependencies)
+- Component diagrams
+- Data flows
+- Patterns and conventions
+
+---
+
+## Decisions
 
 See: [adr/](adr/)
 
-Major technical decisions and rationale.
+Architecture Decision Records.
+
+---
+
+## Cross-Cutting
+
+- [workflows.md](workflows.md) - End-to-end user journeys
+- [integration.md](integration.md) - How components communicate
