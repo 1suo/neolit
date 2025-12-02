@@ -3,11 +3,8 @@
 
 * Bugfixes
 
-** TODO [BUG-001] Brief bug description
-   :PROPERTIES:
-   :CREATED: [YYYY-MM-DD]
-   :END:
-   #bug #api
+** TODO [BUG-001] Brief bug description :bug:api:
+   [YYYY-MM-DD]
    
 *** Context for Agent
     **If data-related, specify:**
@@ -78,11 +75,8 @@
 
 * Features
 
-** TODO [FEAT-001] Feature description
-   :PROPERTIES:
-   :CREATED: [YYYY-MM-DD]
-   :END:
-   #feature #api #ui
+** TODO [FEAT-001] Feature description :feature:api:ui:
+   [YYYY-MM-DD]
    
 *** Context for Agent
     **Required reading:**
