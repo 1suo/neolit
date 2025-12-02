@@ -25,7 +25,7 @@ Task location tells you context:
 Tags in task (`:bug:api:`) tell you which prompts to read:
 - Read `prompts/BUG.md` for bug workflow
 - Read `prompts/FEATURE.md` for feature workflow
-- Check docs/ links from module README for domain specifics
+- Check `.neolit/` links from module README for domain specifics
 
 ### Task Status
 
@@ -58,7 +58,7 @@ If approved, add :ARCHIVE: tag when done, don't delete task.
 
 **[PROJECT_SPECIFIC: Fill with architectural constraints from foundations]**
 
-Architectural (from docs/architecture.md):
+Architectural (from .neolit/system.md):
 - MUST follow data schema
 - MUST respect entity invariants
 - MUST use [database] per ADR-XXX
@@ -84,8 +84,8 @@ Example:
 
 ## Documentation Links
 
-- Architecture Index: `/docs/architecture.md` (links to workflows, schemas, api, ui)
-- ADRs: `/docs/adr/`
+- System Architecture: `/.neolit/system.md` (start here)
+- ADRs: `/.neolit/adr/`
 - Strategic Plan: `/SYSTEM.org`
 
 ---

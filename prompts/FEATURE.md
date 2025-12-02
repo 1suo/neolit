@@ -8,7 +8,7 @@ Location: Inferred from TODO file path (src/module/TODO.org → src/module/READM
 4. Implement following patterns documented in module README
 5. Update module README.md "Related" sections if adding dependencies
 
-Check docs/architecture.md only for schemas listed in module README "Related Schemas".
+Check .neolit/system.md only for schemas listed in module README "Related Schemas".
 Check ADRs listed in module README "Related ADRs".
 
 ## Creating New Module

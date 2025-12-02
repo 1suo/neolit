@@ -18,7 +18,7 @@
    - How does API talk to database? (SQL? MongoDB?)
    - Auth mechanism? (JWT? Session?)
 
-3. Document in `docs/system.md` following template
+3. Document in `.neolit/system.md` following template
 
 ---
 
@@ -68,7 +68,7 @@
    - Look at database migration files
    - Check ORM/ODM definitions
 
-2. Extract to `docs/3-database/schemas.md`:
+2. Extract to `.neolit/3-database/schemas.md`:
    - Entity attributes and types
    - Relationships
    - Invariants (unique constraints, validation rules)
@@ -97,7 +97,7 @@
    - What data accessed
    - What response returned
 
-3. Document in `docs/workflows.md`
+3. Document in `.neolit/workflows.md`
 
 ---
 
@@ -146,10 +146,10 @@
 ## Output
 
 After analysis:
-- `docs/system.md` filled with actual containers and interfaces
-- `docs/structure.md` if project structure differs from C4
-- `docs/3-database/schemas.md` with real entities
-- `docs/workflows.md` with 2-3 key workflows
+- `.neolit/system.md` filled with actual containers and interfaces
+- `.neolit/structure.md` if project structure differs from C4
+- `.neolit/3-database/schemas.md` with real entities
+- `.neolit/workflows.md` with 2-3 key workflows
 - `src/MODULE/README.md` for each module
 - `src/MODULE/TODO.org` with initial tasks
 - `AGENTS.md` Key Constraints section filled with real invariants
