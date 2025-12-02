@@ -9,18 +9,12 @@
     Related files: src/module/file.js
     Related schemas: User, Post
 
-* INBOX [#B] Example frozen task :refactor:
+* INBOX [#C] Example not-ready task :refactor:
   <2025-12-02>
   
 *** Context for Agent
-    Not ready yet - waiting for decision/dependency
+    Not ready yet - frozen/blocked/low priority
     Will be moved to TODO when ready
-
-* BACKLOG [#C] Example low priority :docs:
-  <2025-12-02>
-  
-*** Context for Agent
-    Nice to have, maybe later
 
 * IN-PROGRESS [#A] Implement payment processing :feature:api:
   <2025-12-01>
@@ -62,11 +56,10 @@
 ** Org-mode Task Syntax for AI Agents
 
 *** Status format:
-    STATUS: TODO | INBOX | BACKLOG | IN-PROGRESS | WAITING | DONE
+    STATUS: TODO | INBOX | IN-PROGRESS | WAITING | DONE
     
-    - TODO: Active work, ready to assign
-    - INBOX: Frozen/not ready yet
-    - BACKLOG: Low priority, maybe later
+    - TODO: Active work, ready to assign to AI
+    - INBOX: Not ready (blocked/frozen/low priority)
     - IN-PROGRESS: Currently working
     - WAITING: Done, needs review
     - DONE: Approved and closed
