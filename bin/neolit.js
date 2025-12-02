@@ -16,7 +16,7 @@ program
   .option('--format <type>', 'todo format (org|md)', 'org')
   .action(async (options) => {
     const cwd = process.cwd();
-    const templatesDir = path.join(__dirname, '../neolit');
+    const templatesDir = path.join(__dirname, '../templates/neolit');
     const neolitDir = path.join(cwd, 'neolit');
 
     console.log('Initializing neolit...');
@@ -59,12 +59,7 @@ program
     fs.mkdirSync(docsDir, { recursive: true });
     const docsSrc = path.join(templatesDir, 'docs');
     if (fs.existsSync(docsSrc)) {
-      fs.readdirSync(docsSrc).forEach(file => {
-        fs.copyFileSync(
-          path.join(docsSrc, file),
-          path.join(docsDir, file)
-        );
-      });
+      fs.cpSync(docsSrc, docsDir, { recursive: true });
       console.log('✓ Created docs/');
     }
 
