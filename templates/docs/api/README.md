@@ -1,27 +1,32 @@
-# API Components (C4 Level 3)
+# API Layer
 
-**Container:** API Server
-
----
-
-## Component Structure
-
-- [endpoints.md](endpoints.md) - All API endpoints
-- [patterns.md](patterns.md) - Request/response patterns, error handling
-- [auth.md](auth.md) - Authentication/authorization for API
+**Agent context: API patterns, what endpoints exist.**
 
 ---
 
-## Responsibility
+## Files
 
-Handle HTTP requests, validate input, execute business logic, return responses.
+- [endpoints.md](endpoints.md) - What APIs exist, request/response
+- [patterns.md](patterns.md) - Auth, errors, validation patterns
 
 ---
 
-## Dependencies
+## Structure
 
-- Database (data access)
-- Auth service (verification)
-- External APIs (integrations)
+```
+api/
+  auth/
+    login.js        → POST /api/auth/login
+    logout.js       → POST /api/auth/logout
+  users/
+    [id].js         → GET /api/users/:id
+    index.js        → GET /api/users
+```
 
-See: [../integration.md](../integration.md)
+**Pattern:** File path = endpoint path
+
+---
+
+**Related:**
+- See [../data/schemas.md](../data/schemas.md) for data structures
+- See [patterns.md](patterns.md) for auth/error handling

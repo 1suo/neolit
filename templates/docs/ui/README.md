@@ -1,21 +1,33 @@
-# UI Components (C4 Level 3)
+# UI Layer
 
-**Container:** Web Application
+**Agent context: Frontend components, patterns.**
+
+---
+
+## Files
+
+- [components.md](components.md) - What components exist, how to use
+- [patterns.md](patterns.md) - State management, forms, routing
 
 ---
 
 ## Structure
 
-- [components.md](components.md) - Component catalog
-- [patterns.md](patterns.md) - UI patterns
-- [design-system.md](design-system.md) - Design tokens
+```
+components/
+  Button.vue
+  Form.vue
+  Modal.vue
+pages/
+  index.vue
+  users/[id].vue
+composables/
+  useAuth.js
+  useUsers.js
+```
 
 ---
 
-## Responsibility
-
-Render UI, handle interactions, manage client state.
-
-## Dependencies
-
-- API Server (data), Design system (styling)
+**Related:**
+- See [../api/endpoints.md](../api/endpoints.md) for API calls
+- See [patterns.md](patterns.md) for state/forms

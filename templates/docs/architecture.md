@@ -1,51 +1,33 @@
 # Architecture
 
-Documentation organized by C4 model levels.
+**Entry point for agent context.**
+
+Module README → Points here for domain context.
 
 ---
 
-## Level 1: System Context
+## System Context
 
-See: [context.md](context.md)
+[context.md](context.md) - What system does, users, external integrations
 
-System boundaries, external actors, integrations.
+## Containers
 
----
+[containers.md](containers.md) - Applications, services, databases that make up system
 
-## Level 2: Containers
+## Components by Domain
 
-See: [containers.md](containers.md)
+- [api/](api/) - API layer components
+- [ui/](ui/) - Frontend components  
+- [data/](data/) - Data layer and schemas
 
-Applications, databases, services that make up the system.
+## Workflows
 
----
+[workflows.md](workflows.md) - End-to-end user journeys, data transformations
 
-## Level 3: Components
+## Integration
 
-Organized by container/domain:
-
-- [api/](api/) - API components and endpoints
-- [ui/](ui/) - UI components and patterns
-- [data/](data/) - Data schemas and relationships
-- [auth/](auth/) - Authentication components
-
-Each domain has:
-- Overview (responsibility, dependencies)
-- Component diagrams
-- Data flows
-- Patterns and conventions
-
----
+[integration.md](integration.md) - How components communicate
 
 ## Decisions
 
-See: [adr/](adr/)
-
-Architecture Decision Records.
-
----
-
-## Cross-Cutting
-
-- [workflows.md](workflows.md) - End-to-end user journeys
-- [integration.md](integration.md) - How components communicate
+[adr/](adr/) - Why we made key technical choices
