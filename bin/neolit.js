@@ -24,6 +24,17 @@ program
     // Create neolit directory
     fs.mkdirSync(neolitDir, { recursive: true });
 
+    // Create .neolit.json config
+    const config = {
+      format: options.format,
+      version: require('../package.json').version
+    };
+    fs.writeFileSync(
+      path.join(cwd, '.neolit.json'),
+      JSON.stringify(config, null, 2)
+    );
+    console.log('✓ Created .neolit.json');
+
     // Copy core files
     const coreToCopy = [
       'INTEGRATION.md',
@@ -74,7 +85,7 @@ program
     console.log('\n✓ Neolit initialized successfully!');
     console.log('\nNext steps:');
     console.log('1. Run: npx neolit analyze');
-    console.log('2. Review and fill .neolit/docs/system.md');
+    console.log('2. Review and fill neolit/docs/system.md');
     console.log('3. Start working with AI on tasks in TODO.org files');
   });
 
@@ -82,11 +93,11 @@ program
   .command('analyze')
   .description('Analyze existing project and populate documentation')
   .action(() => {
-    const neolitDir = path.join(process.cwd(), '.neolit');
+    const neolitDir = path.join(process.cwd(), 'neolit');
     const promptFile = path.join(neolitDir, 'prompts', 'ANALYZE_PROJECT.md');
     
     if (!fs.existsSync(promptFile)) {
-      console.error('Error: .neolit not initialized. Run: npx neolit init');
+      console.error('Error: neolit not initialized. Run: npx neolit init');
       process.exit(1);
     }
 
@@ -104,11 +115,11 @@ program
     console.log('Updating neolit core files...');
     
     const cwd = process.cwd();
-    const neolitDir = path.join(cwd, '.neolit');
-    const templatesDir = path.join(__dirname, '../neolit');
+    const neolitDir = path.join(cwd, 'neolit');
+    const templatesDir = path.join(__dirname, '../templates/neolit');
 
     if (!fs.existsSync(neolitDir)) {
-      console.error('Error: .neolit not found. Run: npx neolit init');
+      console.error('Error: neolit not found. Run: npx neolit init');
       process.exit(1);
     }
 
@@ -150,9 +161,10 @@ program
   .option('--force', 'Skip confirmation')
   .action((options) => {
     const cwd = process.cwd();
-    const neolitDir = path.join(cwd, '.neolit');
+    const neolitDir = path.join(cwd, 'neolit');
+    const configFile = path.join(cwd, '.neolit.json');
 
-    if (!fs.existsSync(neolitDir)) {
+    if (!fs.existsSync(neolitDir) && !fs.existsSync(configFile)) {
       console.log('No neolit installation found.');
       return;
     }
@@ -160,6 +172,7 @@ program
     if (!options.force) {
       console.log('\nThis will remove:');
       console.log('- neolit/ directory and all documentation');
+      console.log('- .neolit.json config file');
       console.log('- All CONTEXT.md files in project');
       console.log('- All TODO.org files in project');
       console.log('\nRun with --force to confirm: npx neolit clean --force');
@@ -172,6 +185,12 @@ program
     if (fs.existsSync(neolitDir)) {
       fs.rmSync(neolitDir, { recursive: true, force: true });
       console.log('✓ Removed neolit/');
+    }
+
+    // Remove config file
+    if (fs.existsSync(configFile)) {
+      fs.unlinkSync(configFile);
+      console.log('✓ Removed .neolit.json');
     }
 
     // Find and remove CONTEXT.md files
