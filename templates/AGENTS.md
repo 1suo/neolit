@@ -79,10 +79,9 @@ Example:
 
 ## Documentation Links
 
-- Architecture & Workflows: `/docs/architecture.md`
+- Architecture Index: `/docs/architecture.md` (links to workflows, schemas, api, ui)
 - ADRs: `/docs/adr/`
 - Strategic Plan: `/SYSTEM.org`
-- Contributing: `/docs/contributing.md`
 
 ---
 

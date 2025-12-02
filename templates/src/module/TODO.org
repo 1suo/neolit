@@ -4,28 +4,17 @@
 * Bugfixes
 
 ** TODO [#A] Fix authentication bug in login endpoint :bug:api:
-   [YYYY-MM-DD]
+   [2025-12-02]
    
 *** Context for Agent
-    **If data-related, specify:**
-    - Affected schema: Entity { fields }
-    - Expected invariant: [what should be true]
-    
-    **If code-related, specify:**
-    - File: path/to/file.js
-    - Pattern in use: [pattern name]
+    Error when user enters invalid credentials.
+    Affected: src/auth/login.js, User schema
    
-*** Context
-    Description of the bug:
-    - What's happening
-    - Expected behavior
-    - Steps to reproduce
-    
 *** Root Cause
-    [To be filled by AI agent or developer]
-    
+    [To be filled by agent]
+   
 *** Solution
-    [To be filled by AI agent or developer]
+    [To be filled by agent]
     
 ** IN-PROGRESS [BUG-002] Another bug description
    :PROPERTIES:

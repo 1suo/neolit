@@ -14,48 +14,7 @@ A scaffolding system for AI-assisted development:
 - **Task tracking** (org-mode based)
 - **Design patterns** for LLM collaboration
 
-**Core principle:** Code serves workflows and architectural foundations, not the other way around.
-
-Inspired by literate programming and ADR practices.
-
----
-
-## Quick Start
-
-### 1. Copy Templates
-
-```bash
-cd /path/to/neolit
-./integrate.sh /path/to/your/project
-```
-
-This copies templates and prompts to your project.
-
-### 2. Document Foundations (BEFORE coding)
-
-**Data Schema** (`docs/architecture.md`):
-- List entities: User, Post, Comment, etc.
-- For each: attributes, types, relationships
-- State invariants: "User.email must be unique", "Post.authorId must exist"
-- Define keys and indexes
-
-**Architectural Decisions** (create ADRs):
-- One ADR per major decision
-- Include: Why this choice? What alternatives? What tradeoffs?
-- Must have: Database, Authentication, API design, State management
-
-**Critical Workflows** (`docs/architecture.md`):
-- Pick 3-5 most important user journeys
-- For each: Step-by-step flow with data transformations
-- Show: Input → Validation → Processing → Storage → Output
-
-**Fill MUST constraints** (`AGENTS.md`):
-- From schema: "MUST respect User.email uniqueness"
-- From ADRs: "MUST use JWT per ADR-002"
-
-### 3. Integrate
-
-See [INTEGRATION.md](./INTEGRATION.md) (one-time setup)
+Inspired by literate programming idea and ADR practices.
 
 ---
 
@@ -104,9 +63,7 @@ Change only what's needed. But finish what you start.
 
 ---
 
-## For Humans
-
-### Setting Up
+## Setting Up
 
 See [INTEGRATION.md](./INTEGRATION.md)
 
@@ -122,6 +79,11 @@ Assign tasks via `TODO.org`:
 Complete the next TODO task in src/auth/TODO.org
 ```
 
+Run open-ended session through all tasks:
+```
+Complete all tasks from all TODO.org files in src/ until none with "TODO" status remain.
+```
+
 ### Files You'll Modify
 
 **Frequently:**
@@ -130,11 +92,12 @@ Complete the next TODO task in src/auth/TODO.org
 
 **Occasionally:**
 - `AGENTS.md` - Refine agent instructions
-- `docs/architecture.md` - Update as system evolves
-- Module `README.md` - Document new patterns
+- `docs/*.md` - Update as system evolves
+- Module `README.md` - Document new patterns that aren't fit high-level docs
+- `SYSTEM.org` - Strategic planning updates
 
 **Rarely:**
-- `SYSTEM.org` - Strategic changes only
+- `docs/architecture.md` - Major architecture changes
 
 ---
 
@@ -146,7 +109,6 @@ Complete the next TODO task in src/auth/TODO.org
 | `SYSTEM.org` | Strategic planning and milestones |
 | `docs/architecture.md` | System architecture documentation |
 | `docs/api.md` | API documentation |
-| `docs/contributing.md` | Contribution guidelines |
 | `docs/adr/template.md` | Architecture decision records |
 | `src/module/README.md` | Module-level documentation |
 | `src/module/TODO.org` | Task tracking for modules |
