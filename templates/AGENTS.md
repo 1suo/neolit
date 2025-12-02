@@ -41,21 +41,21 @@ Task tags → Prompts:
 - `TODO` - Ready to work on (active backlog)
 - `INBOX` - Frozen/not ready yet
 - `BACKLOG` - Maybe later/low priority
-- `IN-PROGRESS` - Currently working
+- `PROGRESS` - Currently working
 - `WAITING` - Done, needs human review
 - `DONE` - Approved and closed
 
 **Status transitions:**
-- `TODO` → `IN-PROGRESS`: Starting complex task
+- `TODO` → `PROGRESS`: Starting complex task
 - `TODO` → `WAITING`: Simple task done, needs review
-- `IN-PROGRESS` → `WAITING`: Complex task done, needs review
+- `PROGRESS` → `WAITING`: Complex task done, needs review
 - `WAITING` → `DONE`: Only after human approval
 
 **Default:** Use `WAITING` for review. Don't assume `DONE`.
 
 **Adding progress notes:**
 ```org
-* IN-PROGRESS [#A] Task description :tags:
+* PROGRESS [#A] Task description :tags:
   <2025-12-02>
   
 *** Agent Notes
@@ -85,26 +85,22 @@ Task tags → Prompts:
 
 ---
 
-## Key Constraints (MUST)
+## Core Rules (MUST)
 
-**[Fill during setup with project invariants]**
+- MUST read `.neolit/system.md` first (system architecture)
+- MUST follow existing data structures exactly
+- MUST match existing naming conventions  
+- MUST use established patterns
+- MUST preserve existing APIs unless explicitly changing
+- MUST update documentation when changing code
+- MUST complete one task fully before next
 
-Example constraints (replace with actual):
-- MUST follow schemas in `.neolit/3-database/schemas.md`
-- MUST validate inputs per ADR-002
-- MUST use patterns documented in module CONTEXT
-- MUST update docs when changing APIs
+## General Guidelines (SHOULD)
 
----
-
-## Preferences (SHOULD)
-
-**[Fill during setup with project style]**
-
-Example preferences (replace with actual):
-- SHOULD keep functions under 50 lines
-- SHOULD prefer async/await
-- SHOULD write self-documenting code
+- SHOULD reuse existing utilities/abstractions
+- SHOULD write clear commit messages
+- SHOULD add progress notes to complex tasks
+- SHOULD ask when uncertain rather than guess
 
 ---
 

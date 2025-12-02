@@ -10,7 +10,7 @@ cd "$PROJECT_DIR"
 
 # Copy templates
 cp "$NEOLIT_DIR/templates/AGENTS.md" ./
-cp "$NEOLIT_DIR/templates/SYSTEM.org" ./
+cp "$NEOLIT_DIR/templates/HUMAN.org" ./
 cp -r "$NEOLIT_DIR/templates/.neolit/"* .neolit/
 cp -r "$NEOLIT_DIR/templates/src/module/"* templates/src/module/
 cp "$NEOLIT_DIR/prompts/"* prompts/
@@ -18,6 +18,8 @@ cp "$NEOLIT_DIR/prompts/"* prompts/
 echo "✓ Neolit integrated into: $(pwd)"
 echo ""
 echo "Next:"
-echo "1. Read INTEGRATION.md for next steps."
-echo "2. Or run agent session with /prompts/ANALYZE_PROJECT.md"
-echo "   It will populate neolit/ folder with project-specific data."
+echo "1. Read INTEGRATION.md for workflow"
+echo "2. Run agent with: prompts/ANALYZE_PROJECT.md"
+echo "   to populate .neolit/ with project-specific docs"
+
+cd "$PROJECT_DIR"

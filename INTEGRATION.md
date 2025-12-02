@@ -43,8 +43,7 @@ AI will:
 **Status workflow:**
 - `TODO` - Active work (assign these to AI)
 - `INBOX` - Frozen/not ready
-- `BACKLOG` - Maybe later
-- `IN-PROGRESS` - AI working on it
+- `PROGRESS` - AI working on it
 - `WAITING` - Done, needs review
 - `DONE` - Approved and closed
 
