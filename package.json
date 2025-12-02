@@ -1,0 +1,25 @@
+{
+  "name": "neolit",
+  "version": "0.1.0",
+  "description": "AI-driven development scaffolding and context management",
+  "main": "index.js",
+  "bin": {
+    "neolit": "./bin/neolit.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["ai", "development", "scaffolding", "documentation", "agents", "llm"],
+  "author": "",
+  "license": "MIT",
+  "files": [
+    "bin/",
+    "templates/"
+  ],
+  "dependencies": {
+    "commander": "^11.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

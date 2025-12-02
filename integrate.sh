@@ -2,24 +2,23 @@
 # Neolit Integration
 # Usage: ./integrate.sh /path/to/project
 
-PROJECT_DIR="${1:-.}"
-NEOLIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "$1" ]; then
+    echo "Usage: ./integrate.sh /path/to/project"
+    exit 1
+fi
 
-mkdir -p "$PROJECT_DIR"/{.neolit/adr,src,prompts,templates/src/module}
-cd "$PROJECT_DIR"
+PROJECT_DIR="$1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Copy templates
-cp "$NEOLIT_DIR/templates/AGENTS.md" ./
-cp "$NEOLIT_DIR/templates/HUMAN.org" ./
-cp -r "$NEOLIT_DIR/templates/.neolit/"* .neolit/
-cp -r "$NEOLIT_DIR/templates/src/module/"* templates/src/module/
-cp "$NEOLIT_DIR/prompts/"* prompts/
+# Copy neolit directory
+mkdir -p "$PROJECT_DIR"
+cp -r "$SCRIPT_DIR/neolit" "$PROJECT_DIR/"
 
-echo "✓ Neolit integrated into: $(pwd)"
+# Copy config
+cp "$SCRIPT_DIR/.neolitrc" "$PROJECT_DIR/"
+
+echo "✓ Neolit integrated into $PROJECT_DIR"
 echo ""
-echo "Next:"
-echo "1. Read INTEGRATION.md for workflow"
-echo "2. Run agent with: prompts/ANALYZE_PROJECT.md"
-echo "   to populate .neolit/ with project-specific docs"
+echo "Next: Run AI with 'neolit/prompts/ANALYZE_PROJECT.md' to document project"
 
 cd "$PROJECT_DIR"
