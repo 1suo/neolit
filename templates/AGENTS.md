@@ -18,14 +18,14 @@ Entry point for AI coding agents.
 ### Finding Context
 
 Task location tells you context:
-- Task in `src/module/TODO.org` → Read `src/module/README.md`
-- Module README lists: Related Schemas, Modules, APIs, ADRs
+- Task in `src/module/TODO.org` → Read `src/module/CONTEXT.md`
+- Module CONTEXT lists: Related Schemas, Modules, APIs, ADRs
 - Follow only those references
 
 Tags in task (`:bug:api:`) tell you which prompts to read:
 - Read `prompts/BUG.md` for bug workflow
 - Read `prompts/FEATURE.md` for feature workflow
-- Check `.neolit/` links from module README for domain specifics
+- Check `.neolit/` links from module CONTEXT for domain specifics
 
 ### Task Status
 
@@ -56,27 +56,28 @@ If approved, add :ARCHIVE: tag when done, don't delete task.
 
 ## Key Constraints (MUST)
 
-**[PROJECT_SPECIFIC: Fill with architectural constraints from foundations]**
+**[PROJECT_SPECIFIC: Filled by human during setup, not by AI]**
 
-Architectural (from .neolit/system.md):
-- MUST follow data schema
-- MUST respect entity invariants
-- MUST use [database] per ADR-XXX
-- MUST use [auth method] per ADR-XXX
+Example - Architectural constraints:
+- MUST follow User/Post schema in .neolit/3-database/schemas.md
+- MUST validate email uniqueness before User creation
+- MUST use JWT auth per ADR-001
+- MUST use repository pattern for data access
 
-Code-level:
+Example - Code-level constraints:
 - MUST NOT mutate state directly
-- MUST validate all inputs
+- MUST validate all API inputs
 - MUST handle errors explicitly
+- MUST use transactions for multi-entity changes
 
 ---
 
 ## Preferences (SHOULD)
 
-**[PROJECT_SPECIFIC: Fill with code style preferences]**
+**[PROJECT_SPECIFIC: Filled by human during setup]**
 
 Example:
-- SHOULD use async/await
+- SHOULD use async/await over callbacks
 - SHOULD keep functions under 50 lines
 - SHOULD prefer composition over inheritance
 

@@ -105,24 +105,31 @@
 
 ## Step 6: Create Module Structure
 
-1. Identify logical modules (groups of related features):
+**For existing projects:** Identify logical module boundaries in existing code.
+
+1. Identify modules (groups of related features):
    - Auth (login, register, password reset)
    - Users (profile, settings)
    - Posts (create, edit, list)
 
-2. For each module:
+2. For each module (use existing directory structure):
    ```bash
-   mkdir -p src/module-name
-   cp templates/src/module/README.md src/module-name/
-   cp templates/src/module/TODO.org src/module-name/
+   # Find existing module directory, e.g., src/auth or lib/user-service
+   cd existing-module-directory
+   
+   # Add Neolit files
+   cp /path/to/templates/src/module/CONTEXT.md ./
+   cp /path/to/templates/src/module/TODO.org ./
    ```
 
-3. Fill module README:
+3. Fill CONTEXT.md:
    - Purpose: What this module does
-   - Files: List key files in this module
-   - Related Data: Link to schemas.md entities
-   - Related APIs: Link to controllers/endpoints
+   - Key Files: List important files in this module
+   - Related Data: Link to .neolit/3-database/schemas.md entities
+   - Related APIs: Link to .neolit/2-api-server/components/controllers.md
    - Patterns: How code is organized in this module
+   - Data Flow: For features in this module
+   - Constraints: Module-specific MUST rules
 
 ---
 
@@ -148,9 +155,9 @@
 ## Output
 
 After analysis:
-- `.neolit/system.md` filled with actual structure and interfaces
-- `.neolit/3-database/schemas.md` with real entities
+- `.neolit/system.md` filled with actual structure and interfaces (MUST)
+- `.neolit/3-database/schemas.md` with real entities (adjust this and follow-ups if needed)
 - `.neolit/workflows.md` with 2-3 key workflows
 - `src/MODULE/README.md` for each module
 - `src/MODULE/TODO.org` with initial tasks
-- `AGENTS.md` Key Constraints section filled with real invariants
+- `AGENTS.md` Key Constraints section filled with real invariants ()
