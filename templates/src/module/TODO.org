@@ -4,13 +4,12 @@
 * Bugfixes
 
 ** TODO [BUG-001] Brief bug description
+   SCHEDULED: <YYYY-MM-DD>
    :PROPERTIES:
-   :TAGS: bug api
    :CREATED: [YYYY-MM-DD]
-   :PRIORITY: High|Medium|Low
-   :CONTEXT: [Schema/Module/Endpoint]
-   :RELATED: [ADR if relevant]
+   :PRIORITY: A
    :END:
+   #bug #api
    
 *** Context for Agent
     **If data-related, specify:**
@@ -82,15 +81,12 @@
 * Features
 
 ** TODO [FEAT-001] Feature description
+   SCHEDULED: <YYYY-MM-DD>
    :PROPERTIES:
-   :TAGS: feature api ui
    :CREATED: [YYYY-MM-DD]
-   :PRIORITY: High|Medium|Low
-   :ESTIMATE: Small|Medium|Large
-   :CONTEXT: User schema, Auth module, POST /api/users
-   :PATTERNS: Service layer, Repository pattern
-   :RELATED: src/auth/README.md, ADR-002
+   :PRIORITY: B
    :END:
+   #feature #api #ui
    
 *** Context for Agent
     **Required reading:**

@@ -104,18 +104,6 @@ Change only what's needed. But finish what you start.
 
 ---
 
-## For AI Agents
-
-When working on a project using Neolit:
-
-1. **Read `AGENTS.md` first** - Entry point with all instructions
-2. **Check module `README.md`** - Module-specific patterns
-3. **Find tasks in `TODO.org`** - What needs to be done
-4. **Update docs with code** - Documentation-first development
-5. **Mark status in `TODO.org`** - Track your progress
-
----
-
 ## For Humans
 
 ### Setting Up
