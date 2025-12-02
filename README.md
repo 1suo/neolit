@@ -88,16 +88,16 @@ Complete all tasks from all TODO.org files in src/ until none with "TODO" status
 
 **Frequently:**
 - `TODO.org` files - Add tasks, review agent work
-- `.neolit/adr/` - Document decisions
 
 **Occasionally:**
-- `AGENTS.md` - Refine agent instructions
-- `.neolit/*.md` - Update as system evolves
-- Module `CONTEXT.md` - Document new patterns that aren't fit high-level docs
 - `SYSTEM.org` - Strategic planning updates
+- `AGENTS.md` - Refine agent instructions
+- Module `CONTEXT.md` - Document new patterns that aren't fit high-level docs
+- `.neolit/*.md` - Update as system evolves
+- `.neolit/adr/` - Document decisions
 
 **Rarely:**
-- `.neolit/architecture.md` - Major architecture changes
+- `.neolit/system.md` - Major architecture changes
 
 ---
 
