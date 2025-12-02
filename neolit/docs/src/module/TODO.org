@@ -1,0 +1,95 @@
+#+title: [Module Name] - Tasks
+#+date: 2025-12-02
+
+* TODO [#A] Example active task :feature:api:
+  <2025-12-02>
+  
+*** Context for Agent
+    Brief description of what needs to be done
+    Related files: src/module/file.js
+    Related schemas: User, Post
+
+* INBOX [#C] Example not-ready task :refactor:
+  <2025-12-02>
+  
+*** Context for Agent
+    Not ready yet - frozen/blocked/low priority
+    Will be moved to TODO when ready
+
+* IN-PROGRESS [#A] Implement payment processing :feature:api:
+  <2025-12-01>
+  
+*** Context for Agent
+    Integrate Stripe payment processing
+    
+*** Implementation Notes
+    [2025-12-01] Agent: Created service layer
+    [2025-12-01] Agent: Added API endpoint
+    [2025-12-02] Agent: Question - should we cache payment history?
+
+* WAITING [#B] Refactor user service for better testability :refactor:
+  <2025-11-28>
+  
+*** Context for Agent
+    Current implementation has tight coupling
+    
+*** Solution Implemented
+    - Extracted repository pattern
+    - Added dependency injection
+    - Created mock implementations for tests
+    
+*** Review Notes
+    Human: Please verify test coverage is sufficient
+
+* DONE [#C] Document API authentication flow :docs:
+  CLOSED: <2025-11-25>
+  <2025-11-20>
+  
+*** Context for Agent
+    Auth flow was undocumented
+    
+*** Solution
+    Added comprehensive docs to module CONTEXT.md and .neolit/2-api-server/components/auth.md
+
+* Notes
+
+** Org-mode Task Syntax for AI Agents
+
+*** Status format:
+    STATUS: TODO | INBOX | IN-PROGRESS | WAITING | DONE
+    
+    - TODO: Active work, ready to assign to AI
+    - INBOX: Not ready (blocked/frozen/low priority)
+    - IN-PROGRESS: Currently working
+    - WAITING: Done, needs review
+    - DONE: Approved and closed
+    
+    PRIORITY: A (high) | B (medium) | C (low)
+    Date: <YYYY-MM-DD> format (angle brackets)
+    Tags: Colon-separated :bug:api:ui:
+
+*** Common tags:
+    :bug: :feature: :refactor: :docs: :test:
+    :api: :ui: :db: :auth:
+    Tags can mention components, types of work, libraries, etc.
+
+*** Status transitions:
+    - TODO → IN-PROGRESS: Starting complex task
+    - TODO → WAITING: Simple task done, needs review
+    - TODO → DONE: Simple task obviously complete
+    - IN-PROGRESS → WAITING: Complex task done, needs review
+    - WAITING → DONE: Human approved
+
+*** Context for Agent section:
+    - What agent needs to know
+    - Related files/schemas
+    - Constraints
+    - Background info
+
+*** Implementation Notes (for IN-PROGRESS):
+    [YYYY-MM-DD] Agent: Progress update
+    [YYYY-MM-DD] Agent: Files changed
+    [YYYY-MM-DD] Agent: Questions for human
+
+*** Review Notes (for WAITING):
+    What human should verify
