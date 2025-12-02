@@ -161,7 +161,10 @@ neolit/
    - **Data Flow:** For key operations (trace through actual functions)
    - **Constraints:** Extract from actual validation code
 
-**DO NOT create TODO.org files** - documentation only.
+5. **Create empty TODO.org files in those directories:**
+   ```bash
+   touch src/auth/TODO.org
+   ```
 
 ---
 
