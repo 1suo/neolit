@@ -3,7 +3,7 @@
 
 * Bugfixes
 
-** TODO [BUG-001] Brief bug description :bug:api:
+** TODO [#A] Fix authentication bug in login endpoint :bug:api:
    [YYYY-MM-DD]
    
 *** Context for Agent
@@ -75,7 +75,7 @@
 
 * Features
 
-** TODO [FEAT-001] Feature description :feature:api:ui:
+** TODO [#B] Add user profile management feature :feature:api:ui:
    [YYYY-MM-DD]
    
 *** Context for Agent
