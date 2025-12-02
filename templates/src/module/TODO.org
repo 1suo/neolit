@@ -5,10 +5,11 @@
 
 ** TODO [BUG-001] Brief bug description
    :PROPERTIES:
+   :TAGS: bug api
    :CREATED: [YYYY-MM-DD]
    :PRIORITY: High|Medium|Low
-   :CONTEXT: [Schema/Module/Endpoint if relevant]
-   :RELATED: [File or ADR if relevant]
+   :CONTEXT: [Schema/Module/Endpoint]
+   :RELATED: [ADR if relevant]
    :END:
    
 *** Context for Agent
@@ -82,6 +83,7 @@
 
 ** TODO [FEAT-001] Feature description
    :PROPERTIES:
+   :TAGS: feature api ui
    :CREATED: [YYYY-MM-DD]
    :PRIORITY: High|Medium|Low
    :ESTIMATE: Small|Medium|Large

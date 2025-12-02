@@ -25,11 +25,11 @@ Inspired by literate programming and ADR practices.
 ### 1. Copy Templates
 
 ```bash
-# From neolit directory
-cp templates/AGENTS.md /path/to/your/project/
-cp templates/SYSTEM.org /path/to/your/project/
-cp -r templates/docs /path/to/your/project/
+cd /path/to/neolit
+./integrate.sh /path/to/your/project
 ```
+
+This copies templates and prompts to your project.
 
 ### 2. Document Foundations (BEFORE coding)
 
