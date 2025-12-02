@@ -1,17 +1,6 @@
 # Neolit Integration Guide
 
-## New Project
-
-```bash
-./integrate.sh /path/to/project
-cd /path/to/project
-```
-
-**Then:** Ask AI to document foundations using `prompts/ANALYZE-EXISTING.md`
-
----
-
-## Existing Project
+## Integration
 
 ```bash
 ./integrate.sh /path/to/existing-project
@@ -21,8 +10,8 @@ cd /path/to/existing-project
 **Then:** Give AI this prompt:
 
 ```
-Read @prompts/ANALYZE-EXISTING.md and follow it to integrate Neolit into this existing project.
-Analyze the codebase and fill out all documentation.
+Read @prompts/ANALYZE_PROJECT.md and follow it to integrate Neolit.
+Analyze the codebase and create documentation.
 ```
 
 AI will:
