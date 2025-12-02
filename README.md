@@ -21,27 +21,32 @@ neolit init
 
 ## Commands
 
-- `neolit init` - Set up neolit/ structure in current project
-- `neolit clean` - Remove all neolit files from project
-- `neolit extend <name>` - Copy template for customization
+- `neolit init` - Initialize `.neolit/` folder with templates
+- `neolit analyze` - Show prompt for AI to analyze existing project
+- `neolit update` - Update core prompts (preserves your docs)
+- `neolit clean --force` - Remove all neolit files
 
 ## Structure
 
 ```
 project/
-├── neolit/
+├── .neolit/
 │   ├── prompts/
-│   │   ├── BASE.md           # Core agent instructions
+│   │   ├── BASE.md              # Core agent instructions
 │   │   ├── ANALYZE_PROJECT.md
 │   │   ├── BUG.md
 │   │   └── FEATURE.md
 │   ├── docs/
-│   │   ├── system.md         # MUST - system overview
-│   │   ├── workflows.md      # Key flows
-│   │   └── [modules]/        # Domain-specific docs
-│   ├── templates/            # For creating entities
-│   └── VISION.org            # Human planning
-└── .neolitrc                 # Config
+│   │   ├── system.md            # MUST - system overview
+│   │   ├── workflows.md         # Key flows
+│   │   ├── adr/                 # Architecture decisions
+│   │   ├── EXTENSION.md         # Customization guide
+│   │   └── [containers]/        # Domain-specific docs
+│   ├── templates/               # For creating entities
+│   │   ├── src/module/         # Module templates
+│   │   └── .neolit/            # Container/component templates
+│   └── VISION.org               # Human planning
+└── .neolitrc                    # Config
 ```
 
 ## Philosophy
@@ -58,9 +63,17 @@ Task → prompts → docs → code
 ## Publishing (Maintainers)
 
 ```bash
+npm login
 npm version patch  # or minor/major
 npm publish
 git push --follow-tags
+```
+
+Users update with:
+```bash
+npm install -g neolit@latest
+cd project
+neolit update  # Updates prompts, preserves docs
 ```
 
 ## Integration
