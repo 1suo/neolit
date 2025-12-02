@@ -2,7 +2,7 @@
 #+author: 1suo
 #+date: [2025-12-01 Пн]
 
-* PROGRESS Write templates for neolit programming
+* PROGRESS [#A] Write templates for neolit programming :tags:for:you:to:understand:
   [2025-12-01 Пн 22:08]
   
 * Intro

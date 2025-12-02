@@ -4,10 +4,8 @@
 * Bugfixes
 
 ** TODO [BUG-001] Brief bug description
-   SCHEDULED: <YYYY-MM-DD>
    :PROPERTIES:
    :CREATED: [YYYY-MM-DD]
-   :PRIORITY: A
    :END:
    #bug #api
    
@@ -81,10 +79,8 @@
 * Features
 
 ** TODO [FEAT-001] Feature description
-   SCHEDULED: <YYYY-MM-DD>
    :PROPERTIES:
    :CREATED: [YYYY-MM-DD]
-   :PRIORITY: B
    :END:
    #feature #api #ui
    
