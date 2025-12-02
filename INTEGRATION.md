@@ -10,7 +10,7 @@ cp -r templates/docs /project/
 
 # Set up modules
 mkdir -p src/module-name
-cp templates/src/module/README.md src/module-name/
+cp templates/src/module/CONTEXT.md src/module-name/
 cp templates/src/module/TODO.org src/module-name/
 ```
 
@@ -102,7 +102,7 @@ Open files and replace `[PROJECT_SPECIFIC]` markers with your:
 
 - Document decisions before coding (ADRs)
 - Update docs in same commit as code
-- Keep docs close to code (module READMEs)
+- Keep docs close to code (module CONTEXTs)
 
 ### Task Tracking
 
@@ -124,7 +124,7 @@ Open files and replace `[PROJECT_SPECIFIC]` markers with your:
 - AGENTS.md: Global rules
 - .neolit/*.md: System-wide context
 - ADRs: Decision context
-- Module README.md: Module-specific patterns
+- Module CONTEXT.md: Module-specific patterns
 - TODO.org: Task-specific details
 
 ---
@@ -141,7 +141,7 @@ Open files and replace `[PROJECT_SPECIFIC]` markers with your:
 ### Phase 2: Module Organization
 
 1. Identify major modules
-2. Create module READMEs
+2. Create module CONTEXTs
 3. Extract current pain points
 4. Document patterns in use
 
@@ -215,10 +215,10 @@ SHOULD: Use slots for composition
 
 | Problem | Solution |
 |---------|----------|
-| Agent ignores patterns | Add examples to module README |
+| Agent ignores patterns | Add examples to module CONTEXT |
 | Agent skips docs | Make explicit in task criteria |
 | Tasks too large | Break into subtasks in TODO.org |
-| Wrong files changed | Add constraints to module README |
+| Wrong files changed | Add constraints to module CONTEXT |
 
 ---
 

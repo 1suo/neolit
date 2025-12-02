@@ -22,7 +22,7 @@ Inspired by literate programming idea and ADR practices.
 
 ```
 your-project/
-├── README.md              # For humans
+├── CONTEXT.md              # For humans
 ├── AGENTS.md              # For AI agents (main entry point)
 ├── SYSTEM.org             # Strategic planning
 ├── .neolit/
@@ -34,7 +34,7 @@ your-project/
 │       └── 0001-*.md      # Your ADRs
 └── src/
     └── module/
-        ├── README.md      # Module documentation
+        ├── CONTEXT.md      # Module documentation
         ├── TODO.org       # Module tasks
         └── [code]
 ```
@@ -52,7 +52,7 @@ Document data schema, workflows, and key decisions first. Code implements these 
 ### Layered Context
 - `AGENTS.md` - Global rules for AI agents
 - `.neolit/architecture.md` - System-wide patterns
-- `src/module/README.md` - Module-specific patterns
+- `src/module/CONTEXT.md` - Module-specific patterns
 - `TODO.org` - Task-specific details
 
 ### Patterns Over Prescription
@@ -93,7 +93,7 @@ Complete all tasks from all TODO.org files in src/ until none with "TODO" status
 **Occasionally:**
 - `AGENTS.md` - Refine agent instructions
 - `.neolit/*.md` - Update as system evolves
-- Module `README.md` - Document new patterns that aren't fit high-level docs
+- Module `CONTEXT.md` - Document new patterns that aren't fit high-level docs
 - `SYSTEM.org` - Strategic planning updates
 
 **Rarely:**
@@ -110,7 +110,7 @@ Complete all tasks from all TODO.org files in src/ until none with "TODO" status
 | `.neolit/architecture.md` | System architecture documentation |
 | `.neolit/api.md` | API documentation |
 | `.neolit/adr/template.md` | Architecture decision records |
-| `src/module/README.md` | Module-level documentation |
+| `src/module/CONTEXT.md` | Module-level documentation |
 | `src/module/TODO.org` | Task tracking for modules |
 
 ---
