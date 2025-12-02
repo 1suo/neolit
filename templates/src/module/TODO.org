@@ -1,29 +1,26 @@
 #+title: [Module Name] - Tasks
 #+date: 2025-12-02
 
-* TODO [#A] Fix authentication bug in login endpoint :bug:api:
+* TODO [#A] Example active task :feature:api:
   <2025-12-02>
   
 *** Context for Agent
-    Error when user enters invalid credentials.
-    Affected: src/auth/login.js, User schema
+    Brief description of what needs to be done
+    Related files: src/module/file.js
+    Related schemas: User, Post
 
-* TODO [#B] Add user profile management feature :feature:api:ui:
+* INBOX [#B] Example frozen task :refactor:
   <2025-12-02>
   
 *** Context for Agent
-    Users need to update their profile info.
-    Related: User schema in .neolit/3-database/schemas.md
-    
-*** Requirements
-    - View profile page
-    - Edit name, email, avatar
-    - Validation and save
-    
-*** Acceptance Criteria
-    - [ ] User can view current profile
-    - [ ] User can edit fields with validation
-    - [ ] Changes persist to database
+    Not ready yet - waiting for decision/dependency
+    Will be moved to TODO when ready
+
+* BACKLOG [#C] Example low priority :docs:
+  <2025-12-02>
+  
+*** Context for Agent
+    Nice to have, maybe later
 
 * IN-PROGRESS [#A] Implement payment processing :feature:api:
   <2025-12-01>
@@ -64,11 +61,16 @@
 
 ** Org-mode Task Syntax for AI Agents
 
-*** Task format:
-    * STATUS [#PRIORITY] Description :tag1:tag2:
-      <YYYY-MM-DD>
-      
-    STATUS: TODO | IN-PROGRESS | WAITING | DONE
+*** Status format:
+    STATUS: TODO | INBOX | BACKLOG | IN-PROGRESS | WAITING | DONE
+    
+    - TODO: Active work, ready to assign
+    - INBOX: Frozen/not ready yet
+    - BACKLOG: Low priority, maybe later
+    - IN-PROGRESS: Currently working
+    - WAITING: Done, needs review
+    - DONE: Approved and closed
+    
     PRIORITY: A (high) | B (medium) | C (low)
     Date: <YYYY-MM-DD> format (angle brackets)
     Tags: Colon-separated :bug:api:ui:
