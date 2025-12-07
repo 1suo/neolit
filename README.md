@@ -42,10 +42,15 @@ project/
 │   │   ├── adr/                 # Architecture decisions
 │   │   ├── EXTENSION.md         # Customization guide
 │   │   └── [containers]/        # Domain-specific docs
-│   ├── templates/               # For creating entities
-│   │   ├── src/module/         # Module templates
-│   │   └── .neolit/            # Container/component templates
-│   └── VISION.org               # Human planning
+│   └── templates/               # For creating entities
+│       ├── src/module/         # Module templates
+│       └── .neolit/            # Container/component templates
+├── src/
+│   ├── CODE.md                  # Exact implementation details
+│   └── module/
+│       ├── CODE.md              # Module exact details
+│       └── TODO.org             # Module tasks
+├── TODO.org                     # Root tasks (sufficient, no VISION.org needed)
 └── .neolitrc                    # Config
 ```
 

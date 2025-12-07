@@ -2,252 +2,265 @@
 
 **Goal:** Document existing project to enable AI-driven development.
 
-**CRITICAL RULES:**
-1. **Ignore node_modules, .git, dist, build** - never analyze generated/dependency code
-2. **Document ONLY what exists** - no guessing, no assumptions, no hallucinating features
-3. **DO NOT create TODO tasks** - only create CONTEXT.md documentation
-4. **Extract from actual code** - trace through real files, functions, schemas
+**Type:** Project-wide analysis workflow (top-level orchestration)
+
+**Documentation principle:** 
+- **Architecture & Design** → `.neolit/docs/` (system overview, design patterns, workflows)
+- **Code & Implementation** → `CODE.md` files in source (exact structures, signatures, constraints)
 
 ---
 
-## Step 1: Understand System Structure
+## Critical Rules
 
-**Create:** `neolit/docs/system.md` (MUST exist)
-
-1. **Identify deployable units** (containers in C4):
-   ```bash
-   # Check structure - EXCLUDE dependencies
-   ls -la
-   tree -L 2 -I 'node_modules|.git|dist|build|vendor|target'
-   ```
-
-2. **Understand what exists:**
-   - Separate frontend/backend? Monolith?
-   - What databases/services?
-   - External integrations?
-
-3. **Document in `neolit/docs/system.md`:**
-   - If clear separation exists: Present as C4 containers (ONLY if it truly fits)
-     - Container 1: Web App (what it actually does, actual tech, actual interfaces)
-     - Container 2: API Server (what it actually does, actual tech, actual interfaces)
-     - Container 3: Database (what it actually stores)
-   - If monolith: Document actual directory structure as-is
-   - Key: Show *actual interfaces* between parts from real code
-
-**Example structure after analysis:**
-```
-neolit/
-├── docs/
-│   ├── system.md              # MUST - entry point
-│   ├── workflows.md           # Key user/data flows
-│   ├── 1-web-app/            # Optional - only if frontend exists
-│   │   └── components/
-│   │       ├── pages.md
-│   │       └── state.md
-│   ├── 2-api-server/         # Optional - only if backend exists
-│   │   └── components/
-│   │       ├── controllers.md
-│   │       ├── services.md
-│   │       └── auth.md
-│   └── 3-database/           # Optional - only if complex data
-│       └── schemas.md
-```
-
-**Note:** Create only what's needed. Simple projects might only need `system.md` + `workflows.md`.
+1. **Ignore dependencies:** node_modules, .git, dist, build, vendor, target
+2. **Document ONLY what exists** - no guessing, no assumptions
+3. **Extract from actual code** - trace through real files
+4. **Modular structure** - focused docs with cross-links, NOT monolithic files
+5. **Match codebase names** - directory names in docs match actual code structure
 
 ---
 
-## Step 2: Map Data Schemas
+## Workflow: 4 Phases
 
-**If project has complex data:** Create `neolit/docs/3-database/schemas.md`
-
-1. **Find actual schema definitions:**
-   - Check `models/`, `entities/`, `schema/` directories
-   - Read migrations files
-   - Read ORM/ODM model files
-   - **DO NOT** assume or infer - document what's in the code
-
-2. **Extract from actual code:**
-   - Entity names and attributes (from actual model classes)
-   - Relationships (from actual foreign keys/references)
-   - Validations (from actual validation decorators/functions)
-   - Keys and indexes (from actual schema definitions)
-
-3. **Document in schemas.md:**
-   ```markdown
-   ## User (from src/models/User.js)
-   - id: UUID (primary) 
-   - email: string (unique, required)
-   - passwordHash: string (required)
-   - createdAt: timestamp
-   
-   **Invariants:** (from actual code)
-   - Email must be unique (unique index in schema)
-   - Password must be hashed before storage (pre-save hook)
-   
-   **Relations:** (from actual foreign keys)
-   - User has many Posts (userId foreign key in Post model)
-   ```
-
-**If simple data:** Document in `system.md` instead.
+Execute phases sequentially. DO NOT skip ahead.
 
 ---
 
-## Step 3: Document Key Workflows
+### Phase 1: Analyze Structure (Read-Only)
 
-**Create:** `neolit/docs/workflows.md`
+**Goal:** Understand what exists without creating any files yet.
 
-1. **Identify 2-3 critical paths by reading code:**
-   - User registration/login (trace actual route handlers)
-   - Main feature (trace actual implementation)
-
-2. **Trace through actual code files:**
-   - Entry point (actual route file path)
-   - Actual functions/services called (grep for function names)
-   - Actual data accessed (check actual queries)
-   - Actual response format
-
-3. **Document as sequence from real code:**
-   ```markdown
-   ## User Login Workflow (from src/api/auth.js)
-   
-   1. POST /api/auth/login (defined in src/routes/auth.js:15)
-      - Input: email, password (validated by authSchema)
-      - Controller: src/api/auth.js → validateCredentials() line 42
-      
-   2. Service validates (src/services/auth.js:28):
-      - Fetch user from DB (UserRepository.findByEmail)
-      - Compare password hash (bcrypt.compare)
-      
-   3. Generate JWT token (src/utils/jwt.js:10):
-      - Include userId, email in claims
-      - Sign with JWT_SECRET from .env
-      
-   4. Return token to client (200 response with {token, user})
-   ```
-
-**Purpose:** Agents understand actual system behavior from real code paths.
-
----
-
-## Step 4: Create Module Contexts
-
-**For each major feature area found in codebase:**
-
-1. **Identify logical modules from actual directories:**
-   - Auth (if src/auth/ or similar exists)
-   - Users (if src/users/ or similar exists)
-   - Posts (if src/posts/ or similar exists)
-
-2. **Find where code actually lives:**
-   ```bash
-   # Find actual auth implementation
-   find src -type f -name "*auth*" -not -path "*/node_modules/*"
-   grep -r "class.*Auth" src/ --exclude-dir=node_modules
-   ```
-
-3. **Add CONTEXT.md to existing directories:**
-   ```bash
-   # In actual existing directory found above
-   cp neolit/module-templates/CONTEXT.md src/auth/
-   ```
-
-4. **Fill CONTEXT.md by reading actual files:**
-   - **Purpose:** What this module actually does (from reading the code)
-   - **Key Files:** List actual important files with brief purpose
-   - **Related Schemas:** Link to actual entities used (check imports)
-   - **Related APIs:** List actual endpoints (check route definitions)
-   - **Patterns:** How code is actually organized (check file structure)
-   - **Data Flow:** For key operations (trace through actual functions)
-   - **Constraints:** Extract from actual validation code
-
-5. **Create empty TODO.org files in those directories:**
-   ```bash
-   touch src/auth/TODO.org
-   ```
-
----
-
-## Step 5: Extract Architectural Decisions
-
-**Create ADRs for decisions found in code:**
-
+**Actions:**
 ```bash
-# In neolit/docs/adr/
-cp neolit/docs/adr/template.md neolit/docs/adr/0001-database-choice.md
+# Explore codebase (exclude dependencies)
+ls -la
+find . -type d -name "src" -o -name "server" -o -name "client" | head -20
+find . -name "package.json" -o -name "*.config.*" | head -10
+
+# Identify patterns
+grep -r "export.*function\|export.*class" --include="*.js" --include="*.ts" | head -20
 ```
 
-**Reverse-engineer from actual code:**
-- Database choice (check package.json, config files)
-- Auth approach (check actual auth implementation)
-- API style (check actual endpoint patterns)
-- State management (check actual frontend store/state code)
+**Output:** Mental model of:
+- Containers (deployable units): frontend? backend? database?
+- Major modules per container
+- Technology stack
+- Entry points
 
-**Document what you find, not what you assume:**
-- "Uses JWT tokens (jwt.sign in src/utils/jwt.js)"
-- "PostgreSQL with Sequelize ORM (sequelize config in src/db/)"
-- "REST API (express routes in src/routes/)"
+**Do NOT create files yet. Just understand the structure.**
 
 ---
 
-## Step 6: Fill Project Constraints
+### Phase 2: Plan Structure (Output for Verification)
 
-**In `neolit/prompts/BASE.md` → Key Constraints section:**
+**Goal:** Design documentation structure matching codebase.
 
-Replace examples with actual extracted invariants from code:
-```markdown
-### Data Constraints (from actual schemas)
-- User.email MUST be unique (unique index in User model)
-- Password MUST be hashed with bcrypt (pre-save hook)
-
-### Code Patterns (from actual codebase)
-- MUST use UserRepository for DB access (pattern in src/repositories/)
-- MUST validate with Joi schemas (validation pattern in src/validators/)
-- MUST handle errors with AppError class (src/utils/errors.js)
-
-### API Conventions (from actual endpoints)
-- MUST return 401 for unauthenticated requests
-- MUST return {error: string} format for errors
-- MUST use Bearer token authentication
+**Output plan in this format:**
 ```
+DOCUMENTATION STRUCTURE PLAN:
 
-**Extract from:**
-- Actual validation code
-- Actual schema constraints
-- Actual patterns seen in multiple files
-- Actual error handling code
+neolit/docs/
+├── system.md (~150 lines) - Overview with links
+├── workflows.md (~300 lines) - Key flows
+├── {container1_actual_name}/          # Match actual directory name
+│   ├── container.md (~80 lines)
+│   └── components/
+│       ├── {component1}.md (~250 lines) - Architecture/design
+│       ├── {component2}.md (~250 lines) - Architecture/design
+│       └── {component3}.md (~250 lines) - Architecture/design
+├── {container2_actual_name}/          # Match actual directory name
+│   ├── container.md (~80 lines)
+│   └── components/
+│       ├── {component1}.md (~250 lines) - Architecture/design
+│       └── {component2}.md (~250 lines) - Architecture/design
+└── adr/
+    ├── 0001-{decision}.md
+    └── 0002-{decision}.md
+
+Source Code (exact implementation details):
+├── {container1}/src/CODE.md → exact structures, entry point
+├── {container1}/src/{module}/CODE.md → exact module details
+├── {container2}/{module}/CODE.md → exact module details
+
+NO VISION.org needed - root TODO.org is sufficient
+
+EXAMPLE (do not use numbers like 1-web-app):
+If codebase has /client and /server:
+  → neolit/docs/client/ (NOT 1-web-app)
+  → neolit/docs/server/ (NOT 2-api-server)
+  → client/src/CODE.md (exact implementation)
+  → server/src/CODE.md (exact implementation)
+```
 
 ---
 
-## Step 7: Clean Up Structure
+### Phase 3: Create Structure (Directories + Empty Files)
 
-**After documenting from code:**
+**Goal:** Create directory tree and empty markdown files with headers only.
 
-1. **Remove unused template folders:**
-   - If no separate frontend: Delete `neolit/docs/1-web-app/`
-   - If simple data: Delete `neolit/docs/3-database/`, document in `system.md`
-   - If no complex API: Delete `neolit/docs/2-api-server/`
+**Actions:**
+```bash
+# Create directories
+mkdir -p neolit/docs/{container}/components
 
-2. **Create only what's needed:**
-   - If API docs needed and complex: Create `neolit/docs/2-api-server/components/endpoints.md`
-   - If UI patterns exist and complex: Create `neolit/docs/1-web-app/components/patterns.md`
+# Create empty files with headers
+cat > neolit/docs/system.md << 'HEADER'
+# System Architecture
 
-**Adapt structure to match actual project, don't force templates.**
+## Containers
+
+## Data Flow
+
+## Related
+HEADER
+
+cat > neolit/docs/{container}/container.md << 'HEADER'
+# {Container} Container
+
+## Purpose
+
+## Components
+
+## Technology Stack
+
+## Interfaces
+
+## Related
+HEADER
+```
+
+**Output:**
+```
+Created structure:
+✓ neolit/docs/system.md
+✓ neolit/docs/{container}/container.md
+✓ neolit/docs/{container}/components/{name}.md (x4)
+```
+
+---
+
+### Phase 4: Fill Content (Module by Module)
+
+**Goal:** Document each module using atomic guide.
+
+**For EACH module, follow prompt from this file:** [DOCUMENT_MODULE.md](./DOCUMENT_MODULE.md)
+
+**Order:**
+1. Fill `system.md` (overview, links to containers)
+2. Fill `workflows.md` (2-3 key flows)
+3. For each container:
+   - Fill `container.md`
+   - For each component in container:
+     - Follow DOCUMENT_MODULE.md guide
+     - Check: file < 300 lines
+     - Check: cross-links added
+     - Check: source CONTEXT.md created (brief)
+
+**Checkpoint after each module:**
+- [ ] Component doc < 300 lines
+- [ ] Cross-links to related docs
+- [ ] Source CONTEXT.md links to neolit/docs
+- [ ] All references use correct paths
+
+---
+
+## Phase 5: Verify Navigation
+
+**Goal:** Ensure all docs are discoverable and linked.
+
+**Test paths:**
+```
+Start: system.md
+  → {container}/container.md
+    → components/{name}.md (architecture)
+      → CODE.md (exact implementation)
+      → related component docs
+      → ADRs
+      → workflows
+      
+Test: Can you reach EVERY doc from system.md?
+Test: Are all cross-links valid?
+Test: Do CODE.md files have exact details?
+Test: Do architecture docs link to CODE.md?
+```
+
+**If any doc is unreachable or has broken links: FIX before completing.**
+
+---
+
+## Common Mistakes to Avoid
+
+❌ **Creating monolithic files** (500+ lines)
+✅ Create focused, linked files (< 300 lines)
+
+❌ **Using abstract names** (1-web-app, api-server)
+✅ Use actual codebase names (client, server)
+
+❌ **Putting everything in CODE.md**
+✅ Architecture in neolit/docs, exact details in CODE.md
+
+❌ **Vague CODE.md without exact types**
+✅ Exact data structures, signatures, constraints in CODE.md
+
+❌ **Putting everything in source CODE.md**
+✅ Architecture in neolit/docs, exact details in CODE.md
+
+❌ **Vague CODE.md without exact types**
+✅ Exact data structures, signatures, constraints in CODE.md
+
+❌ **Writing docs before planning structure**
+✅ Plan → Create structure → Fill content
+
+❌ **Skipping cross-links**
+✅ Add links to related docs as you write
 
 ---
 
 ## Output Checklist
 
-After analysis from actual code, verify:
-- [ ] `neolit/docs/system.md` exists and describes actual structure
-- [ ] `neolit/docs/workflows.md` has 2-3 actual key flows traced through code
-- [ ] Schemas documented from actual model files
-- [ ] Each major module has `CONTEXT.md` (in existing directories)
-- [ ] `neolit/prompts/BASE.md` Key Constraints filled from actual code patterns
-- [ ] ADRs created for decisions found in code
-- [ ] Unused template folders removed
-- [ ] NO TODO.org files created (agent doesn't create tasks)
-- [ ] NO features documented that don't exist in code
-- [ ] EVERYTHING extracted from actual source files, not assumptions
+After all phases complete:
 
-**Goal:** Documentation accurately reflects real codebase, enables consistent AI work.
+- [ ] `neolit/docs/system.md` exists (< 100 lines, links to containers)
+- [ ] Container directories match actual codebase names
+- [ ] Each container has `container.md` (< 100 lines)
+- [ ] Component docs exist (< 300 lines each, architecture/design)
+- [ ] CODE.md files exist in source (< 100 lines, exact implementation)
+- [ ] All docs have cross-links to related docs
+- [ ] CODE.md files have exact data structures and signatures
+- [ ] Architecture docs link to CODE.md
+- [ ] CODE.md links to architecture docs
+- [ ] Navigation works: system.md → containers → components → CODE.md
+- [ ] ADRs created for key decisions
+- [ ] 2-3 workflows documented
+- [ ] NO VISION.org created (root TODO.org is sufficient)
+- [ ] NO hallucinated features
+
+---
+
+## For Re-Running on Existing Project
+
+If documentation already exists but needs updates:
+
+1. **Check current structure:**
+   ```bash
+   ls neolit/docs/
+   ```
+
+2. **Identify gaps:**
+   - Missing containers?
+   - Missing components?
+   - Monolithic files to split?
+
+3. **Use DOCUMENT_MODULE.md to fill gaps:**
+   - Document new modules
+   - Split oversized files
+   - Add missing cross-links
+
+4. **Verify navigation still works**
+
+---
+
+## See Also
+
+- **[DOCUMENT_MODULE.md](./DOCUMENT_MODULE.md)** - Atomic guide for documenting individual modules
+- **[BASE.md](./BASE.md)** - General guidelines for AI agents working on this project
