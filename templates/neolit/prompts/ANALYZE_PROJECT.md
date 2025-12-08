@@ -1,266 +1,142 @@
 # Analyze Project for Neolit Integration
 
-**Goal:** Document existing project to enable AI-driven development.
+**Goal:** Document existing project with NEOLIT.md files.
 
-**Type:** Project-wide analysis workflow (top-level orchestration)
+---
 
-**Documentation principle:** 
-- **Architecture & Design** → `.neolit/docs/` (system overview, design patterns, workflows)
-- **Code & Implementation** → `CODE.md` files in source (exact structures, signatures, constraints)
+## Prerequisites
+
+**Read FIRST:**
+
+1. **`neolit/standard/levels.md`** - Understand C4 levels and when to use
+2. **`neolit/standard/templates/`** - See all templates (system, container, component, code)
 
 ---
 
 ## Critical Rules
 
-1. **Ignore dependencies:** node_modules, .git, dist, build, vendor, target
-2. **Document ONLY what exists** - no guessing, no assumptions
-3. **Extract from actual code** - trace through real files
-4. **Modular structure** - focused docs with cross-links, NOT monolithic files
-5. **Match codebase names** - directory names in docs match actual code structure
+1. Ignore: node_modules, .git, dist, build, vendor
+2. Document ONLY what exists (no guessing)
+3. Extract from actual code (trace through real files)
+4. Match codebase structure (NEOLIT.md placement follows code)
+5. Use C4 levels correctly (see `neolit/standard/levels.md`)
 
 ---
 
-## Workflow: 4 Phases
-
-Execute phases sequentially. DO NOT skip ahead.
-
----
+## Workflow: 5 Phases
 
 ### Phase 1: Analyze Structure (Read-Only)
 
-**Goal:** Understand what exists without creating any files yet.
-
-**Actions:**
 ```bash
-# Explore codebase (exclude dependencies)
 ls -la
-find . -type d -name "src" -o -name "server" -o -name "client" | head -20
+find . -type d -name "src" -o -name "api" -o -name "server" | head -20
 find . -name "package.json" -o -name "*.config.*" | head -10
-
-# Identify patterns
 grep -r "export.*function\|export.*class" --include="*.js" --include="*.ts" | head -20
 ```
 
-**Output:** Mental model of:
-- Containers (deployable units): frontend? backend? database?
-- Major modules per container
+**Identify:**
+- Separately deployable units (containers)?
+- Functional components?
 - Technology stack
 - Entry points
 
-**Do NOT create files yet. Just understand the structure.**
+**Key question:** Single deployable or multiple?
+
+**Don't create files yet.**
 
 ---
 
 ### Phase 2: Plan Structure (Output for Verification)
 
-**Goal:** Design documentation structure matching codebase.
-
-**Output plan in this format:**
+**For single deployable:**
 ```
-DOCUMENTATION STRUCTURE PLAN:
-
-neolit/docs/
-├── system.md (~150 lines) - Overview with links
-├── workflows.md (~300 lines) - Key flows
-├── {container1_actual_name}/          # Match actual directory name
-│   ├── container.md (~80 lines)
-│   └── components/
-│       ├── {component1}.md (~250 lines) - Architecture/design
-│       ├── {component2}.md (~250 lines) - Architecture/design
-│       └── {component3}.md (~250 lines) - Architecture/design
-├── {container2_actual_name}/          # Match actual directory name
-│   ├── container.md (~80 lines)
-│   └── components/
-│       ├── {component1}.md (~250 lines) - Architecture/design
-│       └── {component2}.md (~250 lines) - Architecture/design
-└── adr/
-    ├── 0001-{decision}.md
-    └── 0002-{decision}.md
-
-Source Code (exact implementation details):
-├── {container1}/src/CODE.md → exact structures, entry point
-├── {container1}/src/{module}/CODE.md → exact module details
-├── {container2}/{module}/CODE.md → exact module details
-
-NO VISION.org needed - root TODO.org is sufficient
-
-EXAMPLE (do not use numbers like 1-web-app):
-If codebase has /client and /server:
-  → neolit/docs/client/ (NOT 1-web-app)
-  → neolit/docs/server/ (NOT 2-api-server)
-  → client/src/CODE.md (exact implementation)
-  → server/src/CODE.md (exact implementation)
+PLAN:
+Root: NEOLIT.md (SYSTEM)
+Components: src/auth/NEOLIT.md (COMPONENT)
+            src/user/NEOLIT.md (COMPONENT)
+Skip CONTAINER level (single deployable)
 ```
+
+**For multi-deployable:**
+```
+PLAN:
+Root: NEOLIT.md (SYSTEM)
+Containers: api/NEOLIT.md (CONTAINER - deployable)
+            worker/NEOLIT.md (CONTAINER - deployable)
+Components: api/auth/NEOLIT.md (COMPONENT)
+            api/user/NEOLIT.md (COMPONENT)
+```
+
+**See:** `neolit/standard/levels.md` for level usage criteria
 
 ---
 
-### Phase 3: Create Structure (Directories + Empty Files)
+### Phase 3: Create Structure (Empty Files)
 
-**Goal:** Create directory tree and empty markdown files with headers only.
+Create NEOLIT.md with section headers from templates.
 
-**Actions:**
-```bash
-# Create directories
-mkdir -p neolit/docs/{container}/components
-
-# Create empty files with headers
-cat > neolit/docs/system.md << 'HEADER'
-# System Architecture
-
-## Containers
-
-## Data Flow
-
-## Related
-HEADER
-
-cat > neolit/docs/{container}/container.md << 'HEADER'
-# {Container} Container
-
-## Purpose
-
-## Components
-
-## Technology Stack
-
-## Interfaces
-
-## Related
-HEADER
-```
-
-**Output:**
-```
-Created structure:
-✓ neolit/docs/system.md
-✓ neolit/docs/{container}/container.md
-✓ neolit/docs/{container}/components/{name}.md (x4)
-```
+**Use:** `neolit/standard/templates/` for section structure
 
 ---
 
-### Phase 4: Fill Content (Module by Module)
-
-**Goal:** Document each module using atomic guide.
-
-**For EACH module, follow prompt from this file:** [DOCUMENT_MODULE.md](./DOCUMENT_MODULE.md)
+### Phase 4: Fill Content (Level by Level)
 
 **Order:**
-1. Fill `system.md` (overview, links to containers)
-2. Fill `workflows.md` (2-3 key flows)
-3. For each container:
-   - Fill `container.md`
-   - For each component in container:
-     - Follow DOCUMENT_MODULE.md guide
-     - Check: file < 300 lines
-     - Check: cross-links added
-     - Check: source CONTEXT.md created (brief)
+1. SYSTEM level (root NEOLIT.md)
+2. CONTAINER level (if multi-deployable)
+3. COMPONENT level (most detailed)
+4. CODE level (if needed)
 
-**Checkpoint after each module:**
-- [ ] Component doc < 300 lines
-- [ ] Cross-links to related docs
-- [ ] Source CONTEXT.md links to neolit/docs
-- [ ] All references use correct paths
+**For each level:**
+- Use template from `neolit/standard/templates/`
+- Extract from actual code
+- Respect size limits
+- Include all required sections
+
+**Checkpoint after each level:**
+- [ ] **Level:** marker correct
+- [ ] Required sections present
+- [ ] Size within limits
+- [ ] Cross-links added
 
 ---
 
-## Phase 5: Verify Navigation
-
-**Goal:** Ensure all docs are discoverable and linked.
+### Phase 5: Verify Navigation
 
 **Test paths:**
-```
-Start: system.md
-  → {container}/container.md
-    → components/{name}.md (architecture)
-      → CODE.md (exact implementation)
-      → related component docs
-      → ADRs
-      → workflows
-      
-Test: Can you reach EVERY doc from system.md?
-Test: Are all cross-links valid?
-Test: Do CODE.md files have exact details?
-Test: Do architecture docs link to CODE.md?
-```
+- Can reach every NEOLIT.md from root?
+- All cross-links valid?
+- All **Level:** markers correct?
+- CONTAINER used only for deployable units?
 
-**If any doc is unreachable or has broken links: FIX before completing.**
+**Use:** `neolit/standard/validation.md` for complete checklist
 
 ---
 
-## Common Mistakes to Avoid
+## Common Mistakes
 
-❌ **Creating monolithic files** (500+ lines)
-✅ Create focused, linked files (< 300 lines)
-
-❌ **Using abstract names** (1-web-app, api-server)
-✅ Use actual codebase names (client, server)
-
-❌ **Putting everything in CODE.md**
-✅ Architecture in neolit/docs, exact details in CODE.md
-
-❌ **Vague CODE.md without exact types**
-✅ Exact data structures, signatures, constraints in CODE.md
-
-❌ **Putting everything in source CODE.md**
-✅ Architecture in neolit/docs, exact details in CODE.md
-
-❌ **Vague CODE.md without exact types**
-✅ Exact data structures, signatures, constraints in CODE.md
-
-❌ **Writing docs before planning structure**
-✅ Plan → Create structure → Fill content
-
-❌ **Skipping cross-links**
-✅ Add links to related docs as you write
+❌ src/ as CONTAINER → ✅ Skip CONTAINER for single deployable
+❌ Missing **Level:** marker → ✅ Always include
+❌ Wrong sections → ✅ Use neolit/standard/templates/
+❌ Oversized files → ✅ Respect limits
+❌ Hallucinated features → ✅ Document only what exists
 
 ---
 
 ## Output Checklist
 
-After all phases complete:
-
-- [ ] `neolit/docs/system.md` exists (< 100 lines, links to containers)
-- [ ] Container directories match actual codebase names
-- [ ] Each container has `container.md` (< 100 lines)
-- [ ] Component docs exist (< 300 lines each, architecture/design)
-- [ ] CODE.md files exist in source (< 100 lines, exact implementation)
-- [ ] All docs have cross-links to related docs
-- [ ] CODE.md files have exact data structures and signatures
-- [ ] Architecture docs link to CODE.md
-- [ ] CODE.md links to architecture docs
-- [ ] Navigation works: system.md → containers → components → CODE.md
-- [ ] ADRs created for key decisions
-- [ ] 2-3 workflows documented
-- [ ] NO VISION.org created (root TODO.org is sufficient)
+- [ ] Root NEOLIT.md (SYSTEM, 60-100 lines)
+- [ ] Container NEOLIT.md if multi-deployable (60-80 lines)
+- [ ] Component NEOLIT.md for each component (100-200 lines)
+- [ ] CODE level only where needed (30-80 lines)
+- [ ] All have **Level:** marker
+- [ ] All cross-linked
+- [ ] Navigation works
 - [ ] NO hallucinated features
 
 ---
 
-## For Re-Running on Existing Project
-
-If documentation already exists but needs updates:
-
-1. **Check current structure:**
-   ```bash
-   ls neolit/docs/
-   ```
-
-2. **Identify gaps:**
-   - Missing containers?
-   - Missing components?
-   - Monolithic files to split?
-
-3. **Use DOCUMENT_MODULE.md to fill gaps:**
-   - Document new modules
-   - Split oversized files
-   - Add missing cross-links
-
-4. **Verify navigation still works**
-
----
-
-## See Also
-
-- **[DOCUMENT_MODULE.md](./DOCUMENT_MODULE.md)** - Atomic guide for documenting individual modules
-- **[BASE.md](./BASE.md)** - General guidelines for AI agents working on this project
+**Templates:** `neolit/standard/templates/`
+**Level guide:** `neolit/standard/levels.md`
+**Validation:** `neolit/standard/validation.md`
+**Document individual component:** `DOCUMENT_COMPONENT.md`

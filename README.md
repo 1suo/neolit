@@ -1,6 +1,6 @@
 # Neolit
 
-AI-driven development scaffolding. Document once, develop consistently.
+AI-driven development system. Document once with NEOLIT.md, develop consistently.
 
 ## Installation
 
@@ -11,7 +11,6 @@ npm install -g neolit
 ## Quick Start
 
 ```bash
-# Initialize in your project
 cd your-project
 neolit init
 
@@ -19,66 +18,93 @@ neolit init
 # Follow: neolit/prompts/ANALYZE_PROJECT.md
 ```
 
-## Commands
-
-- `neolit init` - Initialize `.neolit/` folder with templates
-- `neolit analyze` - Show prompt for AI to analyze existing project
-- `neolit update` - Update core prompts (preserves your docs)
-- `neolit clean --force` - Remove all neolit files
-
 ## Structure
 
+**Single deployable application:**
 ```
 project/
-├── .neolit/
-│   ├── prompts/
-│   │   ├── BASE.md              # Core agent instructions
-│   │   ├── ANALYZE_PROJECT.md
-│   │   ├── BUG.md
-│   │   └── FEATURE.md
-│   ├── docs/
-│   │   ├── system.md            # MUST - system overview
-│   │   ├── workflows.md         # Key flows
-│   │   ├── adr/                 # Architecture decisions
-│   │   ├── EXTENSION.md         # Customization guide
-│   │   └── [containers]/        # Domain-specific docs
-│   └── templates/               # For creating entities
-│       ├── src/module/         # Module templates
-│       └── .neolit/            # Container/component templates
-├── src/
-│   ├── CODE.md                  # Exact implementation details
-│   └── module/
-│       ├── CODE.md              # Module exact details
-│       └── TODO.org             # Module tasks
-├── TODO.org                     # Root tasks (sufficient, no VISION.org needed)
-└── .neolitrc                    # Config
+├── neolit/prompts/          # Agent instructions
+├── NEOLIT.md                 # System architecture (SYSTEM level)
+└── src/
+    ├── auth/
+    │   ├── NEOLIT.md         # Component docs (COMPONENT level)
+    │   ├── TODO.org
+    │   └── *.js
+    └── user/
+        └── NEOLIT.md         # Component docs (COMPONENT level)
 ```
+
+**Multi-deployable (microservices):**
+```
+project/
+├── neolit/prompts/          # Agent instructions
+├── NEOLIT.md                 # System architecture (SYSTEM level)
+├── api/
+│   ├── NEOLIT.md             # Container (CONTAINER level - deployable unit)
+│   └── auth/
+│       ├── NEOLIT.md         # Component (COMPONENT level)
+│       └── TODO.org
+├── worker/
+│   ├── NEOLIT.md             # Container (CONTAINER level - deployable unit)
+│   └── email/
+│       └── NEOLIT.md         # Component (COMPONENT level)
+└── TODO.org
+```
+
+## Documentation Levels
+
+**NEOLIT.md files use C4 model:**
+
+- **SYSTEM** (root) - System overview, workflows (always)
+- **CONTAINER** (api/, worker/) - Separately deployable unit (optional, only for microservices)
+- **COMPONENT** (src/auth/) - Architecture + implementation (always)
+- **CODE** (src/auth/utils/) - Specific functions (optional if complex)
+
+**Each NEOLIT.md starts with:** `**Level:** SYSTEM | CONTAINER | COMPONENT | CODE`
+
+**CONTAINER level:**
+- Use ONLY for separately deployable units (API server, worker service, frontend app)
+- Skip for single deployable applications
+- Skip for source directories (src/)
 
 ## Philosophy
 
-**Code serves workflows built on architectural foundations.**
+**One filename everywhere, content by level:**
 
-1. **Document foundations first**: Core schemas, decisions, workflows
-2. **Layered context**: Task → Module → System → Global
-3. **Dynamic composition**: AI reads only what's needed
-4. **Close to code**: Context lives with code
+1. **NEOLIT.md at every level** - Simple, scales naturally
+2. **C4 levels determine content** - Clear structure for each level
+3. **CONTAINER optional** - Only for separately deployable units
+4. **Progressive detail** - System → Container (if applicable) → Component → Code
+5. **Documentation-first** - Agents verify docs before coding
+6. **Mandatory rules** - Enforced patterns and constraints
 
-Task → prompts → docs → code
+## Workflow
+
+```
+Task: Implement feature X
+
+Agent workflow:
+1. Verify NEOLIT.md exists (root + component levels)
+2. Read NEOLIT.md (SYSTEM) → system overview
+3. Read NEOLIT.md (COMPONENT) → exact structures, constraints
+4. Implement following exact structures
+5. Update NEOLIT.md (COMPONENT level) with changes
+6. Move task to WAITING for human review
+```
+
+## Commands
+
+- `neolit init` - Initialize `neolit/prompts/`
+- `neolit analyze` - Show prompt for AI to analyze project
+- `neolit update` - Update prompts (preserves NEOLIT.md files)
+- `neolit clean --force` - Remove all neolit files
 
 ## Publishing (Maintainers)
 
 ```bash
-npm login
 npm version patch  # or minor/major
 npm publish
 git push --follow-tags
-```
-
-Users update with:
-```bash
-npm install -g neolit@latest
-cd project
-neolit update  # Updates prompts, preserves docs
 ```
 
 ## Integration

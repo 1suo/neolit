@@ -8,7 +8,7 @@ cd /path/to/project
 ```
 
 This creates:
-- `neolit/` - All scaffolding
+- `neolit/prompts/` - Agent instructions
 - `.neolitrc` - Config
 
 ## Analyze Project
@@ -20,17 +20,22 @@ Use neolit/prompts/ANALYZE_PROJECT.md to document this codebase.
 ```
 
 AI will:
-1. Analyze structure, patterns, workflows
-2. Create neolit/docs/system.md (required)
-3. Create architecture docs in neolit/docs/
-4. Create CODE.md files in source directories with exact implementation details
-5. Preserve existing project structure
+1. Analyze structure, patterns
+2. Determine if single or multi-deployable
+3. Create NEOLIT.md files at appropriate levels:
+   - Root: SYSTEM level (architecture, workflows)
+   - Containers: CONTAINER level (only for multi-deployable: api/, worker/, frontend/)
+   - Components: COMPONENT level (detailed architecture + implementation)
+4. Preserve existing project structure
 
 ## Review
 
-1. Check neolit/docs/system.md
-2. Review other docs created
-3. Refine as needed
+1. Check root `NEOLIT.md` (SYSTEM level)
+2. Check container `NEOLIT.md` files (CONTAINER level - if multi-deployable)
+3. Check component `NEOLIT.md` files (COMPONENT level)
+4. Verify **Level:** markers correct
+5. Verify required sections present
+6. Refine as needed
 
 ## Workflow
 
@@ -40,38 +45,72 @@ AI will:
 * TODO Fix user login timeout      :bug:api:
 ```
 
+**Single deployable:**
 AI reads (in order):
-1. neolit/prompts/BASE.md (always)
-2. neolit/prompts/BUG.md (from :bug:)
-3. src/api/CODE.md (exact implementation details)
-4. neolit/docs/api.md (architecture, from :api: tag, if exists)
+1. `neolit/prompts/BASE.md` (always)
+2. `neolit/prompts/BUG.md` (from :bug:)
+3. `NEOLIT.md` (root, SYSTEM level)
+4. `src/auth/NEOLIT.md` (COMPONENT level - exact structures)
+
+**Multi-deployable:**
+AI reads (in order):
+1. `neolit/prompts/BASE.md` (always)
+2. `neolit/prompts/BUG.md` (from :bug:)
+3. `NEOLIT.md` (root, SYSTEM level)
+4. `api/NEOLIT.md` (CONTAINER level)
+5. `api/auth/NEOLIT.md` (COMPONENT level - exact structures)
 
 ### Status Management
 
 - `TODO` - Work on now
-- `HOLD` - Backlog/blocked
-- `DONE` - Complete
-- `CANCELLED` - Won't do
+- `PROGRESS` - Currently working
+- `WAITING` - Done, needs human review
+- `DONE` - Approved and closed
 
-Agents: work on TODO, update to DONE
+**Agents:** Work on TODO, update to WAITING (not DONE)
 
-### Example
+### Example (Single Deployable)
 
 ```
 You: "Work on src/auth/TODO.org first task"
 
 AI:
 1. Reads neolit/prompts/BASE.md
-2. Reads src/auth/TODO.org
-3. Sees :feature:api: tags
-4. Reads neolit/prompts/FEATURE.md
-5. Reads src/auth/CODE.md (exact structures, constraints)
-6. Reads neolit/docs/api.md (architecture)
-7. Implements following exact data structures
-8. Updates TODO → WAITING
-9. Updates CODE.md if structures changed
+2. Sees :feature: tag → reads FEATURE.md
+3. Phase 0: Verifies NEOLIT.md exists
+   - Checks root NEOLIT.md (SYSTEM)
+   - Checks src/auth/NEOLIT.md (COMPONENT)
+4. Phase 1: Reads NEOLIT.md files
+   - Extracts exact data structures
+   - Notes constraints (MUST/MUST NOT)
+5. Implements following exact structures
+6. Updates src/auth/NEOLIT.md (COMPONENT level)
+7. Updates TODO → WAITING
+8. Adds agent notes
+```
+
+### Example (Multi-Deployable)
+
+```
+You: "Work on api/auth/TODO.org first task"
+
+AI:
+1. Reads neolit/prompts/BASE.md
+2. Sees :feature: tag → reads FEATURE.md
+3. Phase 0: Verifies NEOLIT.md exists
+   - Checks root NEOLIT.md (SYSTEM)
+   - Checks api/NEOLIT.md (CONTAINER)
+   - Checks api/auth/NEOLIT.md (COMPONENT)
+4. Phase 1: Reads NEOLIT.md files
+   - System overview
+   - Container deployment info
+   - Component exact structures
+5. Implements following exact structures
+6. Updates api/auth/NEOLIT.md (COMPONENT level)
+7. Updates TODO → WAITING
+8. Adds agent notes
 ```
 
 ---
 
-**System adapts to your structure.**
+**System adapts to your structure. NEOLIT.md scales naturally.**
