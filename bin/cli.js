@@ -50,7 +50,7 @@ function init() {
   // Handle git tracking
   if (choice === 'n') {
     const gitignorePath = path.join(targetDir, '.gitignore');
-    const ignoreEntry = '\n# Neolit AI documentation\nneolit/\n.neolit.json\n';
+    const ignoreEntry = '\n# Neolit AI documentation\nneolit/\n.neolit.json\n**/NEOLIT.md\n**/TODO.org\n**/TODO.org_archive\n';
     
     if (fs.existsSync(gitignorePath)) {
       fs.appendFileSync(gitignorePath, ignoreEntry);
@@ -63,11 +63,11 @@ function init() {
   console.log('✓ Neolit initialized');
   console.log('');
   console.log('Next steps:');
-  console.log('1. Fill neolit/VISION.org with project vision');
+  console.log('1. Create TODO.org in project root');
   console.log('2. Run: npx @anthropic-ai/claude-cli');
-  console.log('3. Paste: @neolit/prompts/ANALYZE_PROJECT.md');
+  console.log('3. Use: neolit/prompts/ANALYZE_PROJECT.md');
   console.log('');
-  console.log('Docs: neolit/docs/system.md');
+  console.log('Docs will be in NEOLIT.md files across project');
 }
 
 function update() {

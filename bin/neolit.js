@@ -39,8 +39,7 @@ program
     // Copy core files
     const coreToCopy = [
       'INTEGRATION.md',
-      'README.md',
-      'VISION.org'
+      'README.md'
     ];
 
     coreToCopy.forEach(file => {
@@ -66,20 +65,19 @@ program
       console.log('✓ Created prompts/');
     }
 
-    // Copy docs templates
-    const docsDir = path.join(neolitDir, 'docs');
-    fs.mkdirSync(docsDir, { recursive: true });
-    const docsSrc = path.join(templatesDir, 'docs');
-    if (fs.existsSync(docsSrc)) {
-      fs.cpSync(docsSrc, docsDir, { recursive: true });
-      console.log('✓ Created docs/');
+    // Copy standard directory
+    const standardDir = path.join(neolitDir, 'standard');
+    const standardSrc = path.join(templatesDir, 'standard');
+    if (fs.existsSync(standardSrc)) {
+      fs.cpSync(standardSrc, standardDir, { recursive: true });
+      console.log('✓ Created standard/');
     }
 
-    // Copy module templates
-    const modulesDir = path.join(neolitDir, 'templates');
-    const modulesSrc = path.join(templatesDir, 'templates');
-    if (fs.existsSync(modulesSrc)) {
-      fs.cpSync(modulesSrc, modulesDir, { recursive: true });
+    // Copy templates
+    const templatesTargetDir = path.join(neolitDir, 'templates');
+    const templatesSource = path.join(templatesDir, 'templates');
+    if (fs.existsSync(templatesSource)) {
+      fs.cpSync(templatesSource, templatesTargetDir, { recursive: true });
       console.log('✓ Created templates/');
     }
 
@@ -90,13 +88,14 @@ program
         '\n# Neolit AI documentation',
         'neolit/',
         '.neolit.json',
-        '**/CONTEXT.md',
-        '**/TODO.org'
+        '**/NEOLIT.md',
+        '**/TODO.org',
+        '**/TODO.org_archive'
       ].join('\n') + '\n';
 
       if (fs.existsSync(gitignorePath)) {
         const content = fs.readFileSync(gitignorePath, 'utf-8');
-        if (!content.includes('neolit/')) {
+        if (!content.includes('neolit/') && !content.includes('NEOLIT.md')) {
           fs.appendFileSync(gitignorePath, gitignoreEntries);
           console.log('✓ Added neolit entries to .gitignore');
         }
@@ -108,9 +107,10 @@ program
 
     console.log('\n✓ Neolit initialized successfully!');
     console.log('\nNext steps:');
-    console.log('1. Run: npx neolit analyze');
-    console.log('2. Review and fill neolit/docs/system.md');
-    console.log('3. Start working with AI on tasks in TODO.org files');
+    console.log('1. Create TODO.org in project root');
+    console.log('2. Run: npx neolit analyze');
+    console.log('3. Review generated NEOLIT.md files');
+    console.log('4. Start working with AI using neolit/prompts/');
   });
 
 program
@@ -176,7 +176,7 @@ program
     }
 
     console.log('\n✓ Update complete!');
-    console.log('Note: User documentation (docs/, VISION.org, prompts/BASE.md) was not modified.');
+    console.log('Note: User-modified NEOLIT.md files and custom prompts were preserved.');
   });
 
 program
@@ -197,8 +197,8 @@ program
       console.log('\nThis will remove:');
       console.log('- neolit/ directory and all documentation');
       console.log('- .neolit.json config file');
-      console.log('- All CONTEXT.md files in project');
-      console.log('- All TODO.org files in project');
+      console.log('- All NEOLIT.md files in project');
+      console.log('- All TODO.org and TODO.org_archive files in project');
       console.log('\nRun with --force to confirm: npx neolit clean --force');
       return;
     }
@@ -217,14 +217,14 @@ program
       console.log('✓ Removed .neolit.json');
     }
 
-    // Find and remove CONTEXT.md files
+    // Find and remove NEOLIT.md files
     try {
-      const contextFiles = execSync(
-        'find . -name "CONTEXT.md" -not -path "*/node_modules/*" -not -path "*/.git/*"',
+      const neolitFiles = execSync(
+        'find . -name "NEOLIT.md" -not -path "*/node_modules/*" -not -path "*/.git/*"',
         { cwd, encoding: 'utf-8' }
       ).trim().split('\n').filter(Boolean);
       
-      contextFiles.forEach(file => {
+      neolitFiles.forEach(file => {
         const fullPath = path.join(cwd, file);
         if (fs.existsSync(fullPath)) {
           fs.unlinkSync(fullPath);
@@ -235,10 +235,10 @@ program
       // No files found
     }
 
-    // Find and remove TODO.org files
+    // Find and remove TODO.org and TODO.org_archive files
     try {
       const todoFiles = execSync(
-        'find . -name "TODO.org" -not -path "*/node_modules/*" -not -path "*/.git/*"',
+        'find . \\( -name "TODO.org" -o -name "TODO.org_archive" \\) -not -path "*/node_modules/*" -not -path "*/.git/*"',
         { cwd, encoding: 'utf-8' }
       ).trim().split('\n').filter(Boolean);
       
