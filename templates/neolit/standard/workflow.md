@@ -63,7 +63,21 @@ ls api/auth/NEOLIT.md           # Component: COMPONENT level
 
 ## Phase 3: Document Changes
 
-**Update in SAME commit:**
+**Commit strategy:**
+
+1. **Code commit:**
+   ```bash
+   git add src/
+   git commit -m "feat: Your feature description"
+   ```
+
+2. **Documentation commit (separate):**
+   ```bash
+   git add NEOLIT.md TODO.org src/*/NEOLIT.md
+   git commit -m "docs: Update NEOLIT.md and TODO.org"
+   ```
+
+**Update documentation:**
 
 1. **COMPONENT level NEOLIT.md** → if added/changed:
    - Data structures
@@ -81,5 +95,7 @@ ls api/auth/NEOLIT.md           # Component: COMPONENT level
    - Containers/components list
 
 4. **TODO.org** → add agent notes (required)
+
+**Note:** Separate commits enable clean merge to main (code only). See neolit/standard/git-workflow.md.
 
 **Violation:** Code without doc updates → REJECTED

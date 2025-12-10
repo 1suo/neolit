@@ -59,7 +59,7 @@
 
 1. **MUST** update `NEOLIT.md` when changing implementation
 2. **MUST** update correct level (COMPONENT for code, SYSTEM for workflows, CONTAINER for deployable unit)
-3. **MUST** include documentation in SAME commit as code
+3. **SHOULD** commit documentation separately from code (see neolit/standard/git-workflow.md)
 4. **MUST** add agent notes to TODO.org
 
 **Agent notes format:**
