@@ -1,41 +1,37 @@
 {
-  "name": "opencode-langgraph",
-  "version": "0.13.1",
-  "description": "Explicit LangGraph connector for OpenCode",
+  "name": "neolit",
+  "version": "0.1.0",
+  "description": "Pure solution graph: bounded CSP + CEGAR + AND/OR LOD solver over any agent harness",
   "type": "module",
-  "main": "./dist/src/opencode/server.js",
-  "bin": {
-    "opencode-langgraph": "dist/src/cli.js"
-  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/src/core/index.js",
-    "./server": "./dist/src/opencode/server.js",
-    "./tui": "./dist/src/opencode/tui.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
     "dist/",
     "LICENSE",
     "README.md",
-    "PLAN.md",
-    "SPEC-graph.md"
+    "SOLUTION-GRAPH-CORE-IDEAS.md",
+    "ARCHITECTURE.md"
   ],
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/build-tui.mjs",
-    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest",
     "check": "tsc -p tsconfig.json --noEmit && vitest run",
-    "prepack": "npm run check && npm run build",
-    "release": "node dist/src/release.js"
+    "prepack": "npm run check && npm run build"
   },
   "keywords": [
-    "ai",
     "agents",
     "langgraph",
-    "opencode",
-    "connector",
-    "code-generation",
-    "tui"
+    "csp",
+    "wfc",
+    "cegar",
+    "task-decomposition",
+    "solver"
   ],
   "author": "1suo",
   "license": "MIT",
@@ -43,32 +39,18 @@
     "type": "git",
     "url": "git+https://github.com/1suo/opencode-langgraph.git"
   },
-  "homepage": "https://github.com/1suo/opencode-langgraph#readme",
-  "bugs": {
-    "url": "https://github.com/1suo/opencode-langgraph/issues"
-  },
   "engines": {
-    "node": ">=22.12.0",
-    "opencode": ">=1.18.16 <2"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@langchain/core": "^1.2.9",
     "@langchain/langgraph": "^1.4.9",
     "@langchain/langgraph-checkpoint": "^1.1.5",
-    "@opencode-ai/plugin": "1.18.16",
-    "@opencode-ai/sdk": "^1.18.16",
-    "@opentui/core": "^0.5.3",
-    "@opentui/solid": "^0.5.3",
-    "commander": "^15.0.0",
     "jiti": "^2.6.1",
-    "solid-js": "1.9.12",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@babel/core": "7.28.0",
-    "@babel/preset-typescript": "7.27.1",
     "@types/node": "^24.10.0",
-    "babel-preset-solid": "1.9.12",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"

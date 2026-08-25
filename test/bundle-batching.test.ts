@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { initialNetwork, mergeSolutionDelta, selectActivationBatch, validateSolutionDelta } from "../src/core/solution-lod/reducer.js";
-import { SolutionDeltaSchema, type Activation, type SolutionLodState, type SolutionNetwork } from "../src/core/solution-lod/types.js";
+import { initialNetwork, mergeSolutionDelta, selectActivationBatch, validateSolutionDelta } from "../src/solution-lod/reducer.js";
+import { SolutionDeltaSchema, type Activation, type SolutionLodState, type SolutionNetwork } from "../src/solution-lod/types.js";
 
 const usage = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 const state = (network: SolutionNetwork): SolutionLodState => ({ stateVersion: 8, runId: "batch", originalTask: "deliver all requested work", conversationContext: "", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage, callsUsed: 0, startedAt: 0, result: "" });

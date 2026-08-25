@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MemorySaver } from "@langchain/langgraph";
-import type { CandidateStance, SolutionLodState, SolutionNetwork } from "../src/core/solution-lod/types.js";
-import { SolutionDeltaSchema } from "../src/core/solution-lod/types.js";
-import { assertAcyclicPrimalGraph, applyBatchRecords, domainFingerprint, ensureRunnableWork, initialNetwork, mergeSolutionDelta, propagateNetwork, purgeDescendants } from "../src/core/solution-lod/reducer.js";
-import { projectActivationContext, solutionLodGraph } from "../src/core/solution-lod/graph.js";
+import type { CandidateStance, SolutionLodState, SolutionNetwork } from "../src/solution-lod/types.js";
+import { SolutionDeltaSchema } from "../src/solution-lod/types.js";
+import { assertAcyclicPrimalGraph, applyBatchRecords, domainFingerprint, ensureRunnableWork, initialNetwork, mergeSolutionDelta, propagateNetwork, purgeDescendants } from "../src/solution-lod/reducer.js";
+import { projectActivationContext, solutionLodGraph } from "../src/solution-lod/graph.js";
 
 // ─── shared helpers ──────────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
 import { describe, expect, it } from "vitest";
-import { solutionLodGraph } from "../src/core/solution-lod/graph.js";
-import { activationContextFingerprint, activationRecovery, applyBatchRecords, initialNetwork, queueActivation } from "../src/core/solution-lod/reducer.js";
-import type { AgentCall } from "../src/core/types.js";
+import { solutionLodGraph } from "../src/solution-lod/graph.js";
+import { activationContextFingerprint, activationRecovery, applyBatchRecords, initialNetwork, queueActivation } from "../src/solution-lod/reducer.js";
+import type { AgentCall } from "../src/types.js";
 
 const usage = { turns: 1, input: 1, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 

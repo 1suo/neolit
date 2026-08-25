@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { MemorySaver } from "@langchain/langgraph";
-import { solutionLodGraph } from "../src/core/solution-lod/graph.js";
-import { applyBatchRecords, initialNetwork } from "../src/core/solution-lod/reducer.js";
-import type { ActivationTaskResult } from "../src/core/solution-lod/types.js";
-import type { AgentRuntime } from "../src/core/types.js";
-import { renderPlanTree } from "../src/opencode/tui.js";
+import { solutionLodGraph } from "../src/solution-lod/graph.js";
+import { applyBatchRecords, initialNetwork } from "../src/solution-lod/reducer.js";
+import type { ActivationTaskResult } from "../src/solution-lod/types.js";
+import type { AgentRuntime } from "../src/types.js";
 
 const usage = { turns: 1, input: 10, output: 2, reasoning: 0, cacheRead: 3, cacheWrite: 0, cost: 0.25 };
 const record = (overrides: Partial<ActivationTaskResult> = {}): ActivationTaskResult => ({ activationId: "a1", regionId: "r1", capability: "inspect", basisRevision: 0, startedAt: 20, finishedAt: 50, usage, outcome: "error", error: "test", networkDelta: null, promptChars: 120, validationFailures: ["bad"], retries: 2, ...overrides });
@@ -36,12 +35,12 @@ describe("run telemetry and limits", () => {
     expect(repaired.telemetry?.counterexampleRepairs).toBe(1);
   });
 
-  it("shows telemetry in progress rendering", () => {
+  it("exposes telemetry through the progress snapshot", () => {
     const network = initialNetwork("task"); network.telemetry!.retries = 2; network.telemetry!.reopens = 1; network.telemetry!.regionCount = 1; network.telemetry!.candidates = 3; network.telemetry!.promptChars = 99;
     const graph = solutionLodGraph({ agents: { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" }, checkpointer: new MemorySaver() });
     const state = { ...graph.initial({ task: "task", directory: ".", worktree: ".", runId: "r" }), network };
-    const progress = graph.progress!(state);
-    expect(renderPlanTree([{ at: "now", runId: "r", rootSessionId: "s", graph: "solution-lod", node: "n", status: "active", agent: "a", model: "m", progress }])).toContain("2 retries · 1 reopens · 1 regions · 3 candidates · 99 prompt chars");
+    const telemetry = graph.progress!(state)?.telemetry;
+    expect(telemetry).toMatchObject({ retries: 2, reopens: 1, regionCount: 1, candidates: 3, promptChars: 99 });
   });
 
   it.each([

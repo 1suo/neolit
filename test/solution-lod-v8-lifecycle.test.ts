@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { MemorySaver } from "@langchain/langgraph";
-import { CandidateSelectionOutputSchema, DomainChallengeOutputSchema, DomainGenerationOutputSchema, SolutionDeltaSchema, type Activation, type SolutionLodState, type SolutionNetwork, type SynthesisOutput } from "../src/core/solution-lod/types.js";
-import { domainFingerprint, initialNetwork, mergeSolutionDelta, mergeSynthesisOutput, propagateNetwork, reopenRegion, selectActivationBatch, validateImplementationOutput, validateSolutionDelta, validateSynthesisOutput } from "../src/core/solution-lod/reducer.js";
-import { compileActivationPrompt, solutionLodGraph } from "../src/core/solution-lod/graph.js";
-import { OpenCodeRuntimeError } from "../src/opencode/runtime.js";
+import { CandidateSelectionOutputSchema, DomainChallengeOutputSchema, DomainGenerationOutputSchema, SolutionDeltaSchema, type Activation, type SolutionLodState, type SolutionNetwork, type SynthesisOutput } from "../src/solution-lod/types.js";
+import { domainFingerprint, initialNetwork, mergeSolutionDelta, mergeSynthesisOutput, propagateNetwork, reopenRegion, selectActivationBatch, validateImplementationOutput, validateSolutionDelta, validateSynthesisOutput } from "../src/solution-lod/reducer.js";
+import { compileActivationPrompt, solutionLodGraph } from "../src/solution-lod/graph.js";
+import { OpenCodeRuntimeError } from "../src/runtime-error.js";
 
 const usage = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 const state = (network: SolutionNetwork): SolutionLodState => ({ stateVersion: 8, runId: "v8", originalTask: "change it", conversationContext: "", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage, callsUsed: 0, startedAt: 0, result: "" });

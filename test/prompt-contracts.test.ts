@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { MemorySaver } from "@langchain/langgraph";
-import { compileActivationPrompt, projectActivationContext, solutionLodGraph } from "../src/core/solution-lod/graph.js";
-import { applyBatchRecords, domainFingerprint, initialNetwork, mergeSolutionDelta, validateSolutionDelta, validateSynthesisOutput, validateVerificationOutput } from "../src/core/solution-lod/reducer.js";
-import { SOLUTION_ROLE_CONTRACTS } from "../src/core/solution-lod/roles.js";
-import { DomainGenerationOutputSchema, RefinementOutputSchema } from "../src/core/solution-lod/types.js";
-import type { Activation, Capability, SolutionLodState, SolutionNetwork } from "../src/core/solution-lod/types.js";
+import { compileActivationPrompt, projectActivationContext, solutionLodGraph } from "../src/solution-lod/graph.js";
+import { applyBatchRecords, domainFingerprint, initialNetwork, mergeSolutionDelta, validateSolutionDelta, validateSynthesisOutput, validateVerificationOutput } from "../src/solution-lod/reducer.js";
+import { SOLUTION_ROLE_CONTRACTS } from "../src/solution-lod/roles.js";
+import { DomainGenerationOutputSchema, RefinementOutputSchema } from "../src/solution-lod/types.js";
+import type { Activation, Capability, SolutionLodState, SolutionNetwork } from "../src/solution-lod/types.js";
 
 const usage = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 const capabilities: Capability[] = ["inspect", "synthesize", "refine", "implement", "verify", "present"];

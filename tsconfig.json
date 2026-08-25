@@ -4,7 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "jsx": "react-jsx",
-    "rootDir": ".",
+    "rootDir": "src",
     "outDir": "dist",
     "strict": true,
     "esModuleInterop": true,
@@ -13,6 +13,12 @@
     "sourceMap": true,
     "resolveJsonModule": true
   },
-  "include": ["src/core/**/*.ts", "src/opencode/**/*.ts", "src/opencode/**/*.tsx", "src/cli.ts", "src/release.ts"],
-  "exclude": ["node_modules", "dist", "test"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test"
+  ]
 }

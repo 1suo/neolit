@@ -5,3 +5,6 @@ export * from "./durable-checkpointer.js";
 export * from "./solution-lod/index.js";
 export * from "./types.js";
 export * from "./validate.js";
+export * from "./error-message.js";
+export * from "./runtime-error.js";
+export * from "./verify.js";

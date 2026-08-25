@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { initialNetwork } from "../src/core/solution-lod/reducer.js";
-import type { SolutionLodState } from "../src/core/solution-lod/types.js";
-import { checkConvergence, checkEvidenceDedup, checkSolverWorkflows } from "../scripts/verify-real-runs.js";
+import { initialNetwork } from "../src/solution-lod/reducer.js";
+import type { SolutionLodState } from "../src/solution-lod/types.js";
+import { checkConvergence, checkEvidenceDedup, checkSolverWorkflows } from "../src/verify.js";
 
 const state = (network: ReturnType<typeof initialNetwork>): SolutionLodState => ({ stateVersion: 8, runId: "verify", originalTask: "change", conversationContext: "", directory: "/r", worktree: "/r", phase: "completed", activeBatch: [], network, results: [], usage: { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, callsUsed: 1, startedAt: 0, result: "done" });
 

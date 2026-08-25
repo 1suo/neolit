@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { SolutionDeltaSchema, type Activation, type SolutionLodState, type SolutionNetwork } from "../src/core/solution-lod/types.js";
-import { applyBatchRecords, completeImplementation, domainFingerprint, ensureRunnableWork, initialNetwork, mergeSolutionDelta, selectActivationBatch, validateImplementationOutput, validateRefinementOutput, validateSolutionDelta, validateVerificationOutput } from "../src/core/solution-lod/reducer.js";
-import { finalResult } from "../src/core/solution-lod/graph.js";
+import { SolutionDeltaSchema, type Activation, type SolutionLodState, type SolutionNetwork } from "../src/solution-lod/types.js";
+import { applyBatchRecords, completeImplementation, domainFingerprint, ensureRunnableWork, initialNetwork, mergeSolutionDelta, selectActivationBatch, validateImplementationOutput, validateRefinementOutput, validateSolutionDelta, validateVerificationOutput } from "../src/solution-lod/reducer.js";
+import { finalResult } from "../src/solution-lod/graph.js";
 
 const usage = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 const state = (network: SolutionNetwork, originalTask = "fix it"): SolutionLodState => ({ stateVersion: 8, runId: "coverage", originalTask, conversationContext: "", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage, callsUsed: 0, startedAt: 0, result: "" });

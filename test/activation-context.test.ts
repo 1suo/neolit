@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { projectActivationContext } from "../src/core/solution-lod/graph.js";
-import { applyBatchRecords, initialNetwork, queueActivation, resolveContextReference, selectActivationBatch, supersedeStaleQueuedActivations } from "../src/core/solution-lod/reducer.js";
-import type { ActivationTaskResult, SolutionLodState, SolutionNetwork } from "../src/core/solution-lod/types.js";
+import { projectActivationContext } from "../src/solution-lod/graph.js";
+import { applyBatchRecords, initialNetwork, queueActivation, resolveContextReference, selectActivationBatch, supersedeStaleQueuedActivations } from "../src/solution-lod/reducer.js";
+import type { ActivationTaskResult, SolutionLodState, SolutionNetwork } from "../src/solution-lod/types.js";
 
 const usage = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 const state = (network: SolutionNetwork): SolutionLodState => ({ stateVersion: 8, runId: "context", originalTask: "task", conversationContext: "", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage, callsUsed: 0, startedAt: 0, result: "" });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { completePresentation, completeVerification, ensureRunnableWork, initialNetwork, reopenRegion, validateVerificationOutput } from "../src/core/solution-lod/reducer.js";
-import type { SolutionLodState, VerificationOutput } from "../src/core/solution-lod/types.js";
+import { completePresentation, completeVerification, ensureRunnableWork, initialNetwork, reopenRegion, validateVerificationOutput } from "../src/solution-lod/reducer.js";
+import type { SolutionLodState, VerificationOutput } from "../src/solution-lod/types.js";
 
 const answerNetwork = () => {
   const network = initialNetwork("answer");
