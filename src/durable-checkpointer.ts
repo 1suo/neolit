@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { createInterface } from "node:readline";
 import { MemorySaver } from "@langchain/langgraph";
 
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
@@ -22,6 +23,12 @@ function lockOwnerAlive(owner: { pid?: number; processStart?: string }): boolean
 function threadFromWriteKey(key: string): string | undefined {
   try { return JSON.parse(key)[0] as string; } catch { return; }
 }
+
+type ThreadSnapshot = {
+  threadId: string;
+  storage: MemorySaver["storage"][string];
+  writes: MemorySaver["writes"];
+};
 
 function encode(_key: string, value: unknown): unknown {
   if (value instanceof Uint8Array) return { __langgraphBytes: Buffer.from(value).toString("base64") };
@@ -45,23 +52,70 @@ export class DurableFileSaver extends MemorySaver {
     return path.join(this.directory, `${createHash("sha256").update(threadId).digest("hex")}.json`);
   }
 
-  private loadThread(threadId: string): void {
-    const file = this.file(threadId);
-    if (!fs.existsSync(file)) return;
-    const snapshot = JSON.parse(fs.readFileSync(file, "utf8"), decode) as { threadId: string; storage: MemorySaver["storage"][string]; writes: MemorySaver["writes"] };
-    if (snapshot.threadId !== threadId) throw new Error("Checkpoint thread hash collision");
-    this.storage[threadId] = snapshot.storage;
-    for (const key of Object.keys(this.writes)) if (threadFromWriteKey(key) === threadId) delete this.writes[key];
+  private async readSnapshot(file: string, expectedThreadId?: string): Promise<ThreadSnapshot> {
+    const storage: MemorySaver["storage"][string] = Object.create(null);
+    const writes: MemorySaver["writes"] = Object.create(null);
+    let threadId: string | undefined;
+    let lineNumber = 0;
+    let legacy: ThreadSnapshot | undefined;
+    const lines = createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+    for await (const line of lines) {
+      if (!line) continue;
+      lineNumber++;
+      const record = JSON.parse(line, decode) as Record<string, unknown>;
+      if (lineNumber === 1 && "storage" in record && "writes" in record) {
+        legacy = record as ThreadSnapshot;
+        continue;
+      }
+      if (legacy) throw new Error("Invalid legacy checkpoint file");
+      if (lineNumber === 1) {
+        if (record.format !== "neolit-checkpoints" || record.version !== 1 || typeof record.threadId !== "string") throw new Error("Unsupported checkpoint file format");
+        threadId = record.threadId;
+      } else if (record.type === "checkpoint" && typeof record.namespace === "string" && typeof record.checkpointId === "string" && Array.isArray(record.value)) {
+        storage[record.namespace] ??= Object.create(null);
+        storage[record.namespace][record.checkpointId] = record.value as MemorySaver["storage"][string][string][string];
+      } else if (record.type === "writes" && typeof record.key === "string" && record.value && typeof record.value === "object") {
+        writes[record.key] = record.value as MemorySaver["writes"][string];
+      } else {
+        throw new Error("Invalid checkpoint record");
+      }
+    }
+    const snapshot = legacy ?? (threadId ? { threadId, storage, writes } : undefined);
+    if (!snapshot || typeof snapshot.threadId !== "string" || !snapshot.storage || !snapshot.writes) throw new Error("Empty or invalid checkpoint file");
+    if (expectedThreadId !== undefined && snapshot.threadId !== expectedThreadId) throw new Error("Checkpoint thread hash collision");
+    for (const key of Object.keys(snapshot.writes)) if (threadFromWriteKey(key) !== snapshot.threadId) throw new Error("Checkpoint write belongs to another thread");
+    return snapshot;
+  }
+
+  private applySnapshot(snapshot: ThreadSnapshot): void {
+    this.storage[snapshot.threadId] = snapshot.storage;
+    for (const key of Object.keys(this.writes)) if (threadFromWriteKey(key) === snapshot.threadId) delete this.writes[key];
     Object.assign(this.writes, snapshot.writes);
   }
 
-  private loadAll(): void {
+  private async loadThread(threadId: string): Promise<void> {
+    const file = this.file(threadId);
+    if (!fs.existsSync(file)) {
+      delete this.storage[threadId];
+      for (const key of Object.keys(this.writes)) if (threadFromWriteKey(key) === threadId) delete this.writes[key];
+      return;
+    }
+    this.applySnapshot(await this.readSnapshot(file, threadId));
+  }
+
+  private async loadAll(): Promise<void> {
     if (!fs.existsSync(this.directory)) return;
-    for (const name of fs.readdirSync(this.directory)) {
+    const names = fs.readdirSync(this.directory);
+    const files = new Set(names.filter((name) => name.endsWith(".json")));
+    for (const threadId of Object.keys(this.storage)) {
+      if (files.has(path.basename(this.file(threadId)))) continue;
+      delete this.storage[threadId];
+      for (const key of Object.keys(this.writes)) if (threadFromWriteKey(key) === threadId) delete this.writes[key];
+    }
+    for (const name of names) {
       if (!name.endsWith(".json")) continue;
       try {
-        const snapshot = JSON.parse(fs.readFileSync(path.join(this.directory, name), "utf8"), decode) as { threadId?: string };
-        if (snapshot.threadId) this.loadThread(snapshot.threadId);
+        this.applySnapshot(await this.readSnapshot(path.join(this.directory, name)));
       } catch { /* ignore incomplete or externally edited checkpoints */ }
     }
   }
@@ -69,10 +123,29 @@ export class DurableFileSaver extends MemorySaver {
   private persistThread(threadId: string): void {
     fs.mkdirSync(this.directory, { recursive: true });
     const file = this.file(threadId);
-    const writes = Object.fromEntries(Object.entries(this.writes).filter(([key]) => threadFromWriteKey(key) === threadId));
+    const storage = this.storage[threadId] ?? {};
+    const writes = Object.fromEntries(Object.entries(this.writes).filter(([key]) => {
+      return threadFromWriteKey(key) === threadId;
+    }));
     const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-    fs.writeFileSync(temporary, JSON.stringify({ threadId, storage: this.storage[threadId] ?? {}, writes }, encode));
-    fs.renameSync(temporary, file);
+    let descriptor: number | undefined;
+    try {
+      descriptor = fs.openSync(temporary, "wx");
+      const write = (record: unknown) => fs.writeFileSync(descriptor!, `${JSON.stringify(record, encode)}\n`);
+      write({ format: "neolit-checkpoints", version: 1, threadId });
+      for (const [namespace, checkpoints] of Object.entries(storage)) {
+        for (const [checkpointId, value] of Object.entries(checkpoints)) write({ type: "checkpoint", namespace, checkpointId, value });
+      }
+      for (const [key, value] of Object.entries(writes)) write({ type: "writes", key, value });
+      fs.fsyncSync(descriptor);
+      fs.closeSync(descriptor);
+      descriptor = undefined;
+      fs.renameSync(temporary, file);
+    } catch (error) {
+      if (descriptor !== undefined) fs.closeSync(descriptor);
+      try { fs.unlinkSync(temporary); } catch { /* best effort cleanup */ }
+      throw error;
+    }
   }
 
   private async mutateThread<T>(threadId: string, action: () => Promise<T>, persist = true): Promise<T> {
@@ -106,7 +179,7 @@ export class DurableFileSaver extends MemorySaver {
           await new Promise((resolve) => setTimeout(resolve, 10));
         }
       }
-      this.loadThread(threadId);
+      await this.loadThread(threadId);
       const result = await action();
       if (persist) this.persistThread(threadId);
       return result;
@@ -122,14 +195,20 @@ export class DurableFileSaver extends MemorySaver {
 
   override async getTuple(config: Parameters<MemorySaver["getTuple"]>[0]) {
     const threadId = config.configurable?.thread_id;
-    if (typeof threadId === "string") this.loadThread(threadId);
+    if (typeof threadId === "string") await this.loadThread(threadId);
     return super.getTuple(config);
   }
 
   override async *list(config: Parameters<MemorySaver["list"]>[0], options?: Parameters<MemorySaver["list"]>[1]) {
     const threadId = config.configurable?.thread_id;
-    if (typeof threadId === "string") this.loadThread(threadId); else this.loadAll();
+    if (typeof threadId === "string") await this.loadThread(threadId); else await this.loadAll();
     yield* super.list(config, options);
+  }
+
+  override async getDeltaChannelHistory(options: Parameters<MemorySaver["getDeltaChannelHistory"]>[0]) {
+    const threadId = options.config.configurable?.thread_id;
+    if (typeof threadId === "string") await this.loadThread(threadId);
+    return super.getDeltaChannelHistory(options);
   }
 
   override async put(config: Parameters<MemorySaver["put"]>[0], checkpoint: Parameters<MemorySaver["put"]>[1], metadata: Parameters<MemorySaver["put"]>[2]) {
@@ -153,7 +232,7 @@ export class DurableFileSaver extends MemorySaver {
   }
 
   async latestCheckpointId(threadId: string): Promise<string | undefined> {
-    this.loadThread(threadId);
+    await this.loadThread(threadId);
     return (await super.getTuple({ configurable: { thread_id: threadId } }))?.checkpoint.id;
   }
 
@@ -168,8 +247,6 @@ export class DurableFileSaver extends MemorySaver {
     });
     return { thread_id: threadId, __pregel_resuming: true };
   }
-
-
   override async deleteThread(threadId: string): Promise<void> {
     await this.mutateThread(threadId, async () => {
       await super.deleteThread(threadId);

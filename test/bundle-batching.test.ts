@@ -34,10 +34,10 @@ describe("bundle mutation batching", () => {
     expect(merged.taskDispositions).toEqual([{ key: "c", request: "Change external service C", disposition: "external", reason: "The service is outside this repository", evidenceRefs: ["task"] }]);
   });
 
-  it("forms deterministic maximal batches from scope and resource overlap", () => {
+  it("serializes implementations so workspace changes have one measured owner", () => {
     const independent = mutationNetwork([["src/a.ts"], ["src/b.ts"], ["src/a.ts"]]);
-    expect(selectActivationBatch(independent, 3).map((activation) => activation.id)).toEqual(["a2", "a3"]);
-    expect(selectActivationBatch(independent, 3).map((activation) => activation.id)).toEqual(["a2", "a3"]);
+    expect(selectActivationBatch(independent, 3).map((activation) => activation.id)).toEqual(["a2"]);
+    expect(selectActivationBatch(independent, 3).map((activation) => activation.id)).toEqual(["a2"]);
   });
 
   it("serializes shared mutation resources and keeps independent reads concurrent", () => {

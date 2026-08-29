@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MemorySaver } from "@langchain/langgraph";
 import { solutionLodGraph } from "../src/solution-lod/graph.js";
-import { applyBatchRecords, initialNetwork } from "../src/solution-lod/reducer.js";
+import { applyBatchRecords, domainFingerprint, initialNetwork } from "../src/solution-lod/reducer.js";
 import type { ActivationTaskResult } from "../src/solution-lod/types.js";
 import type { AgentRuntime } from "../src/types.js";
 
@@ -23,6 +23,13 @@ describe("run telemetry and limits", () => {
     const deferred = applyBatchRecords(network, [record({ outcome: "deferred", validationFailures: [], retries: 0 })]).network;
     expect(deferred.telemetry?.regions.r1).toMatchObject({ repairAttempts: 1, noProgressFingerprints: ["same-selection"] });
 
+    const region = deferred.regions[0]!;
+    region.status = "superposed";
+    region.domainPhase = "challenging";
+    region.candidateIds = ["r1:base"];
+    deferred.candidates.push({ id: "r1:base", regionId: "r1", key: "base", proposition: "Base family", status: "possible", evidenceIds: [], eliminationReasons: [], stances: [] });
+    region.domainFingerprint = domainFingerprint(deferred, "r1");
+    deferred.activations.push({ id: "a2", capability: "synthesize", operation: "challenge-domain", domainFingerprint: region.domainFingerprint, regionId: "r1", request: "challenge", expectedDelta: "challenge", contextRefs: ["r1", "r1:base"], status: "running", basisRevision: deferred.revision });
     const repaired = applyBatchRecords(deferred, [record({
       activationId: "a2",
       capability: "synthesize",
@@ -30,7 +37,8 @@ describe("run telemetry and limits", () => {
       outcome: "applied",
       validationFailures: [],
       retries: 0,
-      networkDelta: { kind: "synthesis", output: { operation: "challenge-domain", verdict: "counterexample", domainFingerprint: "domain", candidate: { key: "missing", proposition: "Missing family", evidenceRefs: [], stances: [] }, reason: "missing", evidenceRefs: [] } },
+      basisRevision: deferred.revision,
+      networkDelta: { kind: "synthesis", output: { operation: "challenge-domain", verdict: "counterexample", domainFingerprint: region.domainFingerprint!, candidate: { key: "missing", proposition: "Missing family", evidenceRefs: [], stances: [] }, reason: "missing", evidenceRefs: [] } },
     })]).network;
     expect(repaired.telemetry?.counterexampleRepairs).toBe(1);
   });

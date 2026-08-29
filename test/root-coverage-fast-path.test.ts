@@ -91,11 +91,41 @@ describe("root coverage and certified fast path", () => {
     const inventory = JSON.stringify(merged.materialRequirements);
     expect(inventory).toContain("criterion:scope:r1:beta:0");
     expect(inventory).toContain("criterion:scope:r1:beta:1");
+    expect(merged.regions.find((item) => item.scopeId === "scope:r1:beta")?.requirementIds).toEqual(["requirement:one", "requirement:two"]);
     expect(() => validateSolutionDelta(state(network), "r1", "inspect", SolutionDeltaSchema.parse({ ...base, taskScopes: scopes, materialRequirements: [{ key: "one", text: "x", scopeKey: "missing", criterionIndex: 0 }] }))).toThrow(/unknown task scope/);
     expect(() => validateSolutionDelta(state(network), "r1", "inspect", SolutionDeltaSchema.parse({ ...base, taskScopes: scopes, materialRequirements: [{ key: "one", text: "x", scopeKey: "beta", criterionIndex: 5 }] }))).toThrow(/criterion #5/);
     expect(() => validateSolutionDelta(state(network), "r1", "inspect", SolutionDeltaSchema.parse({ ...base, taskScopes: scopes, materialRequirements: [{ key: "one", text: "x" }] }))).toThrow(/scopeKey and criterionIndex/);
-    const echoed = SolutionDeltaSchema.parse({ ...base, taskScopes: [...scopes.slice(0, 1), { ...scopes[1], requirementKeys: ["two"] }], materialRequirements: [{ key: "two", text: "y", scopeKey: "beta", criterionIndex: 0 }] });
-    expect(() => validateSolutionDelta(state(network), "r1", "inspect", echoed)).toThrow(/remove the duplicate requirementKeys entry/);
+    const echoed = SolutionDeltaSchema.parse({ ...base, taskScopes: [...scopes.slice(0, 1), { ...scopes[1], requirementKeys: ["two"], dependencyScopeIds: ["alpha"] }], materialRequirements: [{ key: "two", text: "y", scopeKey: "beta", criterionIndex: 0 }] });
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", echoed)).not.toThrow();
+    network.activations[0]!.status = "running";
+    const canonical = mergeSolutionDelta(state(network), "a1", echoed);
+    expect(canonical.regions.find((item) => item.scopeId === "scope:r1:beta")).toMatchObject({ requirementIds: ["requirement:two"], dependencyScopeIds: ["scope:r1:alpha"] });
+    const wrongOwner = SolutionDeltaSchema.parse({ ...base, taskScopes: [{ ...scopes[0], requirementKeys: ["two"] }, scopes[1]], materialRequirements: [{ key: "two", text: "y", scopeKey: "beta", criterionIndex: 0 }] });
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", wrongOwner)).toThrow(/belongs to beta/);
+    const ambiguous = SolutionDeltaSchema.parse({ ...base, taskScopes: [{ ...scopes[0], acceptanceCriteria: ["same"] }, { ...scopes[1], acceptanceCriteria: ["same"] }], materialRequirements: [{ key: "one", text: "x", criterion: "same" }] });
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", ambiguous)).toThrow(/ambiguous legacy criterion/);
+  });
+
+  it("rejects self-dependent and cyclic task scopes", () => {
+    const network = initialNetwork("change both");
+    const base = { region: {}, evidence: [], candidates: [], constraints: [], select: [], activations: [] };
+    const scope = (key: string, dependencyScopeIds: string[]) => ({ key, objective: key, acceptanceCriteria: [`${key} works`], dependencyScopeIds });
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", SolutionDeltaSchema.parse({ ...base, taskScopes: [scope("alpha", ["alpha"]), scope("beta", [])] }))).toThrow(/cycle/);
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", SolutionDeltaSchema.parse({ ...base, taskScopes: [scope("alpha", ["beta"]), scope("beta", ["alpha"])] }))).toThrow(/cycle/);
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", SolutionDeltaSchema.parse({ ...base, taskScopes: [scope("alpha", ["scope:r1"]), scope("beta", [])] }))).toThrow(/cannot depend on root scope/);
+  });
+
+  it("binds implicit requirements structurally when scope criteria share wording", () => {
+    const network = initialNetwork("change both");
+    const delta = SolutionDeltaSchema.parse({ region: {}, evidence: [], candidates: [], constraints: [], select: [], activations: [], taskScopes: [
+      { key: "alpha", objective: "First", acceptanceCriteria: ["works"] },
+      { key: "beta", objective: "Second", acceptanceCriteria: ["works"] },
+    ] });
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", delta)).not.toThrow();
+    network.activations[0]!.status = "running";
+    const merged = mergeSolutionDelta(state(network), "a1", delta);
+    expect(merged.regions.find((item) => item.scopeId === "scope:r1:alpha")?.requirementIds).toEqual(["requirement:alpha"]);
+    expect(merged.regions.find((item) => item.scopeId === "scope:r1:beta")?.requirementIds).toEqual(["requirement:beta"]);
   });
 
   it("takes inspect -> certified leaf -> implement without synthesis or refinement", () => {
@@ -127,6 +157,38 @@ describe("root coverage and certified fast path", () => {
     expect(selectActivationBatch(network, 3).map((item) => item.regionId)).toEqual(["r2"]);
     network.regions.find((item) => item.id === "r2")!.status = "verified";
     expect(selectActivationBatch(network, 3).map((item) => item.regionId)).toEqual(["r3"]);
+  });
+
+  it("queues runnable prerequisites when a dependent activation is already blocked", () => {
+    const network = initialNetwork("two dependent changes");
+    network.activations = [];
+    network.regions[0]!.status = "collapsed";
+    network.regions[0]!.domainPhase = "selected";
+    const prerequisite = { ...structuredClone(network.regions[0]!), id: "r2", key: "prerequisite", scopeId: "scope:r2" as const, parentId: "r1", edge: "partOf" as const, status: "superposed" as const, domainPhase: "ungenerated" as const, dependencyScopeIds: [], activationIds: [] };
+    const dependent = { ...structuredClone(network.regions[0]!), id: "r3", key: "dependent", scopeId: "scope:r3" as const, parentId: "r1", edge: "partOf" as const, status: "unformed" as const, domainPhase: "inspecting" as const, dependencyScopeIds: ["scope:r2" as const], activationIds: ["a3"] };
+    network.regions.push(prerequisite, dependent);
+    network.activations.push({ id: "a3", capability: "inspect", regionId: "r3", request: "inspect dependent", expectedDelta: "dependent facts", contextRefs: ["r3"], status: "queued", basisRevision: 0 });
+    const scheduled = ensureRunnableWork(network, 3);
+    expect(scheduled.blocked).toBeUndefined();
+    expect(scheduled.network.activations).toContainEqual(expect.objectContaining({ capability: "synthesize", operation: "generate-domain", regionId: "r2", status: "queued" }));
+    expect(selectActivationBatch(scheduled.network, 3).map((item) => item.regionId)).toEqual(["r2"]);
+    const rescheduled = ensureRunnableWork(scheduled.network, 3);
+    expect(rescheduled.network.activations.filter((item) => item.regionId === "r2" && item.status === "queued")).toHaveLength(1);
+    expect(rescheduled.network.activations.filter((item) => item.regionId === "r3" && item.status === "queued")).toHaveLength(1);
+  });
+
+  it("accepts a collapsed dependency after all of its descendants verify", () => {
+    const network = initialNetwork("dependent changes");
+    network.activations = [];
+    const root = network.regions[0]!;
+    root.status = "collapsed";
+    const prerequisite = { ...structuredClone(root), id: "r2", key: "prerequisite", scopeId: "scope:r2" as const, parentId: "r1", edge: "partOf" as const, status: "collapsed" as const, activationIds: [] };
+    const leaf = { ...structuredClone(root), id: "r4", key: "leaf", scopeId: "scope:r4" as const, parentId: "r2", edge: "partOf" as const, status: "verified" as const, activationIds: [] };
+    const dependent = { ...structuredClone(root), id: "r3", key: "dependent", scopeId: "scope:r3" as const, parentId: "r1", edge: "partOf" as const, status: "unformed" as const, domainPhase: "inspecting" as const, dependencyScopeIds: ["scope:r2" as const], activationIds: [] };
+    network.regions.push(prerequisite, leaf, dependent);
+    const scheduled = ensureRunnableWork(network, 3);
+    expect(scheduled.blocked).toBeUndefined();
+    expect(selectActivationBatch(scheduled.network, 3).map((item) => item.regionId)).toEqual(["r3"]);
   });
 
   it("requires exact child requirement ownership and emits deterministic partial audit IDs", () => {

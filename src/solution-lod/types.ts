@@ -428,7 +428,7 @@ export const DomainGenerationOutputSchema = z.object({
   variables: z.array(z.object({ name: z.string().min(1), seedLabels: z.array(z.string()).default([]) }).strict()).default([]),
   candidates: z.array(GeneratedCandidateSchema).min(1).max(7)
     .describe("Every genuinely distinct solution family the boundary contains — usually several. Return exactly ONE family only when the boundary truly admits no materially different alternative; a fresh challenger independently verifies that nothing is missing."),
-  constraints: z.array(ConstraintSchema).default([]),
+  constraints: z.array(ConstraintSchema).max(0).default([]),
 }).strict();
 export type DomainGenerationOutput = z.infer<typeof DomainGenerationOutputSchema>;
 

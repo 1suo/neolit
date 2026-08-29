@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialNetwork, mergeRefinementOutput, reopenRegion, resolveContextReference, validateRefinementOutput } from "../src/solution-lod/reducer.js";
+import { initialNetwork, mergeRefinementOutput, mergeSolutionDelta, propagateNetwork, reopenRegion, resetPrunedRegion, resolveContextReference, validateRefinementOutput } from "../src/solution-lod/reducer.js";
 import type { Activation, RefinementOutput, SolutionLodState, SolutionNetwork } from "../src/solution-lod/types.js";
 
 const child = (key: string, objective = key): RefinementOutput["children"][number] => ({ key, objective, edge: "partOf", delivery: "change", allowedVariables: ["mode"], acceptanceCriteria: [`${key} done`], coveredCriteria: [0], requirementIds: ["requirement:one"], dependencyScopeIds: ["scope:dependency"], mutationResources: [`src/${key}.ts`] });
@@ -53,6 +53,44 @@ describe("conditional subtree reconciliation", () => {
     expect(network.candidates.find((item) => item.id === `${id}:choice`)?.historical).toBe(true); expect(network.variables.find((item) => item.id === "v-old")?.historical).toBe(true); expect(network.artifacts.find((item) => item.id === "x-old")).toMatchObject({ summary: "old output", historical: true });
   });
 
+  it("keeps retained historical constraints inert during propagation", () => {
+    let network = initialNetwork("change");
+    const root = network.regions[0]!;
+    network.regions.push(
+      { ...structuredClone(root), id: "r2", key: "retired", parentId: "r1", edge: "partOf", scopeId: "scope:r2", candidateIds: ["r2:old"], constraintIds: ["c1", "c2"], evidenceIds: ["e1"], activationIds: [], artifactIds: [] },
+      { ...structuredClone(root), id: "r3", key: "live", parentId: "r1", edge: "partOf", scopeId: "scope:r3", candidateIds: ["r3:live"], constraintIds: ["c2"], evidenceIds: [], activationIds: [], artifactIds: [] },
+    );
+    network.candidates.push(
+      { id: "r2:old", regionId: "r2", key: "old", proposition: "Retired prerequisite", status: "possible", declaredStatus: "possible", evidenceIds: [], eliminationReasons: [], stances: [] },
+      { id: "r3:live", regionId: "r3", key: "live", proposition: "Current solution", status: "possible", declaredStatus: "possible", evidenceIds: [], eliminationReasons: [], stances: [] },
+    );
+    network.evidence.push({ id: "e1", text: "The retired prerequisite is unavailable", source: "repo:1", kind: "repository", status: "confirmed", fingerprint: "e1" });
+    network.constraints.push(
+      { id: "c1", kind: "refutes", subject: "e1", target: "r2:old", reason: "unavailable", sourceActivationId: "a1", sourceKind: "repo-evidence", evidenceRefs: ["e1"] },
+      { id: "c2", kind: "requires", subject: "r3:live", target: "r2:old", reason: "requires retired candidate", sourceActivationId: "a1", sourceKind: "model-inference", evidenceRefs: [] },
+    );
+    network = propagateNetwork(resetPrunedRegion(network, "r2"));
+    expect(network.constraints.filter((item) => item.historical)).toHaveLength(2);
+    expect(network.candidates.find((item) => item.id === "r3:live")).toMatchObject({ status: "possible", eliminationReasons: [] });
+  });
+
+  it("regenerates a pruned candidate under its stable live identity", () => {
+    let network = initialNetwork("choose");
+    network.regions[0]!.status = "superposed";
+    network.regions[0]!.domainPhase = "ungenerated";
+    network.activations[0]!.capability = "synthesize";
+    const delta = { region: {}, evidence: [], candidates: [{ key: "native", proposition: "Use native support", outcome: "possible" as const, reasons: [], evidenceRefs: [], stances: [] }], constraints: [], select: [], activations: [] };
+    network = mergeSolutionDelta(state(network), "a1", delta);
+    network.candidates.find((item) => item.id === "r1:native")!.evidenceIds = ["e-old"];
+    network.candidates.find((item) => item.id === "r1:native")!.declaredEvidenceIds = ["e-old"];
+    network = resetPrunedRegion(network, "r1");
+    network.activations.push({ ...network.activations[0]!, id: "a2", status: "running", basisRevision: network.revision });
+    network = mergeSolutionDelta(state(network), "a2", delta);
+    expect(network.regions[0]!.candidateIds).toEqual(["r1:native"]);
+    expect(network.candidates.filter((item) => item.id === "r1:native")).toHaveLength(1);
+    expect(network.candidates.find((item) => item.id === "r1:native")).toMatchObject({ historical: undefined, evidenceIds: [] });
+  });
+
   it("keeps reopen and reselection references sound", () => {
     let network = refined([child("work")]); const id = network.regions.find((item) => item.parentId === "r1")!.id; populate(network, id); network = reconcile(network, [child("work", "new work")]); network = reopenRegion(network, id, "reselect");
     expect(network.regions.find((item) => item.id === id)).toMatchObject({ selectedCandidateIds: [], acceptedFingerprint: null });
@@ -73,5 +111,26 @@ describe("conditional subtree reconciliation", () => {
     root.status = "unrefined"; root.domainPhase = "selected"; root.acceptanceCriteria = ["works"]; root.criterionIds = ["criterion:scope:r1:0"];
     expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children: [], certifiedLeaf: { implementationScope: "edit source", criterionIds: ["criterion:wrong"], evidenceRefs: [], mutationResources: ["src/a.ts"], checks: [{ criterionId: "criterion:wrong", commandOrObservation: "run test" }] }, activations: [] })).toThrow(/every exact current criterion ID/);
     expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children: [], certifiedLeaf: { implementationScope: "edit source", criterionIds: [...root.criterionIds], evidenceRefs: [], mutationResources: ["src/a.ts"], checks: root.criterionIds.map((criterionId) => ({ criterionId, commandOrObservation: "run test" })) }, activations: [] })).not.toThrow();
+  });
+
+  it("rejects cyclic refinement dependencies", () => {
+    const network = initialNetwork("split");
+    const root = network.regions[0]!;
+    root.acceptanceCriteria = ["one", "two"];
+    root.criterionIds = ["criterion:scope:r1:0", "criterion:scope:r1:1"];
+    const children = [
+      { key: "one", objective: "one", edge: "partOf" as const, allowedVariables: [], acceptanceCriteria: ["one"], coveredCriteria: [0], dependencyScopeIds: ["scope:r1:two"] },
+      { key: "two", objective: "two", edge: "partOf" as const, allowedVariables: [], acceptanceCriteria: ["two"], coveredCriteria: [1], dependencyScopeIds: ["scope:r1:one"] },
+    ];
+    expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children, activations: [] })).toThrow(/cycle/);
+  });
+
+  it("rejects refinement dependencies on an ancestor scope", () => {
+    const network = initialNetwork("split");
+    const root = network.regions[0]!;
+    root.acceptanceCriteria = ["done"];
+    root.criterionIds = ["criterion:scope:r1:0"];
+    const children = [{ key: "child", objective: "child", edge: "refines" as const, unresolvedVariable: "solution family", allowedVariables: ["solution family"], acceptanceCriteria: ["done"], coveredCriteria: [0], dependencyScopeIds: ["scope:r1"] }];
+    expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children, activations: [] })).toThrow(/cannot depend on ancestor scope/);
   });
 });

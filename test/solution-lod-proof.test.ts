@@ -554,7 +554,7 @@ describe("terminal-state replay through the real graph (fully verified checkpoin
 
 describe("nonterminal actionable configuration blocks at exploration limit without model calls", () => {
   it("reaches blocked phase at the limit without invoking the runtime", async () => {
-    const configured = solutionLodGraph({ agents: { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" }, checkpointer: new MemorySaver() });
+    const configured = solutionLodGraph({ agents: { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" }, checkpointer: new MemorySaver(), maxActivations: 256 });
     const runtime = { call: async () => { throw new Error("NO MODEL"); } };
     const authored = initialNetwork("unverified change");
     authored.regions = [{ ...authored.regions[0], acceptanceCriteria: ["done"], candidateIds: ["r1:d"], selectedCandidateIds: ["r1:d"] }];

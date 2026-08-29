@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MemorySaver } from "@langchain/langgraph";
 import { CandidateSelectionOutputSchema, DomainChallengeOutputSchema, DomainGenerationOutputSchema, SolutionDeltaSchema, type Activation, type SolutionLodState, type SolutionNetwork, type SynthesisOutput } from "../src/solution-lod/types.js";
-import { domainFingerprint, initialNetwork, mergeSolutionDelta, mergeSynthesisOutput, propagateNetwork, reopenRegion, selectActivationBatch, validateImplementationOutput, validateSolutionDelta, validateSynthesisOutput } from "../src/solution-lod/reducer.js";
+import { domainFingerprint, ensureRunnableWork, initialNetwork, mergeSolutionDelta, mergeSynthesisOutput, propagateNetwork, reopenRegion, selectActivationBatch, validateImplementationOutput, validateSolutionDelta, validateSynthesisOutput } from "../src/solution-lod/reducer.js";
 import { compileActivationPrompt, solutionLodGraph } from "../src/solution-lod/graph.js";
 import { OpenCodeRuntimeError } from "../src/runtime-error.js";
 
@@ -166,6 +166,23 @@ describe("solution LOD state v8 lifecycle", () => {
     network = reopenRegion(network, "r1", "new repair cycle");
     expect(network.regions[0]!.noProgressCount).toBe(0);
     expect(network.regions[0]!.noProgressFingerprint).toBeNull();
+  });
+
+  it("schedules a fresh synthesis cycle after a needs-fact inspection", () => {
+    let network = acceptDomain(generated());
+    const region = network.regions[0]!;
+    network.activations.forEach((item) => { item.status = "completed"; });
+    region.domainPhase = "challenging";
+    const first = ensureRunnableWork(network);
+    const firstChallenge = first.network.activations.at(-1)!;
+    firstChallenge.status = "completed";
+    first.network.regions[0]!.noProgressCount = 1;
+
+    const scheduled = ensureRunnableWork(first.network);
+
+    expect(scheduled.blocked).toBeUndefined();
+    expect(scheduled.network.activations.at(-1)).toMatchObject({ status: "queued", operation: "challenge-domain" });
+    expect(scheduled.network.activations.at(-1)!.idempotencyKey).not.toBe(firstChallenge.idempotencyKey);
   });
 
   it("accepts only cited hard elimination rules and validates needs-fact context references", () => {

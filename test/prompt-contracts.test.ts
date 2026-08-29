@@ -42,6 +42,7 @@ describe("prompt contracts", () => {
       { id: "e2", text: "adapter may be faster", source: "model", kind: "inference", status: "hypothesis", fingerprint: "e2" },
     );
     current.network.activations[0]!.contextRefs.push("e1", "e2");
+    current.network.activations[0]!.readRefs = undefined;
     for (const capability of capabilities) {
       const prompt = compileActivationPrompt(current, { ...current.network.activations[0]!, capability });
       expect(prompt).toContain(`LOCAL OPERATION\n${capability}:`);
@@ -53,6 +54,17 @@ describe("prompt contracts", () => {
       expect(prompt.length).toBeLessThan(4_000);
     }
     for (const contract of Object.values(SOLUTION_ROLE_CONTRACTS)) expect(contract.systemPrompt.length).toBeLessThan(1_100);
+  });
+
+  it("renders the root decomposition boundary for root and child inspectors", () => {
+    const current = state();
+    const rootPrompt = compileActivationPrompt(current, current.network.activations[0]!);
+    expect(rootPrompt).toContain("Root inspection may split independent deliverables");
+    expect(rootPrompt).toContain("requirementKeys is a legacy echo and should be omitted");
+    expect(rootPrompt).toContain("another task scope's exact key or canonical scope ID");
+    current.network.regions.push({ ...structuredClone(current.network.regions[0]!), id: "r2", key: "child", parentId: "r1", edge: "partOf", scopeId: "scope:r2", activationIds: [] });
+    const child: Activation = { ...current.network.activations[0]!, id: "a2", regionId: "r2", contextRefs: ["r2"] };
+    expect(compileActivationPrompt(current, child)).toContain("taskScopes/root AND-splits are root-only");
   });
 
   it("gives generation, challenge, and selection exclusive bounded contracts", () => {
@@ -81,6 +93,23 @@ describe("prompt contracts", () => {
     const paraphrase = compileActivationPrompt(left, { ...activation, request: "Verify each stated success condition" });
     expect(paraphrase).toContain("verify: Verify each stated success condition");
     expect(paraphrase).toContain("Verify every supplied criterion with execution evidence");
+  });
+
+  it("omits historical records from semantic progress snapshots", () => {
+    const current = generated();
+    current.network.candidates[0]!.historical = true;
+    current.network.constraints.push({ id: "c-old", kind: "requires", subject: "r1:native", target: "r1:adapter", reason: "old", sourceActivationId: "a1", sourceKind: "model-inference", evidenceRefs: [], historical: true });
+    current.network.activations[0]!.historical = true;
+    current.network.artifacts.push({ id: "x-old", regionId: "r1", kind: "check", summary: "old", activationId: "a1", historical: true });
+    current.network.regions[0]!.constraintIds = ["c-old"];
+    current.network.regions[0]!.artifactIds = ["x-old"];
+    const configured = solutionLodGraph({ agents: Object.fromEntries(capabilities.map((item) => [item, item])) as Record<Capability, string>, checkpointer: new MemorySaver() });
+    const semantic = configured.progress!(current).semantic!;
+    expect(semantic.candidates.map((item) => item.id)).not.toContain("r1:native");
+    expect(semantic.constraints).toEqual([]);
+    expect(semantic.activations).toEqual([]);
+    expect(semantic.artifacts).toEqual([]);
+    expect(semantic.regions[0]).toMatchObject({ candidateIds: ["r1:adapter"], constraintIds: [], activationIds: [], artifactIds: [] });
   });
 
   it("deduplicates paraphrased evidence by proposition and source identity", () => {
@@ -123,6 +152,7 @@ describe("structured semantic contracts", () => {
       { key: "only", proposition: "Directly extend the single existing mechanism", evidenceRefs: [], stances: [] },
     ] })).not.toThrow();
     expect(DomainGenerationOutputSchema.safeParse({ operation: "generate-domain", candidates: [] }).success).toBe(false);
+    expect(DomainGenerationOutputSchema.safeParse({ operation: "generate-domain", candidates: [{ key: "a", proposition: "p" }], constraints: [{ kind: "requires", subject: "a", target: "a" }] }).success).toBe(false);
     expect(DomainGenerationOutputSchema.safeParse({ operation: "generate-domain", evidence: [{ text: "x", source: "y", kind: "repository" }], candidates: [{ key: "a", proposition: "p" }] }).success).toBe(false);
     expect(RefinementOutputSchema.safeParse({ evidence: [{ text: "smuggled fact", source: "src/x.ts:1", kind: "repository" }], children: [], activations: [] } as never).success).toBe(false);
     expect(() => validateSynthesisOutput(current, generation, { operation: "challenge-domain", verdict: "accept", domainFingerprint: "stale", viableCandidateIds: ["r1:a"] })).toThrow(/does not match/);

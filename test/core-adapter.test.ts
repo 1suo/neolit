@@ -724,6 +724,7 @@ describe("solution LOD reducer", () => {
     current.network.evidence.push({ id: "e1", text: "relevant", source: "a.ts", kind: "repository", fingerprint: "1" }, { id: "e2", text: "unrelated", source: "b.ts", kind: "repository", fingerprint: "2" });
     current.network.regions[0].evidenceIds.push("e1");
     current.network.activations[0].contextRefs.push("e1");
+    current.network.activations[0].readRefs = undefined;
     for (let index = 0; index < 300; index += 1) {
       const suffix = String(index);
       current.network.evidence.push({ id: `noise-e${suffix}`, text: `unrelated fact ${suffix}`, source: `noise/${suffix}.ts:1`, kind: "repository", fingerprint: `ne${suffix}` });
@@ -769,6 +770,7 @@ describe("solution LOD reducer", () => {
       { id: "e2", text: "Node 16 may be unsupported", source: "model", kind: "inference", status: "hypothesis", validationKind: "repository-evidence", fingerprint: "f2" },
     );
     current.network.activations[0].contextRefs.push("e1", "e2");
+    current.network.activations[0].readRefs = undefined;
     const compiled = compileActivationPrompt(current, { ...current.network.activations[0], capability: "synthesize" });
     expect(compiled).toContain("CONFIRMED FACTS");
     expect(compiled).toContain("package pins Node 20");
@@ -806,6 +808,7 @@ describe("solution LOD reducer", () => {
     current.network.regions[0].candidateIds.push("r1:a");
     current.network.artifacts.push({ id: "x1", regionId: "r1", kind: "file", path: "src/a.ts", summary: "implemented output", activationId: "a0" });
     current.network.activations[0].contextRefs.push("x1");
+    current.network.activations[0].readRefs = undefined;
     for (const capability of ["inspect", "synthesize", "refine", "implement", "verify", "present"] as const) {
       const compiled = compileActivationPrompt(current, { ...current.network.activations[0], capability });
       expect(compiled).toContain(`LOCAL OPERATION\n${capability}:`);
@@ -1003,6 +1006,7 @@ describe("solution LOD reducer", () => {
     network.regions[0].selectedCandidateIds = ["r1:node"];
     network.regions[0].status = "contradiction";
     network.regions[0].contradiction = "Commitments conflict on shared choice: stale";
+    network.activations[0].readRefs = undefined;
     const failed: ActivationTaskResult = {
       activationId: "a1", regionId: "r1", capability: "inspect", basisRevision: 0, startedAt: 0, finishedAt: 1,
       usage: { turns: 1, input: 1, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, outcome: "error", error: "invalid output", networkDelta: null,
@@ -1566,4 +1570,3 @@ describe("durable checkpoints", () => {
     expect(resumed.answer).toBe("yes");
   });
 });
-
