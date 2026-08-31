@@ -1,4 +1,4 @@
-import { domainFingerprint, propagateNetwork, assertAcyclicPrimalGraph } from "./solution-lod/reducer.js";
+import { boundDomainFingerprint, propagateNetwork, assertAcyclicPrimalGraph } from "./solution-lod/reducer.js";
 import type { SolutionLodState, SolutionNetwork } from "./solution-lod/types.js";
 
 /** Upper bound used only for the coarse retry-counter sanity check; drivers pass real limits at run time. */
@@ -61,8 +61,8 @@ export function checkConvergence(state: SolutionLodState, elapsedMs: number): Ch
   const telemetry = network.telemetry;
   checks.push({
     name: "convergence: retry/reopen counters within policy",
-    ok: (telemetry?.retries ?? 0) <= MAX_ACTIVATIONS && network.regions.every((region) => region.reopens <= 3),
-    detail: `retries=${telemetry?.retries ?? 0} maxRegionReopens=${Math.max(0, ...network.regions.map((region) => region.reopens))}`,
+    ok: (telemetry?.retries ?? 0) <= MAX_ACTIVATIONS && network.regions.every((region) => region.progress.reopenAttempts.count <= 3),
+    detail: `retries=${telemetry?.retries ?? 0} maxRegionReopens=${Math.max(0, ...network.regions.map((region) => region.progress.reopenAttempts.count))}`,
   });
   return checks;
 }
@@ -84,12 +84,11 @@ export function checkSolverWorkflows(network: SolutionNetwork): Check[] {
   const ungated = network.candidates.filter((candidate) => {
     if (candidate.status !== "selected") return false;
     const region = network.regions.find((item) => item.id === candidate.regionId);
-    return Boolean(region && region.acceptedFingerprint && region.acceptedFingerprint !== domainFingerprint(network, region.id));
+    return Boolean(region && region.acceptedFingerprint && region.acceptedFingerprint !== boundDomainFingerprint(network, region.id));
   });
   checks.push({ name: "csp/wfc/lod: selections hold only under accepted fingerprints", ok: !ungated.length, detail: ungated.map((candidate) => candidate.id).join(", ") || "every selection matches its accepted domain" });
-  const oversized = network.regions.filter((region) => region.candidateIds.length > 7);
-  const overrun = network.regions.filter((region) => region.cegarRound > 2);
-  checks.push({ name: "csp/wfc/lod: domain and CEGAR bounds respected", ok: !oversized.length && !overrun.length, detail: [...oversized.map((region) => `${region.id} size=${region.candidateIds.length}`), ...overrun.map((region) => `${region.id} round=${region.cegarRound}`)].join(", ") || `domains<=7, cegar<=2 across ${network.regions.length} regions` });
+  const overrun = network.regions.filter((region) => region.progress.cegarRounds.count > 2);
+  checks.push({ name: "csp/wfc/lod: CEGAR bound respected", ok: !overrun.length, detail: overrun.map((region) => `${region.id} round=${region.progress.cegarRounds.count}`).join(", ") || `cegar<=2 across ${network.regions.length} regions` });
   const orphanSelections = network.regions.filter((region) => region.selectedCandidateIds.some((id) => !network.candidates.find((candidate) => candidate.id === id)));
   checks.push({ name: "csp/wfc/lod: region selections reference live candidates", ok: !orphanSelections.length, detail: orphanSelections.map((region) => region.id).join(", ") || "no dangling selections" });
   const lod = Math.max(0, ...network.regions.map((region) => region.lod));

@@ -19,7 +19,7 @@ export function commandModel(input: Omit<CommandModel, "backend">): CommandModel
   return { backend: "command", ...input };
 }
 
-export function defineGraph<State extends Record<string, unknown>>(graph: ConnectorGraph<State>): ConnectorGraph<State> {
+export function defineGraph<State extends Record<string, unknown>, InitialInput>(graph: ConnectorGraph<State, InitialInput>): ConnectorGraph<State, InitialInput> {
   return graph;
 }
 
@@ -79,7 +79,7 @@ function solutionLodPresetDefinition(options: SolutionLodPresetOptions = {}): Co
     version: 1,
     models,
     agents: Object.fromEntries(roles.map((role) => [role, agent(role)])),
-    graphs: { "solution-lod": solutionLodGraph({ agents: { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" }, roleLimits: options.roleLimits, maxParallelActivations: options.maxParallelActivations, maxActivations: options.maxActivations }) },
+    graphs: { "solution-lod": solutionLodGraph({ agents: { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" }, roleLimits: options.roleLimits, maxParallelActivations: options.maxParallelActivations, maxActivations: options.maxActivations, maxInspectionsPerRegion: options.maxInspectionsPerRegion }) },
     defaultGraph: "solution-lod",
   };
 }

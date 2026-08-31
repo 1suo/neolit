@@ -3,7 +3,7 @@ import { initialNetwork, mergeSolutionDelta, selectActivationBatch, validateSolu
 import { SolutionDeltaSchema, type Activation, type SolutionLodState, type SolutionNetwork } from "../src/solution-lod/types.js";
 
 const usage = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
-const state = (network: SolutionNetwork): SolutionLodState => ({ stateVersion: 8, runId: "batch", originalTask: "deliver all requested work", conversationContext: "", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage, callsUsed: 0, startedAt: 0, result: "" });
+const state = (network: SolutionNetwork): SolutionLodState => ({ stateVersion: 10, runId: "batch", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage, callsUsed: 0, startedAt: 0, result: "" });
 
 const mutationNetwork = (resources: string[][]): SolutionNetwork => {
   const network = initialNetwork("mutate independent scopes");
@@ -22,8 +22,8 @@ describe("bundle mutation batching", () => {
     const network = initialNetwork("implement A and B; report external C");
     network.activations[0]!.status = "running";
     const delta = SolutionDeltaSchema.parse({ region: {}, evidence: [], materialRequirements: [
-      { key: "a", text: "Implement A", criterion: "A passes" },
-      { key: "b", text: "Implement B", criterion: "B passes" },
+      { key: "a", text: "Implement A", criterion: "A passes", evidenceRefs: ["task"] },
+      { key: "b", text: "Implement B", criterion: "B passes", evidenceRefs: ["task"] },
     ], taskScopes: [
       { key: "a", objective: "Implement A", acceptanceCriteria: ["A passes"], requirementKeys: ["a"], mutationResources: ["src/a.ts"] },
       { key: "b", objective: "Implement B", acceptanceCriteria: ["B passes"], requirementKeys: ["b"], mutationResources: ["src/b.ts"] },

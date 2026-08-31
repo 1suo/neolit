@@ -135,7 +135,7 @@ claim of mathematical exhaustiveness.
   collapse are rejected before acceptance and work after acceptance.
 - [x] Test that soft preferences can choose a candidate without becoming hard
   elimination reasons.
-- [x] Test unresolved ties, repeated counterexamples, seven-candidate overflow,
+- [x] Test unresolved ties, repeated counterexamples, and candidate expansion,
   and repeated no-progress inspection cycles terminate as explicit blocks.
 - [x] Test that a new selection-time hard constraint causes propagation and
   rechallenge rather than landing together with a stale selection.

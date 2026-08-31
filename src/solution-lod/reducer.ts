@@ -1,44 +1,62 @@
 import { createHash } from "node:crypto";
-import type { Activation, ActivationReadRef, ActivationTaskResult, CandidateSelectionOutput, Capability, CandidateStance, ContextRefKind, CriterionId, DecisionVariable, DomainChallengeOutput, DomainGenerationOutput, ImplementationOutput, RefinementOutput, RequirementId, ScopeId, SemanticCycleKind, SolutionCandidate, SolutionConstraint, SolutionDelta, SolutionLodState, SolutionNetwork, SolutionRegion, SolutionTelemetry, StanceRelation, SynthesisOperation, SynthesisOutput, VerificationOutput } from "./types.js";
+import type { ActivationContextTelemetry, AgentToolTrace, SolutionExecutionCapability } from "../types.js";
+import type { Activation, ActivationOutput, ActivationReadRef, ActivationTaskResult, CandidateSelectionOutput, Capability, CandidateStance, CompletionCertificate, ContextRefKind, CriterionId, DecisionBoundaryProposal, DecisionVariable, DomainChallengeOutput, DomainGenerationOutput, FindingRoute, ImplementationOutput, InspectionCriterionResult, InspectionOutput, ProgressLedgerEntry, RefinementOutput, RepositoryEvidenceLocation, RequirementId, ScopeId, SemanticCycleKind, SolutionAuthorityFrame, SolutionCandidate, SolutionConstraint, SolutionDelta, SolutionFinding, SolutionLodState, SolutionNetwork, SolutionRegion, SolutionTelemetry, StanceRelation, SynthesisOperation, SynthesisOutput, VerificationFinding, VerificationOutput } from "./types.js";
+import { DEFAULT_ACTIVATION_CAPABILITIES, roleSupportsCapabilities } from "./roles.js";
 
 const normalize = (value: string) => value.trim().replace(/\s+/g, " ");
 const slug = (value: string) => normalize(value).toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "candidate";
 const propositionSignature = (value: string) => normalize(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 export const SAME_REVISION_RETRY_POLICY = { maxAttempts: 3 } as const;
+export const MAX_SCHEMA_ATTEMPTS = 3;
 export const MAX_CEGAR_ROUNDS = 2;
 export const MAX_DOMAIN_CANDIDATES = 7;
 export const MAX_NO_PROGRESS_CYCLES = 2;
 export const MAX_SEMANTIC_CYCLES = 2;
-const DEFERRED_WORK = /\b(?:estimate|eta|hours?|days?|weeks?|later|defer(?:red)?|follow[- ]?up|future work|optional(?:ly)?)\b/i;
+const DEFERRED_WORK = /\b(?:estimate|eta|defer(?:red)?|follow(?:-| )up|future work)\b|\b\d+\s*(?:hours?|days?|weeks?)\b|\boptional(?:ly)?\s+(?:later|follow(?:-| )up|future|subsequent)\b|\b(?:do|finish|implement|address|handle|complete|revisit)\b.{0,40}\blater\b/i;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24);
+export function assertNever(value: never): never { throw new Error(`Unexpected outcome: ${String(value)}`); }
 const EMPTY_USAGE = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
-const emptyTelemetry = (): SolutionTelemetry => ({ activations: 0, operationCalls: {}, counterexampleRepairs: 0, retries: 0, reopens: 0, cycles: 0, candidates: 0, regionCount: 0, promptChars: 0, projectedContextChars: 0, validationFailures: 0, elapsedMs: 0, queueMs: 0, roleMs: {}, implementationMs: 0, verificationMs: 0, usage: { ...EMPTY_USAGE }, blockedReasons: [], regions: {} });
-function rejectUnrequestedDeferredWork(state: Pick<SolutionLodState, "originalTask">, values: Array<string | undefined>): void {
-  if (/\b(?:estimate|eta|how long|time|effort|hours?|days?|weeks?)\b/i.test(state.originalTask)) return;
+const EMPTY_CONTEXT_TELEMETRY: ActivationContextTelemetry = { repositoryReadChars: 0, repositoryOutputChars: 0, otherToolOutputChars: 0, bashOutputChars: 0, duplicateReadCharsAvoided: 0, accumulatedSessionInput: 0, cacheReadInput: 0, structuredRepairAttempts: 0 };
+const INITIAL_INSPECTION_REQUEST = "Find the repository facts needed to form complete alternatives for this goal. Investigate lower-level details when they affect that choice, but do not turn them into choices yet.";
+const emptyTelemetry = (): SolutionTelemetry => ({ activations: 0, physicalActivations: 0, promptAttempts: 0, schemaRetries: 0, schemaRepairs: 0, operationCalls: {}, counterexampleRepairs: 0, retries: 0, reopens: 0, cycles: 0, candidates: 0, regionCount: 0, promptChars: 0, schemaChars: 0, projectedContextChars: 0, validationFailures: 0, elapsedMs: 0, queueMs: 0, roleMs: {}, implementationMs: 0, verificationMs: 0, usage: { ...EMPTY_USAGE }, blockedReasons: [], regions: {}, contextTelemetry: { ...EMPTY_CONTEXT_TELEMETRY }, recordedActivationIds: [], activationRecords: [] });
+const progressEntry = (): ProgressLedgerEntry => ({ count: 0, fingerprint: null, unresolvedCriterionIds: [] });
+const emptyProgress = (): SolutionRegion["progress"] => ({ inspectionNoProgress: progressEntry(), cegarRounds: progressEntry(), selectionNoProgress: progressEntry(), reopenAttempts: progressEntry(), repairCycles: progressEntry() });
+const addContextTelemetry = (target: ActivationContextTelemetry, source?: ActivationContextTelemetry): void => { for (const key of Object.keys(EMPTY_CONTEXT_TELEMETRY) as Array<keyof ActivationContextTelemetry>) target[key] = (target[key] ?? 0) + (source?.[key] ?? 0); };
+function rejectUnrequestedDeferredWork(state: Pick<SolutionLodState, "network">, values: Array<string | undefined>): void {
+  if (/\b(?:estimate|eta|how long|time|effort|hours?|days?|weeks?)\b/i.test(state.network.authority.task.exactText)) return;
   const rejected = values.find((value) => value && DEFERRED_WORK.test(value));
   if (rejected) throw new Error(`Unrequested estimate, optionalization, or deferred work is not a valid authored result: "${normalize(rejected)}".`);
 }
 export const taskReferencesTodo = (task: string) => /\bTODO\b/.test(task);
 
-export function initialNetwork(task: string): SolutionNetwork {
+function taskAuthority(task: string): SolutionAuthorityFrame {
+  return { task: { id: "task", exactText: task }, authoritativeMessages: [], admissions: [{ messageId: "task", scopeIds: "all", admittedRevision: 0, source: "provisional-all" }] };
+}
+
+export function initialNetwork(input: string | SolutionAuthorityFrame): SolutionNetwork {
+  const authority = typeof input === "string" ? taskAuthority(input) : structuredClone(input);
+  const task = authority.task.exactText;
   const network: SolutionNetwork = {
-    revision: 0, nextRegionId: 2, nextEvidenceId: 1, nextConstraintId: 1, nextActivationId: 2, nextArtifactId: 1, nextVariableId: 1,
-    regions: [{ id: "r1", key: "root", edge: "root", lod: 0, objective: task, delivery: "change", allowedVariables: ["solution family"], acceptanceCriteria: [], status: "unformed", reopens: 0, reopenFingerprint: null, candidateIds: [], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: ["a1"], artifactIds: [], scopeId: "scope:r1", criterionIds: [], domainPhase: "inspecting", domainFingerprint: null, acceptedFingerprint: null, cegarRound: 0, challengeVerdict: null, noProgressFingerprint: null, noProgressCount: 0, requirementIds: [], dependencyScopeIds: [], mutationResources: [], selectionAge: 0 }],
+    authority,
+    revision: 0, nextRegionId: 2, nextEvidenceId: 1, nextConstraintId: 1, nextActivationId: 2, nextArtifactId: 1, nextVariableId: 1, nextFindingId: 1, nextCertificateId: 1,
+    regions: [{ id: "r1", key: "root", edge: "root", lod: 0, objective: task, delivery: "change", allowedVariables: ["solution family"], acceptanceCriteria: [], status: "unformed", progress: emptyProgress(), candidateIds: [], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: ["a1"], artifactIds: [], scopeId: "scope:r1", criterionIds: [], inspectionObligationIds: [], domainPhase: "inspecting", enumerationFingerprint: null, boundDomainFingerprint: null, domainFingerprint: null, acceptedFingerprint: null, challengeVerdict: null, requirementIds: [], dependencyScopeIds: [], mutationResources: [], selectionAge: 0 }],
     candidates: [], constraints: [], evidence: [], artifacts: [],
-    activations: [{ id: "a1", capability: "inspect", regionId: "r1", request: "Find repository facts needed to distinguish the broad solution types. Investigate lower-level details when they affect that choice, but do not turn them into choices yet.", expectedDelta: "coarse-domain:r1", contextRefs: ["r1"], status: "queued", basisRevision: 0, idempotencyKey: hash(["inspect", "", "r1", "coarse-domain:r1"]), mutationResources: [], queuedAt: Date.now() }],
-    variables: [], materialRequirements: [], taskDispositions: [], telemetry: emptyTelemetry(),
+    activations: [{ id: "a1", capability: "inspect", requiredCapabilities: ["repository-observe"], regionId: "r1", request: INITIAL_INSPECTION_REQUEST, expectedDelta: "inspection:r1:0", contextRefs: ["r1"], status: "queued", basisRevision: 0, idempotencyKey: hash(["inspect", "", "r1", "inspection:r1:0", ["repository-observe"]]), mutationResources: [], queuedAt: Date.now() }],
+    variables: [], findings: [], certificates: [], materialRequirements: [], taskDispositions: [], schemaRetries: {}, telemetry: emptyTelemetry(),
   };
   network.activations[0]!.readRefs = activationReadRefs(network, ["r1"]);
+  network.activations[0]!.logicalActivationId = activationContextFingerprint(network.activations[0]!);
   return network;
 }
 
 function cloneNetwork(network: SolutionNetwork): SolutionNetwork {
   return {
     ...network,
-    regions: network.regions.map((item) => ({ ...item, allowedVariables: [...item.allowedVariables], acceptanceCriteria: [...item.acceptanceCriteria], criterionIds: [...(item.criterionIds ?? [])], candidateIds: [...item.candidateIds], selectedCandidateIds: [...item.selectedCandidateIds], constraintIds: [...item.constraintIds], evidenceIds: [...item.evidenceIds], activationIds: [...item.activationIds], artifactIds: [...item.artifactIds], coveredCriteria: item.coveredCriteria ? [...item.coveredCriteria] : undefined, requirementIds: [...(item.requirementIds ?? [])], dependencyScopeIds: [...(item.dependencyScopeIds ?? [])], mutationResources: [...(item.mutationResources ?? [])], convergenceCycles: item.convergenceCycles?.map((cycle) => ({ ...cycle, unresolvedCriterionIds: [...cycle.unresolvedCriterionIds] })), blockedDetails: item.blockedDetails ? structuredClone(item.blockedDetails) : undefined, certifiedLeaf: item.certifiedLeaf ? { ...item.certifiedLeaf, criterionIds: [...item.certifiedLeaf.criterionIds], evidenceRefs: [...item.certifiedLeaf.evidenceRefs] } : undefined })),
+    authority: structuredClone(network.authority),
+    regions: network.regions.map((item) => ({ ...item, progress: structuredClone(item.progress), decisionBoundary: item.decisionBoundary ? structuredClone(item.decisionBoundary) : undefined, allowedVariables: [...item.allowedVariables], acceptanceCriteria: [...item.acceptanceCriteria], criterionIds: [...(item.criterionIds ?? [])], inspectionObligationIds: item.inspectionObligationIds ? [...item.inspectionObligationIds] : undefined, criterionVerdicts: item.criterionVerdicts?.map((verdict) => ({ ...verdict, evidenceRefs: [...verdict.evidenceRefs] })), candidateIds: [...item.candidateIds], selectedCandidateIds: [...item.selectedCandidateIds], constraintIds: [...item.constraintIds], evidenceIds: [...item.evidenceIds], activationIds: [...item.activationIds], artifactIds: [...item.artifactIds], coveredCriteria: item.coveredCriteria ? [...item.coveredCriteria] : undefined, requirementIds: [...(item.requirementIds ?? [])], dependencyScopeIds: [...(item.dependencyScopeIds ?? [])], mutationResources: [...(item.mutationResources ?? [])], selectionPremiseRefs: item.selectionPremiseRefs ? [...item.selectionPremiseRefs] : undefined, implementationPremiseRefs: item.implementationPremiseRefs ? [...item.implementationPremiseRefs] : undefined, verificationPremiseRefs: item.verificationPremiseRefs ? [...item.verificationPremiseRefs] : undefined, convergenceCycles: item.convergenceCycles?.map((cycle) => ({ ...cycle, unresolvedCriterionIds: [...cycle.unresolvedCriterionIds] })), blockedDetails: item.blockedDetails ? structuredClone(item.blockedDetails) : undefined, certifiedLeaf: item.certifiedLeaf ? { ...item.certifiedLeaf, criterionIds: [...item.certifiedLeaf.criterionIds], requirementIds: [...(item.certifiedLeaf.requirementIds ?? [])], evidenceRefs: [...item.certifiedLeaf.evidenceRefs] } : undefined })),
     candidates: network.candidates.map((item) => ({ ...item, evidenceIds: [...item.evidenceIds], declaredEvidenceIds: item.declaredEvidenceIds ? [...item.declaredEvidenceIds] : undefined, eliminationReasons: [...item.eliminationReasons], declaredEliminationReasons: item.declaredEliminationReasons ? [...item.declaredEliminationReasons] : undefined, stances: (item.stances ?? []).map((stance) => ({ ...stance })) })),
-    constraints: network.constraints.map((item) => ({ ...item })), evidence: network.evidence.map((item) => ({ ...item, validationEvidenceRefs: item.validationEvidenceRefs ? [...item.validationEvidenceRefs] : undefined })), activations: network.activations.map((item) => ({ ...item, contextRefs: [...item.contextRefs], readRefs: item.readRefs?.map((ref) => ({ ...ref })), mutationResources: [...(item.mutationResources ?? [])], recovery: item.recovery ? { ...item.recovery, retryTrace: item.recovery.retryTrace?.map((trace) => ({ ...trace })) } : undefined })), artifacts: network.artifacts.map((item) => ({ ...item })),
-    variables: network.variables.map((item) => ({ ...item, seedLabels: [...(item.seedLabels ?? [])] })), materialRequirements: network.materialRequirements?.map((item) => ({ ...item })) as SolutionNetwork["materialRequirements"], taskDispositions: network.taskDispositions?.map((item) => ({ ...item, evidenceRefs: [...item.evidenceRefs] })), telemetry: network.telemetry ? structuredClone(network.telemetry) : emptyTelemetry(),
+    constraints: network.constraints.map((item) => ({ ...item })), evidence: network.evidence.map((item) => ({ ...item, location: item.location ? { ...item.location, range: [...item.location.range] } : undefined, controllerVerified: item.controllerVerified ? { ...item.controllerVerified } : undefined, validationEvidenceRefs: item.validationEvidenceRefs ? [...item.validationEvidenceRefs] : undefined, statusTimeline: item.statusTimeline?.map((event) => ({ ...event, evidenceRefs: [...event.evidenceRefs] })) })), activations: network.activations.map((item) => ({ ...item, contextRefs: [...item.contextRefs], requiredCapabilities: item.requiredCapabilities ? [...item.requiredCapabilities] : undefined, readRefs: item.readRefs?.map((ref) => ({ ...ref })), mutationResources: [...(item.mutationResources ?? [])], findingIds: [...(item.findingIds ?? [])], recovery: item.recovery ? { ...item.recovery, retryTrace: item.recovery.retryTrace?.map((trace) => ({ ...trace })) } : undefined })), artifacts: network.artifacts.map((item) => ({ ...item, evidenceRefs: item.evidenceRefs ? [...item.evidenceRefs] : undefined, requiredEvidence: item.requiredEvidence ? [...item.requiredEvidence] : undefined })),
+    variables: network.variables.map((item) => ({ ...item, seedLabels: [...(item.seedLabels ?? [])], evidenceRefs: [...(item.evidenceRefs ?? [])] })), findings: network.findings.map((item) => ({ ...item, target: { ...item.target, refs: [...item.target.refs] }, route: structuredClone(item.route), evidenceRefs: [...item.evidenceRefs], repairActivationIds: [...item.repairActivationIds] })), certificates: network.certificates.map((item) => ({ ...item, criterionIds: [...item.criterionIds], requirementIds: [...(item.requirementIds ?? [])], selectedFamilyIds: [...item.selectedFamilyIds], equivalenceProofConstraintIds: [...item.equivalenceProofConstraintIds], premiseRefs: [...item.premiseRefs], dependencyCertificateRefs: [...item.dependencyCertificateRefs], measuredArtifactIds: item.measuredArtifactIds ? [...item.measuredArtifactIds] : undefined, focusedCheckArtifactIds: item.focusedCheckArtifactIds ? [...item.focusedCheckArtifactIds] : undefined, releaseCheckArtifactIds: item.releaseCheckArtifactIds ? [...item.releaseCheckArtifactIds] : undefined, artifactFingerprints: { ...item.artifactFingerprints }, resolvedFindingIds: [...item.resolvedFindingIds] })), materialRequirements: network.materialRequirements?.map((item) => ({ ...item, evidenceRefs: [...(item.evidenceRefs ?? [])] })) as SolutionNetwork["materialRequirements"], taskDispositions: network.taskDispositions?.map((item) => ({ ...item, evidenceRefs: [...item.evidenceRefs] })), schemaRetries: structuredClone(network.schemaRetries), telemetry: network.telemetry ? structuredClone(network.telemetry) : emptyTelemetry(),
   };
 }
 
@@ -52,10 +70,9 @@ function candidateRef(network: SolutionNetwork, regionId: string, ref: string): 
 }
 
 function candidateSignature(proposition: string, stances: readonly CandidateStance[]): string {
-  return JSON.stringify([
-    propositionSignature(proposition),
-    stances.map((stance) => [stance.variableId, stance.relation, slug(stance.valueLabel)]).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
-  ]);
+  return JSON.stringify(stances.length
+    ? stances.map((stance) => [stance.variableId, stance.relation, slug(stance.valueLabel)]).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+    : [propositionSignature(proposition)]);
 }
 
 /** Unconditional hard consequences. Commitment-dependent excludes/refutes belong to propagation, not domain viability. */
@@ -102,30 +119,50 @@ function hardEliminations(network: SolutionNetwork): Map<string, Set<string>> {
   return eliminated;
 }
 
-export function domainFingerprint(network: SolutionNetwork, regionId: string): string | null {
+export function enumerationFingerprint(network: SolutionNetwork, regionId: string): string | null {
   const region = network.regions.find((item) => item.id === regionId);
   if (!region || !region.candidateIds.length) return null;
-  const hardEliminated = hardEliminations(network);
-  const evidenceToken = (id: string) => id === "task" ? "task" : (() => { const item = network.evidence.find((entry) => entry.id === id); return item ? `${item.fingerprint}:${item.status ?? (item.kind === "inference" ? "hypothesis" : "confirmed")}:${item.kind}` : `missing:${id}`; })();
   const candidates = region.candidateIds.map((id) => network.candidates.find((item) => item.id === id)).filter((item): item is SolutionCandidate => Boolean(item)).map((item) => ({
-    id: item.id,
-    proposition: propositionSignature(item.proposition),
-    stances: [...(item.stances ?? [])].map((stance) => [stance.variableId, stance.relation, slug(stance.valueLabel)]).sort(),
-    evidence: [...new Set((item.declaredEvidenceIds ?? item.evidenceIds).map(evidenceToken))].sort(),
-    viable: !hardEliminated.has(item.id),
+    id: item.id, key: item.key, proposition: propositionSignature(item.proposition), evidenceRefs: [...new Set(item.declaredEvidenceIds ?? item.evidenceIds)].sort(),
   })).sort((left, right) => left.id.localeCompare(right.id));
-  const localCandidateIds = new Set(region.candidateIds);
-  const constraints = network.constraints.filter((item) => !item.historical && (region.constraintIds.includes(item.id) || localCandidateIds.has(item.subject) || localCandidateIds.has(item.target))).map((item) => ({ kind: item.kind, subject: network.evidence.some((evidence) => evidence.id === item.subject) ? evidenceToken(item.subject) : item.subject, target: item.target, reason: normalize(item.reason), sourceKind: item.sourceKind, evidenceRefs: [...item.evidenceRefs].map(evidenceToken).sort() })).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
-  return createHash("sha256").update(JSON.stringify({ boundary: { objective: normalize(region.objective), allowedVariables: [...region.allowedVariables].sort(), criteria: [...region.acceptanceCriteria].map(normalize).sort() }, candidates, constraints })).digest("hex").slice(0, 24);
+  return hash({ boundaryFingerprint: region.decisionBoundary?.fingerprint ?? hash({ variables: [], permittedPairs: [] }), candidates });
 }
 
+export function boundDomainFingerprint(network: SolutionNetwork, regionId: string): string | null {
+  const region = network.regions.find((item) => item.id === regionId);
+  const enumeration = enumerationFingerprint(network, regionId);
+  if (!region || !enumeration) return null;
+  const ancestry = regionAncestryIds(network, region.id);
+  const visibleVariables = network.variables.filter((item) => !item.historical && ancestry.has(item.ownerRegionId));
+  const variableIds = new Set(visibleVariables.map((item) => item.id));
+  const localCandidateIds = new Set(region.candidateIds);
+  const canonicalCoordinates = region.candidateIds.flatMap((candidateId) => {
+    const candidate = network.candidates.find((item) => item.id === candidateId && !item.historical);
+    return visibleVariables.map((variable) => ({ candidateId, variableId: variable.id, applicable: Boolean(candidate?.stances.some((stance) => stance.variableId === variable.id)), stances: (candidate?.stances ?? []).filter((stance) => stance.variableId === variable.id).map((stance) => ({ relation: stance.relation, valueLabel: normalize(stance.valueLabel) })).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))) }));
+  }).sort((left, right) => `${left.candidateId}\0${left.variableId}`.localeCompare(`${right.candidateId}\0${right.variableId}`));
+  const relevantConstraints = network.constraints.filter((item) => !item.historical && (region.constraintIds.includes(item.id) || localCandidateIds.has(item.subject) || localCandidateIds.has(item.target) || coordinateOf(network, item.subject) && variableIds.has(coordinateOf(network, item.subject)!.variableId) || coordinateOf(network, item.target) && variableIds.has(coordinateOf(network, item.target)!.variableId))).map((item) => ({ id: item.id, kind: item.kind, subject: item.subject, target: item.target, reason: normalize(item.reason), sourceKind: item.sourceKind, evidenceRefs: [...item.evidenceRefs].sort() })).sort((left, right) => left.id.localeCompare(right.id));
+  const evidenceIds = new Set<string>([...(region.decisionBoundary?.variables.flatMap((item) => item.evidenceRefs) ?? []), ...(region.decisionBoundary?.permittedPairs.flatMap((item) => item.evidenceRefs) ?? []), ...region.candidateIds.flatMap((id) => network.candidates.find((item) => item.id === id)?.evidenceIds ?? []), ...relevantConstraints.flatMap((item) => item.evidenceRefs)]);
+  for (const queue = [...evidenceIds]; queue.length;) { const id = queue.shift(); const item = network.evidence.find((entry) => entry.id === id); for (const ref of item?.validationEvidenceRefs ?? []) if (!evidenceIds.has(ref)) { evidenceIds.add(ref); queue.push(ref); } }
+  const evidenceState = [...evidenceIds].map((id) => network.evidence.find((item) => item.id === id)).filter((item): item is NonNullable<typeof item> => Boolean(item)).map((item) => ({ id: item.id, fingerprint: item.fingerprint, kind: item.kind, status: item.status ?? (item.kind === "inference" ? "hypothesis" : "confirmed"), validationEvidenceRefs: [...(item.validationEvidenceRefs ?? [])].sort() })).sort((left, right) => left.id.localeCompare(right.id));
+  const visibleCommitmentState = visibleVariables.map((variable) => {
+    const bindingWitnesses = network.candidates.filter((item) => !item.historical && item.status === "selected" && item.regionId !== regionId).flatMap((candidate) => candidate.stances.filter((stance) => stance.variableId === variable.id && stance.relation === "requires").map((stance) => ({ candidateId: candidate.id, regionId: candidate.regionId, relation: "requires" as const, valueLabel: normalize(stance.valueLabel) }))).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    const unavailabilityWitnesses = relevantConstraints.flatMap((constraint) => { const coordinate = coordinateOf(network, constraint.target); return coordinate?.variableId === variable.id && (constraint.kind === "refutes" || constraint.kind === "excludes") && constraint.evidenceRefs.every((ref) => isConfirmedEvidence(network, ref)) ? [{ constraintId: constraint.id, valueLabel: normalize(coordinate.valueLabel), evidenceRefs: [...constraint.evidenceRefs].sort() }] : []; }).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+    const labels = [...new Set(bindingWitnesses.map((item) => slug(item.valueLabel)))].sort();
+    return { variableId: variable.id, bindingWitnesses, unavailabilityWitnesses, conflictValues: labels.length > 1 ? labels : [] };
+  }).sort((left, right) => left.variableId.localeCompare(right.variableId));
+  return hash({ enumerationFingerprint: enumeration, canonicalCoordinates, relevantConstraints, evidenceState, visibleCommitmentState });
+}
+
+/** @deprecated use boundDomainFingerprint. */
+export const domainFingerprint = boundDomainFingerprint;
+
 function accepted(network: SolutionNetwork, region: SolutionRegion): boolean {
-  const fingerprint = domainFingerprint(network, region.id);
+  const fingerprint = boundDomainFingerprint(network, region.id);
   return Boolean(fingerprint && region.acceptedFingerprint === fingerprint);
 }
 
 const LEGAL_REGION_TRANSITIONS: Record<SolutionRegion["status"], SolutionRegion["status"][]> = {
-  unformed: ["unformed", "superposed", "collapsed", "actionable", "implemented", "contradiction", "blocked", "stalled"], superposed: ["unformed", "superposed", "unrefined", "collapsed", "actionable", "implemented", "contradiction", "blocked", "stalled"], unrefined: ["unformed", "unrefined", "collapsed", "actionable", "implemented", "superposed", "contradiction", "blocked", "stalled"], collapsed: ["unformed", "collapsed", "superposed", "verified", "contradiction", "blocked", "stalled"], actionable: ["unformed", "actionable", "implementing", "implemented", "superposed", "contradiction", "blocked", "stalled"], implementing: ["unformed", "implementing", "implemented", "actionable", "superposed", "contradiction", "blocked", "stalled"], implemented: ["unformed", "implemented", "verified", "actionable", "superposed", "contradiction", "blocked", "stalled"], verified: ["unformed", "verified", "actionable", "superposed", "contradiction", "blocked", "stalled"], contradiction: ["unformed", "contradiction", "superposed", "unrefined", "collapsed", "actionable", "implemented", "blocked", "stalled"], blocked: ["blocked", "superposed", "unformed", "actionable", "contradiction", "stalled"], stalled: ["stalled", "superposed", "unformed", "contradiction"],
+  unformed: ["unformed", "superposed", "collapsed", "actionable", "implemented", "contradiction", "blocked", "stalled"], superposed: ["unformed", "superposed", "unrefined", "collapsed", "actionable", "implemented", "contradiction", "blocked", "stalled"], unrefined: ["unformed", "unrefined", "collapsed", "actionable", "implemented", "superposed", "contradiction", "blocked", "stalled"], collapsed: ["unformed", "collapsed", "superposed", "verified", "contradiction", "blocked", "stalled"], actionable: ["unformed", "unrefined", "actionable", "implementing", "implemented", "superposed", "contradiction", "blocked", "stalled"], implementing: ["unformed", "unrefined", "implementing", "implemented", "actionable", "superposed", "contradiction", "blocked", "stalled"], implemented: ["unformed", "unrefined", "implemented", "verified", "actionable", "superposed", "contradiction", "blocked", "stalled"], verified: ["unformed", "unrefined", "implemented", "verified", "actionable", "superposed", "contradiction", "blocked", "stalled"], contradiction: ["unformed", "contradiction", "superposed", "unrefined", "collapsed", "actionable", "implemented", "blocked", "stalled"], blocked: ["blocked", "superposed", "unformed", "actionable", "contradiction", "stalled"], stalled: ["stalled", "superposed", "unformed", "contradiction"],
 };
 
 /** The only production authority for region lifecycle changes. */
@@ -137,20 +174,21 @@ function transitionRegion(region: SolutionRegion, phase: SolutionRegion["domainP
   region.blockedReason = blockedReason;
   if (phase === "blocked") {
     region.contradiction = blockedReason;
-    region.blockedDetails ??= { kind: "workflow", fingerprints: [region.noProgressFingerprint].filter((item): item is string => Boolean(item)), unresolvedCriterionIds: [...region.criterionIds] };
+    region.blockedDetails ??= { kind: "workflow", fingerprints: Object.values(region.progress).flatMap((entry) => entry.fingerprint ? [entry.fingerprint] : []), unresolvedCriterionIds: [...region.criterionIds] };
   }
 }
 
 function refreshDomainControls(network: SolutionNetwork): boolean {
   let changed = false;
   for (const region of network.regions) {
-    const fingerprint = domainFingerprint(network, region.id);
-    if (region.domainFingerprint !== fingerprint) { region.domainFingerprint = fingerprint; changed = true; }
+    const enumeration = enumerationFingerprint(network, region.id);
+    const fingerprint = boundDomainFingerprint(network, region.id);
+    if (region.enumerationFingerprint !== enumeration || region.boundDomainFingerprint !== fingerprint || region.domainFingerprint !== fingerprint) { region.enumerationFingerprint = enumeration; region.boundDomainFingerprint = fingerprint; region.domainFingerprint = fingerprint; changed = true; }
     if (region.acceptedFingerprint && region.acceptedFingerprint !== fingerprint) {
       region.acceptedFingerprint = null;
       region.challengeVerdict = null;
       const resolvedAnswer = network.candidates.find((item) => item.regionId === region.id && item.key === "resolved-answer" && region.delivery === "answer");
-      transitionRegion(region, resolvedAnswer ? "selected" : region.candidateIds.length ? "challenging" : "ungenerated");
+      transitionRegion(region, resolvedAnswer ? "selected" : region.candidateIds.length ? "challenging" : region.decisionBoundary ? "ungenerated" : "inspecting");
       region.selectedCandidateIds = resolvedAnswer ? [resolvedAnswer.id] : [];
       for (const candidate of network.candidates.filter((item) => item.regionId === region.id && item.declaredStatus === "selected" && item.id !== resolvedAnswer?.id)) { candidate.declaredStatus = "possible"; candidate.status = "possible"; }
       purgeDescendants(network, region.id);
@@ -171,20 +209,35 @@ function knownRef(network: SolutionNetwork, ref: string): boolean {
 
 export interface ResolvedContextReference { ref: string; kind: ContextRefKind; revision: number; fingerprint: string; value: unknown }
 
+function regionContextValue(region: SolutionRegion) {
+  return {
+    id: region.id, scopeId: region.scopeId, parentId: region.parentId, parentCandidateId: region.parentCandidateId, edge: region.edge,
+    objective: region.objective, delivery: region.delivery, allowedVariables: region.allowedVariables, criteria: region.acceptanceCriteria,
+    criterionIds: region.criterionIds, requirementIds: region.requirementIds ?? [], dependencyScopeIds: region.dependencyScopeIds ?? [],
+    mutationResources: region.mutationResources ?? [], coveredCriteria: region.coveredCriteria ?? [],
+    candidateIds: region.candidateIds, selectedCandidateIds: region.selectedCandidateIds, constraintIds: region.constraintIds,
+    evidenceIds: region.evidenceIds, artifactIds: region.artifactIds, domainPhase: region.domainPhase,
+    domainFingerprint: region.domainFingerprint, acceptedFingerprint: region.acceptedFingerprint,
+  };
+}
+
 export function resolveContextReference(network: SolutionNetwork, ref: string): ResolvedContextReference | undefined {
   let kind: ContextRefKind; let value: unknown; let fingerprintValue: unknown; let revision = network.revision;
-  if (ref === "task") { kind = "task"; value = { id: "task" }; revision = 0; }
+  if (ref === "task") { kind = "task"; value = network.authority.task; revision = 0; }
   else {
     const region = network.regions.find((item) => item.id === ref);
+    const criterionOwner = network.regions.find((item) => item.criterionIds.includes(ref as CriterionId));
+    const requirement = network.materialRequirements?.find((item) => item.id === ref);
     const candidate = network.candidates.find((item) => item.id === ref && !item.historical);
     const evidence = network.evidence.find((item) => item.id === ref);
     const constraint = network.constraints.find((item) => item.id === ref && !item.historical);
     const artifact = network.artifacts.find((item) => item.id === ref && !item.historical);
+    const finding = network.findings.find((item) => item.id === ref && item.status !== "superseded");
     const activation = network.activations.find((item) => item.id === ref && !item.historical);
     const coordinate = coordinateOf(network, ref);
     if (region) {
       kind = "region";
-      value = { id: region.id, objective: region.objective, criteria: region.acceptanceCriteria, candidateIds: region.candidateIds, constraintIds: region.constraintIds, evidenceIds: region.evidenceIds, artifactIds: region.artifactIds, domainFingerprint: region.domainFingerprint, acceptedFingerprint: region.acceptedFingerprint };
+      value = regionContextValue(region);
       const ancestry = regionAncestryIds(network, region.id);
       const variables = network.variables.filter((item) => !item.historical && ancestry.has(item.ownerRegionId));
       const variableIds = new Set(variables.map((item) => item.id));
@@ -195,13 +248,16 @@ export function resolveContextReference(network: SolutionNetwork, ref: string): 
         return !item.historical && (candidateIds.has(item.subject) || candidateIds.has(item.target) || separator > 0 && variableIds.has(item.target.slice(0, separator)));
       });
       const evidenceIds = new Set(constraints.flatMap((item) => item.evidenceRefs ?? []));
-      const projectedRegions = network.regions.filter((item) => ancestry.has(item.id)).map((item) => ({ id: item.id, parentId: item.parentId, edge: item.edge, objective: item.objective, acceptanceCriteria: item.acceptanceCriteria, criterionIds: item.criterionIds, allowedVariables: item.allowedVariables, selectedCandidateIds: item.selectedCandidateIds, domainPhase: item.domainPhase, domainFingerprint: item.domainFingerprint, acceptedFingerprint: item.acceptedFingerprint, cegarRound: item.cegarRound }));
-      fingerprintValue = { value, projectedRegions, variables, candidates, constraints, evidence: network.evidence.filter((item) => evidenceIds.has(item.id)) };
+      const projectedRegions = network.regions.filter((item) => ancestry.has(item.id)).map(regionContextValue);
+      fingerprintValue = { value, authority: network.authority, projectedRegions, variables, candidates, constraints, evidence: network.evidence.filter((item) => evidenceIds.has(item.id)) };
     }
+    else if (criterionOwner) { kind = "criterion"; const index = criterionOwner.criterionIds.indexOf(ref as CriterionId); value = { criterionId: ref, criterion: criterionOwner.acceptanceCriteria[index], regionId: criterionOwner.id }; }
+    else if (requirement) { kind = "requirement"; value = requirement; fingerprintValue = { requirement, evidence: requirement.evidenceRefs.map((id) => id === "task" ? { id, fingerprint: hash(network.authority.task) } : (() => { const item = network.evidence.find((entry) => entry.id === id); return item ? { id, fingerprint: item.fingerprint, status: item.status } : { id, missing: true }; })()) }; }
     else if (candidate) { kind = "candidate"; value = candidate; revision = candidate.createdRevision ?? network.revision; }
     else if (evidence) { kind = "evidence"; value = evidence; revision = evidence.createdRevision ?? network.revision; }
     else if (constraint) { kind = "constraint"; value = constraint; revision = constraint.createdRevision ?? network.revision; }
     else if (artifact) { kind = "artifact"; value = artifact; revision = artifact.createdRevision ?? network.revision; }
+    else if (finding) { kind = "finding"; value = finding; revision = finding.createdRevision; }
     else if (activation) { kind = "activation"; value = { id: activation.id, capability: activation.capability, operation: activation.operation, status: activation.status, expectedDelta: activation.expectedDelta }; }
     else if (coordinate) { kind = "coordinate"; value = coordinate; }
     else return undefined;
@@ -224,9 +280,63 @@ export function activationContextFingerprint(activation: Pick<Activation, "idemp
   return hash([activation.idempotencyKey ?? "", activation.readRefs ?? []]);
 }
 
+export function reserveSchemaAttempts(networkInput: SolutionNetwork, activationId: string): SolutionNetwork {
+  const network = cloneNetwork(networkInput);
+  const activation = network.activations.find((item) => item.id === activationId);
+  if (!activation) return network;
+  const logicalActivationId = activation.logicalActivationId ?? activationContextFingerprint(activation);
+  activation.logicalActivationId = logicalActivationId;
+  const ledger = network.schemaRetries[logicalActivationId] ??= { logicalActivationId, contextFingerprint: logicalActivationId, attempts: 0, retries: 0, repairs: 0, reservedAttempts: 0, trace: [] };
+  if (ledger.reservationActivationId === activation.id) return network;
+  const remaining = Math.max(0, MAX_SCHEMA_ATTEMPTS - ledger.attempts - ledger.reservedAttempts);
+  ledger.reservedAttempts += remaining;
+  ledger.reservationActivationId = activation.id;
+  activation.schemaReservation = { attemptOrdinal: ledger.attempts + 1, maxAttempts: remaining };
+  return network;
+}
+
+/** A process can die after submission but before a result checkpoint; charge the uncertain in-flight attempt and release the unused allowance. */
+export function consumeInterruptedSchemaReservations(networkInput: SolutionNetwork): SolutionNetwork {
+  const network = cloneNetwork(networkInput);
+  for (const activation of network.activations.filter((item) => item.status === "running" && item.schemaReservation)) {
+    const reservation = activation.schemaReservation!;
+    const logicalActivationId = activation.logicalActivationId ?? activationContextFingerprint(activation);
+    const ledger = network.schemaRetries[logicalActivationId] ??= { logicalActivationId, contextFingerprint: logicalActivationId, attempts: 0, retries: 0, repairs: 0, reservedAttempts: 0, trace: [] };
+    ledger.trace.push({ physicalActivationId: activation.id, logicalActivationId, attemptOrdinal: reservation.attemptOrdinal, kind: reservation.attemptOrdinal > 1 ? "schema-repair" : "initial", outcome: "interrupted" });
+    ledger.attempts++;
+    if (reservation.attemptOrdinal > 1) { ledger.retries++; ledger.repairs++; }
+    ledger.reservedAttempts = Math.max(0, ledger.reservedAttempts - reservation.maxAttempts);
+    ledger.reservationActivationId = undefined;
+    activation.schemaReservation = undefined;
+    activation.status = "failed";
+    activation.error = "Host process exited during a reserved schema attempt; the uncertain attempt was consumed and unused retries were released.";
+    const region = network.regions.find((item) => item.id === activation.regionId);
+    if (region?.status === "implementing") region.status = "actionable";
+  }
+  return network;
+}
+
+function settleSchemaAttempts(network: SolutionNetwork, record: ActivationTaskResult): void {
+  const activation = network.activations.find((item) => item.id === record.activationId);
+  const logicalActivationId = record.logicalActivationId ?? activation?.logicalActivationId;
+  if (!logicalActivationId) return;
+  const ledger = network.schemaRetries[logicalActivationId] ??= { logicalActivationId, contextFingerprint: logicalActivationId, attempts: 0, retries: 0, repairs: 0, reservedAttempts: 0, trace: [] };
+  if (ledger.reservationActivationId === record.activationId) {
+    ledger.reservedAttempts = Math.max(0, ledger.reservedAttempts - (activation?.schemaReservation?.maxAttempts ?? ledger.reservedAttempts));
+    ledger.reservationActivationId = undefined;
+  }
+  const seen = new Set(ledger.trace.map((item) => `${item.physicalActivationId ?? ""}:${item.attemptOrdinal}`));
+  const attempts = (record.promptAttempts ?? []).filter((item) => !seen.has(`${item.physicalActivationId ?? ""}:${item.attemptOrdinal}`));
+  ledger.attempts += attempts.length;
+  ledger.retries += attempts.filter((item) => item.kind === "schema-repair").length;
+  ledger.repairs += attempts.filter((item) => item.kind === "schema-repair" && item.outcome !== "submitted").length;
+  ledger.trace.push(...attempts.map((item) => ({ ...item })));
+  if (activation) activation.schemaReservation = undefined;
+}
+
 export function activationRecovery(matches: Activation[], operation: SynthesisOperation | undefined, idempotencyKey: string, readRefs: ActivationReadRef[]): Activation["recovery"] {
   if (operation === "challenge-domain") return undefined;
-  const recovery = matches.find((item) => item.status === "failed" && item.recovery && item.idempotencyKey === idempotencyKey && item.recovery.contextFingerprint === activationContextFingerprint({ idempotencyKey, readRefs }))?.recovery;
+  const recovery = [...matches].reverse().find((item) => item.status === "failed" && item.recovery && item.idempotencyKey === idempotencyKey && item.recovery.contextFingerprint === activationContextFingerprint({ idempotencyKey, readRefs }))?.recovery;
   return recovery ? { ...recovery, retryTrace: recovery.retryTrace.map((trace) => ({ ...trace })) } : undefined;
 }
 
@@ -256,6 +366,21 @@ function regionAncestryIds(network: SolutionNetwork, regionId: string): Set<stri
   let cursor = network.regions.find((item) => item.id === regionId);
   while (cursor) { ids.add(cursor.id); cursor = cursor.parentId ? network.regions.find((item) => item.id === cursor?.parentId) : undefined; }
   return ids;
+}
+
+function activationContextReferenceIds(network: SolutionNetwork, regionId: string, explicitRefs: string[]): string[] {
+  const refs = new Set([regionId, ...explicitRefs]);
+  const validCertificates = network.certificates.filter((certificate) => isCompletionCertificateValid(network, certificate));
+  for (const requirement of network.materialRequirements ?? []) {
+    if (!validCertificates.some((certificate) => certificate.requirementIds.includes(requirement.id))) refs.add(requirement.id);
+  }
+  return [...refs];
+}
+
+function inspectionProgressFingerprint(network: SolutionNetwork, region: SolutionRegion): string {
+  const evidence = region.evidenceIds.map((id) => network.evidence.find((item) => item.id === id)).filter((item): item is NonNullable<typeof item> => Boolean(item)).filter((item) => (item.status ?? (item.kind === "inference" ? "hypothesis" : "confirmed")) === "confirmed" || item.kind === "inference" && (item.status === "rejected" || item.status === "confirmed")).map((item) => [item.fingerprint, item.status ?? "confirmed"]).sort();
+  const verdicts = (region.criterionVerdicts ?? []).map((item) => [item.criterionId, item.verdict, [...item.evidenceRefs].sort()]).sort();
+  return hash({ evidence, verdicts, boundary: region.decisionBoundary?.fingerprint ?? null });
 }
 
 /** Reject paraphrased duplicates of an established option so pruning cannot silently miss near-spellings. */
@@ -288,24 +413,33 @@ function resolveStances(network: SolutionNetwork, regionId: string, stances: Rea
   });
 }
 
-type ActivationInput = Omit<Activation, "id" | "status" | "basisRevision" | "idempotencyKey" | "readRefs"> & Partial<Pick<Activation, "idempotencyKey">>;
+type ActivationInput = Omit<Activation, "id" | "status" | "basisRevision" | "idempotencyKey" | "readRefs" | "requiredCapabilities"> & Partial<Pick<Activation, "idempotencyKey">> & { requiredCapabilities: SolutionExecutionCapability[] };
+
+export function activationRequiredCapabilities(activation: Pick<Activation, "capability" | "requiredCapabilities">): readonly SolutionExecutionCapability[] {
+  return activation.requiredCapabilities ?? DEFAULT_ACTIVATION_CAPABILITIES[activation.capability];
+}
 
 function addActivation(network: SolutionNetwork, input: ActivationInput): Activation | undefined {
-  const contextRefs = [...new Set([input.regionId, ...input.contextRefs])];
+  const contextRefs = activationContextReferenceIds(network, input.regionId, [...input.contextRefs, ...(input.findingIds ?? [])]);
   const readRefs = activationReadRefs(network, contextRefs);
-  const idempotencyKey = input.idempotencyKey ?? hash([input.capability, input.operation ?? "", input.regionId, normalize(input.expectedDelta)]);
-  const matches = network.activations.filter((item) => item.idempotencyKey === idempotencyKey || !item.idempotencyKey && hash([item.capability, item.operation ?? "", item.regionId, normalize(item.expectedDelta)]) === idempotencyKey);
+  if (!roleSupportsCapabilities(input.capability, input.requiredCapabilities)) throw new Error(`${input.capability} cannot satisfy required capabilities: ${input.requiredCapabilities.join(", ")}.`);
+  const requiredCapabilities = [...new Set(input.requiredCapabilities)].sort();
+  const idempotencyKey = input.idempotencyKey ?? hash([input.capability, input.operation ?? "", input.regionId, normalize(input.expectedDelta), requiredCapabilities]);
+  const matches = network.activations.filter((item) => !item.historical && (item.idempotencyKey === idempotencyKey || !item.idempotencyKey && hash([item.capability, item.operation ?? "", item.regionId, normalize(item.expectedDelta), [...activationRequiredCapabilities(item)].sort()]) === idempotencyKey));
   // Only activations whose outcome actually landed (or is still in flight) occupy their
   // signature. Failed and superseded attempts produced nothing, so they must free the
   // slot — otherwise a killed-and-resumed run deadlocks behind its own superseded record.
   const duplicate = matches.some((item) => item.status !== "failed" && item.status !== "superseded");
   const readFingerprint = hash(readRefs.map(({ ref, kind, fingerprint }) => ({ ref, kind, fingerprint })));
-  const failedAttempts = network.activations.filter((item) => item.regionId === input.regionId && item.capability === input.capability && item.operation === input.operation && item.status === "failed" && (item.readRefs ? hash(item.readRefs.map(({ ref, kind, fingerprint }) => ({ ref, kind, fingerprint }))) === readFingerprint : item.basisRevision === network.revision)).length;
+  const failedAttempts = network.activations.filter((item) => !item.historical && item.regionId === input.regionId && item.capability === input.capability && item.operation === input.operation && item.status === "failed" && (item.readRefs ? hash(item.readRefs.map(({ ref, kind, fingerprint }) => ({ ref, kind, fingerprint }))) === readFingerprint : item.basisRevision === network.revision)).length;
   const region = network.regions.find((item) => item.id === input.regionId);
   if (duplicate || failedAttempts >= SAME_REVISION_RETRY_POLICY.maxAttempts || !region || input.contextRefs.some((ref) => !knownRef(network, ref)) || input.capability === "synthesize" && !input.operation) return undefined;
   if (input.capability === "implement" && region.status !== "actionable" || input.capability === "verify" && region.status !== "implemented" || input.capability === "present" && (region.status !== "actionable" || region.delivery !== "answer") || input.capability === "refine" && region.status !== "unrefined" || input.capability === "synthesize" && !["unformed", "superposed", "contradiction"].includes(region.status)) return undefined;
   const recovery = activationRecovery(matches, input.operation, idempotencyKey, readRefs);
-  const activation: Activation = { ...input, id: `a${network.nextActivationId++}`, contextRefs, readRefs, idempotencyKey, mutationResources: [...new Set(input.mutationResources ?? region.mutationResources ?? [])].sort(), queuedAt: Date.now(), status: "queued", basisRevision: network.revision, ...(recovery ? { recovery: { ...recovery, retryTrace: recovery.retryTrace.map((trace) => ({ ...trace })) } } : {}) };
+  const logicalActivationId = activationContextFingerprint({ idempotencyKey, readRefs });
+  const schema = network.schemaRetries[logicalActivationId];
+  if (schema && schema.attempts + schema.reservedAttempts >= MAX_SCHEMA_ATTEMPTS) return undefined;
+  const activation: Activation = { ...input, requiredCapabilities, id: `a${network.nextActivationId++}`, contextRefs, readRefs, idempotencyKey, logicalActivationId, mutationResources: [...new Set(input.mutationResources ?? region.mutationResources ?? [])].sort(), queuedAt: Date.now(), status: "queued", basisRevision: network.revision, ...(recovery ? { recovery: { ...recovery, retryTrace: recovery.retryTrace.map((trace) => ({ ...trace })) } } : {}) };
   network.activations.push(activation);
   network.regions.find((region) => region.id === input.regionId)?.activationIds.push(activation.id);
   return activation;
@@ -323,7 +457,6 @@ export function purgeDescendants(network: SolutionNetwork, regionId: string): bo
   network.variables = network.variables.filter((item) => survivingRegionIds.has(item.ownerRegionId));
   // Live activations of removed regions stay visible but can no longer land: their region is gone.
   network.activations = network.activations.map((item) => survivingRegionIds.has(item.regionId) ? item : { ...item, historical: true, status: item.status === "queued" || item.status === "running" ? "superseded" as const : item.status, error: item.error ?? `Historical activation: region ${item.regionId} was removed from the current solution.` });
-  network.materialRequirements = network.materialRequirements?.filter((requirement) => network.regions.some((item) => item.scopeId === requirement.scopeId));
   const survivingEndpoint = (ref: string) => ref === "task" || survivingRegionIds.has(ref) || network.candidates.some((item) => item.id === ref) || network.evidence.some((item) => item.id === ref) || network.artifacts.some((item) => item.id === ref) || knownCoordinate(network, ref);
   network.constraints = network.constraints.filter((item) => survivingEndpoint(item.subject) && survivingEndpoint(item.target));
   return true;
@@ -357,11 +490,48 @@ function hasSelectedImplementationFamily(network: SolutionNetwork, region: Solut
     && new Set(region.selectedCandidateIds.map((id) => classes.get(id) ?? id)).size === 1;
 }
 
-/**
- * The primal variable graph joins two shared choices whenever one move takes stances on both.
- * It must stay an acyclic forest: cycles would let sibling subtrees constrain each other through
- * hidden paths, breaking locality and making the sweeps' guarantees unverifiable.
- */
+const pairKey = (left: string, right: string) => left < right ? `${left}\0${right}` : `${right}\0${left}`;
+
+export function admitDecisionBoundary(networkInput: SolutionNetwork, regionId: string, proposal: DecisionBoundaryProposal): SolutionNetwork {
+  const network = cloneNetwork(networkInput);
+  const region = network.regions.find((item) => item.id === regionId);
+  if (!region) throw new Error(`Unknown decision-boundary region ${regionId}.`);
+  if (proposal.basisRevision !== network.revision) throw new Error(`Stale decision boundary: expected basis revision ${network.revision}, received ${proposal.basisRevision}.`);
+  if (region.candidateIds.some((id) => network.candidates.some((item) => item.id === id && !item.historical))) throw new Error("A decision boundary must be admitted before candidate generation.");
+  const keys = proposal.variables.map((item) => slug(item.key));
+  const requestedNames = proposal.variables.map((item) => slug(item.name));
+  if (keys.some((item) => !item) || new Set(keys).size !== keys.length || requestedNames.some((item) => !item) || new Set(requestedNames).size !== requestedNames.length) throw new Error("Decision-boundary variable keys and canonical names must be unique and non-empty.");
+  if (proposal.variables.some((item) => item.ownerRegionId !== regionId)) throw new Error(`Decision-boundary variables proposed for ${regionId} must be owned by that region.`);
+  const reservedNames = new Set(network.variables.filter((item) => !item.historical && item.ownerRegionId !== regionId).map((item) => item.name));
+  const names = requestedNames.map((requested) => {
+    let name = requested;
+    for (let suffix = 2; reservedNames.has(name); suffix++) name = `${requested}-${slug(regionId)}${suffix > 2 ? `-${suffix}` : ""}`;
+    reservedNames.add(name);
+    return name;
+  });
+  for (const item of proposal.variables) for (const ref of item.evidenceRefs) if (!isConfirmedEvidence(network, ref)) throw new Error(`Decision-boundary variable ${item.key} cites unresolved or stale evidence ${ref}.`);
+  const variables = proposal.variables.map((item, index) => {
+    const seedLabels = item.seedLabels.map(normalize).filter(Boolean).sort((left, right) => left.localeCompare(right));
+    if (new Set(seedLabels.map(slug)).size !== seedLabels.length) throw new Error(`Decision-boundary variable ${item.key} has duplicate or non-canonical seed labels.`);
+    return { id: `v${network.nextVariableId++}`, name: names[index]!, ownerRegionId: regionId, seedLabels, evidenceRefs: [...new Set(item.evidenceRefs)].sort() };
+  });
+  const byKey = new Map(keys.map((key, index) => [key, variables[index]!]));
+  const seenPairs = new Set<string>();
+  const permittedPairs = proposal.permittedPairs.map((item) => {
+    const left = byKey.get(slug(item.leftVariableKey)); const right = byKey.get(slug(item.rightVariableKey));
+    if (!left || !right || left.id === right.id) throw new Error(`Decision-boundary pair ${item.leftVariableKey} + ${item.rightVariableKey} must reference two distinct proposed variables.`);
+    const key = pairKey(left.id, right.id); if (seenPairs.has(key)) throw new Error("Decision-boundary permitted pairs must be unique undirected edges."); seenPairs.add(key);
+    for (const ref of item.evidenceRefs) if (!isConfirmedEvidence(network, ref)) throw new Error(`Decision-boundary pair cites unresolved or stale evidence ${ref}.`);
+    return { leftVariableId: left.id, rightVariableId: right.id, evidenceRefs: [...new Set(item.evidenceRefs)].sort() };
+  });
+  network.variables = network.variables.map((item) => item.ownerRegionId === regionId && !item.historical ? { ...item, historical: true } : item).concat(variables);
+  region.decisionBoundary = { fingerprint: hash({ variables, permittedPairs }), variables: variables.map((item) => ({ ...item })), permittedPairs };
+  assertAcyclicPrimalGraph(network);
+  network.revision++;
+  return network;
+}
+
+/** The primal graph is declared only by controller-admitted undirected pairs. */
 export function assertAcyclicPrimalGraph(network: SolutionNetwork): void {
   const parent = new Map<string, string>();
   const find = (id: string): string => { let root = id; while (parent.get(root) !== root) root = parent.get(root)!; while (parent.get(id) !== id) { const next = parent.get(id)!; parent.set(id, root); id = next; } return root; };
@@ -371,25 +541,23 @@ export function assertAcyclicPrimalGraph(network: SolutionNetwork): void {
   // Parallel edges (the same variable pair coupled again by another move or statement) are
   // legal; only an edge joining vertices already connected through other edges closes a cycle.
   const knownEdges = new Set<string>();
-  const edgeKey = (left: string, right: string) => (left < right ? `${left}\u0000${right}` : `${right}\u0000${left}`);
   const registerEdge = (left: string, right: string): boolean => {
-    const key = edgeKey(left, right);
+    const key = pairKey(left, right);
     if (knownEdges.has(key)) return true;
     if (!union(left, right)) return false;
     knownEdges.add(key);
     return true;
   };
+  for (const boundary of network.regions.map((item) => item.decisionBoundary).filter((item): item is NonNullable<typeof item> => Boolean(item))) for (const pair of boundary.permittedPairs) if (!registerEdge(pair.leftVariableId, pair.rightVariableId)) throw new Error(`Admitted shared choices "${edgeLabel(pair.leftVariableId, pair.rightVariableId)}" close a global coupling cycle.`);
+  const admittedPairs = new Set(network.regions.flatMap((item) => item.decisionBoundary?.permittedPairs.map((pair) => pairKey(pair.leftVariableId, pair.rightVariableId)) ?? []));
   for (const constraint of network.constraints.filter((item) => !item.historical)) {
     const left = coordinateOf(network, constraint.subject); const right = coordinateOf(network, constraint.target);
-    if (left && right && !registerEdge(left.variableId, right.variableId)) throw new Error(`Shared choices "${edgeLabel(left.variableId, right.variableId)}" are already coupled — this statement would close a cycle between regions.`);
+    if (left && right && left.variableId !== right.variableId && !admittedPairs.has(pairKey(left.variableId, right.variableId))) throw new Error(`Constraint touches unadmitted variable pair ${edgeLabel(left.variableId, right.variableId)}.`);
   }
   for (const candidate of network.candidates.filter((item) => !item.historical)) {
     const touched = [...new Set((candidate.stances ?? []).map((stance) => stance.variableId))];
-    for (let i = 0; i < touched.length; i += 1) {
-      for (let j = i + 1; j < touched.length; j += 1) {
-        if (!registerEdge(touched[i]!, touched[j]!)) throw new Error(`"${candidate.key}" positions on already-coupled shared choices (${edgeLabel(touched[i]!, touched[j]!)}) and would close a coupling cycle. Split the move or merge the choices.`);
-      }
-    }
+    if (touched.length > 2) throw new Error(`"${candidate.key}" touches more than two shared choices; use a composite variable or decompose the decision.`);
+    if (touched.length === 2 && !admittedPairs.has(pairKey(touched[0]!, touched[1]!))) throw new Error(`"${candidate.key}" touches unadmitted shared-choice pair ${edgeLabel(touched[0]!, touched[1]!)}.`);
   }
 }
 
@@ -397,8 +565,84 @@ export function isConfirmedEvidence(network: SolutionNetwork, id: string): boole
   if (id === "task") return true;
   const item = network.evidence.find((entry) => entry.id === id);
   if (!item || (item.status ?? (item.kind === "inference" ? "hypothesis" : "confirmed")) !== "confirmed") return false;
+  if (item.kind === "repository") return Boolean(item.location && item.controllerVerified);
   if (item.kind !== "inference") return true;
   return Boolean(item.validationEvidenceRefs?.length && item.validationEvidenceRefs.every((ref) => ref === "task" || network.evidence.some((ground) => ground.id === ref && ground.kind !== "inference" && (ground.status ?? "confirmed") === "confirmed")));
+}
+
+export function invalidateStaleEvidence(networkInput: SolutionNetwork, evidenceIds: string[]): SolutionNetwork {
+  const network = cloneNetwork(networkInput);
+  const stale = new Set(evidenceIds);
+  for (const queue = [...stale]; queue.length;) {
+    const id = queue.shift()!;
+    const evidence = network.evidence.find((item) => item.id === id);
+    if (!evidence) throw new Error(`Cannot invalidate unknown evidence ${id}.`);
+    appendEvidenceStatus(evidence, "stale", network.revision + 1, "Repository evidence or one of its validation premises changed.", [id]);
+    for (const dependent of network.evidence) if (dependent.validationEvidenceRefs?.includes(id) && !stale.has(dependent.id)) { stale.add(dependent.id); queue.push(dependent.id); }
+  }
+  const citesStale = (refs: readonly string[] | undefined) => Boolean(refs?.some((ref) => stale.has(ref)));
+  for (const constraint of network.constraints) if (!constraint.historical && citesStale(constraint.evidenceRefs)) constraint.historical = true;
+  for (const region of network.regions) {
+    const staleCriterionIds = (region.criterionVerdicts ?? []).filter((item) => citesStale(item.evidenceRefs)).map((item) => item.criterionId);
+    if (staleCriterionIds.length) {
+      region.criterionVerdicts = region.criterionVerdicts?.filter((item) => !staleCriterionIds.includes(item.criterionId));
+      region.inspectionObligationIds = [...new Set([...(region.inspectionObligationIds ?? []), ...staleCriterionIds])];
+      region.inspectionAttempts = 0;
+    }
+    const boundaryStale = Boolean(staleCriterionIds.length || region.decisionBoundary?.variables.some((item) => citesStale(item.evidenceRefs)) || region.decisionBoundary?.permittedPairs.some((item) => citesStale(item.evidenceRefs)));
+    const domainStale = region.candidateIds.some((id) => citesStale(network.candidates.find((item) => item.id === id)?.evidenceIds)) || region.constraintIds.some((id) => network.constraints.find((item) => item.id === id)?.historical);
+    const selectionStale = citesStale(region.selectionPremiseRefs);
+    const refinementStale = citesStale(region.certifiedLeaf?.evidenceRefs);
+    const implementationStale = citesStale(region.implementationPremiseRefs);
+    const verificationStale = citesStale(region.verificationPremiseRefs);
+    const frontier = boundaryStale ? "boundary" : domainStale ? "domain" : selectionStale ? "selection" : refinementStale ? "refinement" : implementationStale ? "implementation" : verificationStale ? "verification" : undefined;
+    if (!frontier) continue;
+    if (["boundary", "domain", "selection", "refinement"].includes(frontier)) {
+      for (const child of [...network.regions].filter((item) => item.parentId === region.id && item.parentCandidateId)) retractRegion(network, child.id);
+    }
+    const artifactThreshold = frontier === "verification" ? 5 : 4;
+    const capabilityRank: Partial<Record<Capability, number>> = { implement: 4, verify: 5, present: 5 };
+    for (const artifact of network.artifacts.filter((item) => item.regionId === region.id && !item.historical)) {
+      const capability = network.activations.find((item) => item.id === artifact.activationId)?.capability;
+      if ((capabilityRank[capability!] ?? 0) >= artifactThreshold) artifact.historical = true;
+    }
+    if (frontier === "boundary") {
+      for (const candidate of network.candidates.filter((item) => item.regionId === region.id && !item.historical)) candidate.historical = true;
+      for (const variable of network.variables.filter((item) => item.ownerRegionId === region.id && !item.historical)) variable.historical = true;
+      for (const constraint of network.constraints.filter((item) => region.constraintIds.includes(item.id) && !item.historical)) constraint.historical = true;
+      region.candidateIds = []; region.constraintIds = []; region.decisionBoundary = undefined; region.enumerationFingerprint = null; region.boundDomainFingerprint = null; region.domainFingerprint = null;
+      region.selectedCandidateIds = []; region.acceptedFingerprint = null; region.challengeVerdict = null; region.selectionPremiseRefs = undefined; region.certifiedLeaf = undefined; region.implementationPremiseRefs = undefined; region.verificationPremiseRefs = undefined; region.answer = undefined;
+      transitionRegion(region, "inspecting", undefined, "superposed");
+    } else if (frontier === "domain") {
+      for (const candidate of network.candidates.filter((item) => item.regionId === region.id && !item.historical)) { candidate.evidenceIds = candidate.evidenceIds.filter((id) => !stale.has(id)); candidate.declaredEvidenceIds = candidate.declaredEvidenceIds?.filter((id) => !stale.has(id)); }
+      region.constraintIds = region.constraintIds.filter((id) => !network.constraints.find((item) => item.id === id)?.historical); region.selectedCandidateIds = []; region.acceptedFingerprint = null; region.challengeVerdict = null; region.selectionPremiseRefs = undefined; region.certifiedLeaf = undefined; region.implementationPremiseRefs = undefined; region.verificationPremiseRefs = undefined; region.answer = undefined;
+      for (const candidate of network.candidates.filter((item) => item.regionId === region.id && !item.historical)) { candidate.status = "possible"; candidate.declaredStatus = "possible"; }
+      transitionRegion(region, "challenging", undefined, "superposed");
+    } else if (frontier === "selection") {
+      region.selectedCandidateIds = []; region.selectionPremiseRefs = undefined; region.certifiedLeaf = undefined; region.implementationPremiseRefs = undefined; region.verificationPremiseRefs = undefined; region.answer = undefined;
+      for (const candidate of network.candidates.filter((item) => item.regionId === region.id && !item.historical && item.status === "selected")) { candidate.status = "possible"; candidate.declaredStatus = "possible"; }
+      transitionRegion(region, "selecting", undefined, "superposed");
+    } else if (frontier === "refinement") {
+      region.certifiedLeaf = undefined; region.implementationPremiseRefs = undefined; region.verificationPremiseRefs = undefined; region.answer = undefined;
+      transitionRegion(region, "selected", undefined, "unrefined");
+    } else if (frontier === "implementation") {
+      region.implementationPremiseRefs = undefined; region.verificationPremiseRefs = undefined;
+      transitionRegion(region, "selected", undefined, "actionable");
+    } else {
+      region.verificationPremiseRefs = undefined;
+      transitionRegion(region, "selected", undefined, "implemented");
+    }
+  }
+  for (const activation of network.activations.filter((item) => item.status === "queued" || item.status === "running")) {
+    if (activation.readRefs?.some((read) => stale.has(read.ref)) || !activationReadsCurrent(network, activation)) { activation.status = "superseded"; activation.error = "Superseded: an evidence premise became stale."; }
+  }
+  network.revision++;
+  return network;
+}
+
+export function invalidateEvidenceDigestMismatches(network: SolutionNetwork, currentDigests: Readonly<Record<string, string>>): SolutionNetwork {
+  const stale = network.evidence.filter((item) => item.kind === "repository" && item.status !== "stale" && item.location && currentDigests[item.location.canonicalPath] !== undefined && currentDigests[item.location.canonicalPath] !== item.location.fileDigest).map((item) => item.id);
+  return stale.length ? invalidateStaleEvidence(network, stale) : cloneNetwork(network);
 }
 
 export function propagateNetwork(input: SolutionNetwork): SolutionNetwork {
@@ -734,17 +978,131 @@ const factStage = runConstraintSweeps(statusAtPassStart, "facts");
   return network;
 }
 
-function mergeEvidence(network: SolutionNetwork, region: SolutionRegion, items: SolutionDelta["evidence"]): Map<string, string> {
-  const localEvidence = new Map<string, string>();
-  for (const item of items) {
-    const identity = `${propositionSignature(item.text)}\0${propositionSignature(item.source)}`;
-    const fingerprint = createHash("sha256").update(identity).digest("hex").slice(0, 16);
-    let evidence = network.evidence.find((existing) => existing.fingerprint === fingerprint || `${propositionSignature(existing.text)}\0${propositionSignature(existing.source)}` === identity);
-    const status = item.kind === "inference" ? "hypothesis" : "confirmed";
-    if (!evidence) { evidence = { ...item, status, text: normalize(item.text), source: normalize(item.source), id: `e${network.nextEvidenceId++}`, fingerprint, createdRevision: network.revision + 1 }; network.evidence.push(evidence); }
-    region.evidenceIds = [...new Set([...region.evidenceIds, evidence.id])]; localEvidence.set(item.source, evidence.id);
+type RepositoryObservationTool = "graph_read" | "graph_inspect_worktrees" | "graph_read_worktree_diff";
+
+function successfulRepositoryReads(tools: readonly AgentToolTrace[] | undefined): Array<{ chunkId?: string; location: RepositoryEvidenceLocation; tool: RepositoryObservationTool }> {
+  return (tools ?? []).flatMap((trace) => {
+    const tool = trace.tool === "graph_read" || trace.tool === "graph_inspect_worktrees" || trace.tool === "graph_read_worktree_diff" ? trace.tool : undefined;
+    const descriptor = tool && trace.status === "completed" ? trace.metadata?.repositoryDescriptor : undefined;
+    if (!tool || !descriptor || typeof descriptor !== "object") return [];
+    const value = descriptor as Record<string, unknown>;
+    return typeof value.canonicalPath === "string" && Array.isArray(value.range) && value.range.length === 2 && value.range.every(Number.isInteger) && typeof value.fileDigest === "string" && Number.isInteger(value.snapshotEpoch)
+      ? [{ chunkId: typeof value.chunkId === "string" ? value.chunkId : undefined, location: { canonicalPath: value.canonicalPath, range: value.range as [number, number], fileDigest: value.fileDigest, snapshotEpoch: value.snapshotEpoch as number, ...(value.observation === "worktrees" ? { observation: "worktrees" as const } : {}) }, tool }] : [];
+  });
+}
+
+function successfulRepositoryDescriptors(tools: readonly AgentToolTrace[] | undefined): Map<string, RepositoryObservationTool> {
+  return new Map(successfulRepositoryReads(tools).map((item) => [JSON.stringify(item.location), item.tool]));
+}
+
+export function inspectionOutputToDelta(output: InspectionOutput, tools?: readonly AgentToolTrace[]): SolutionDelta {
+  const reads = new Map(successfulRepositoryReads(tools).flatMap((item) => item.chunkId ? [[item.chunkId, item.location] as const] : []));
+  const authoredChunks = new Set(output.evidence.flatMap((item) => item.kind === "repository" ? [item.chunkId] : []));
+  const evidenceRefs = (value: unknown): string[] => Array.isArray(value)
+    ? value.flatMap(evidenceRefs)
+    : value && typeof value === "object"
+      ? Object.entries(value).flatMap(([key, item]) => key === "evidenceRefs" && Array.isArray(item) ? item.filter((ref): ref is string => typeof ref === "string") : evidenceRefs(item))
+      : [];
+  for (const chunkId of new Set(evidenceRefs(output))) if (reads.has(chunkId) && !authoredChunks.has(chunkId)) throw new Error(`Repository chunk ${chunkId} requires a matching evidence entry that states the observed fact.`);
+  const evidence = output.evidence.map((item) => {
+    if (item.kind === "inference") return item;
+    const location = reads.get(item.chunkId);
+    if (!location) throw new Error(`Repository evidence chunk ${item.chunkId} does not match a successful repository observation from this activation.`);
+    return { text: item.text, source: item.source, kind: "repository" as const, assertion: "repository-presence" as const, location };
+  });
+  const delta: SolutionDelta = {
+    region: output.region,
+    evidence,
+    factIds: output.factIds,
+    validations: output.validations,
+    criterionEvidence: output.criterionEvidence,
+    materialRequirementEvidence: output.materialRequirementEvidence,
+    variables: [], candidates: [], constraints: [], select: [], activations: [],
+  };
+  switch (output.outcome) {
+    case "facts": return delta;
+    case "boundary": delta.decisionBoundary = output.decisionBoundary; delta.materialRequirements = output.materialRequirements; break;
+    case "need-fact": delta.activations = [{ capability: "inspect", ...output.inspection }]; break;
+    case "decompose": delta.taskScopes = output.taskScopes; delta.taskDispositions = output.taskDispositions; delta.materialRequirements = output.materialRequirements; break;
+    case "certified": delta.certifiedVerdict = output.certifiedVerdict; break;
+    case "already-satisfied": delta.alreadySatisfied = output.alreadySatisfied; break;
+    case "answer": delta.region = { ...output.region, delivery: "answer" }; delta.resolvedAnswer = output.resolvedAnswer; break;
+    default: assertNever(output);
   }
-  return localEvidence;
+  return delta;
+}
+
+function validateRepositoryProvenance(items: SolutionDelta["evidence"], tools: readonly AgentToolTrace[] | undefined): void {
+  const descriptors = successfulRepositoryDescriptors(tools);
+  for (const item of items) {
+    if (item.kind !== "repository") continue;
+    if (!item.location) throw new Error("Repository evidence requires a controller-issued repository observation location.");
+    if (!descriptors.has(JSON.stringify(item.location))) throw new Error(`Repository evidence location ${item.location.canonicalPath}:${item.location.range.join("-")} does not exactly match a successful repository observation descriptor from this activation.`);
+  }
+}
+
+function evidenceAssertion(item: Pick<SolutionNetwork["evidence"][number], "kind" | "assertion">): NonNullable<SolutionNetwork["evidence"][number]["assertion"]> {
+  return item.assertion ?? (item.kind === "repository" ? "repository-presence" : "other-claim");
+}
+
+function appendEvidenceStatus(evidence: SolutionNetwork["evidence"][number], status: NonNullable<SolutionNetwork["evidence"][number]["status"]>, revision: number, reason: string, evidenceRefs: string[] = [], activationId?: string): void {
+  evidence.statusTimeline ??= [{ status: evidence.status ?? (evidence.kind === "inference" ? "hypothesis" : "confirmed"), revision: evidence.createdRevision ?? 0, reason: "Evidence admitted.", evidenceRefs: [] }];
+  const event = { status, revision, ...(activationId ? { activationId } : {}), reason, evidenceRefs: [...new Set(evidenceRefs)].sort() };
+  const previous = evidence.statusTimeline.at(-1);
+  if (!previous || JSON.stringify(previous) !== JSON.stringify(event)) evidence.statusTimeline.push(event);
+  evidence.status = status;
+}
+
+function mergeEvidence(network: SolutionNetwork, region: SolutionRegion, items: SolutionDelta["evidence"], activationId?: string, tools?: readonly AgentToolTrace[], capability?: Capability): { refs: Map<string, string>; changed: boolean } {
+  validateRepositoryProvenance(items, tools);
+  if (capability === "inspect" && items.some((item) => item.kind === "tool")) throw new Error("Inspection cannot author confirmed tool evidence. Use kind 'repository' with an exact repository observation descriptor, or return an inference hypothesis.");
+  const localEvidence = new Map<string, string>();
+  let changed = false;
+  for (const item of items) {
+    const assertion = evidenceAssertion(item);
+    const identity = `${item.kind}\0${propositionSignature(item.text)}\0${propositionSignature(item.source)}\0${assertion}\0${item.location ? JSON.stringify(item.location) : ""}`;
+    const fingerprint = createHash("sha256").update(identity).digest("hex").slice(0, 16);
+    const lineageKey = hash({ kind: item.kind, assertion, source: propositionSignature(item.source), location: item.location ? { canonicalPath: item.location.canonicalPath, range: item.location.range, observation: item.location.observation } : undefined });
+    let evidence = network.evidence.find((existing) => existing.fingerprint === fingerprint || `${existing.kind}\0${propositionSignature(existing.text)}\0${propositionSignature(existing.source)}\0${evidenceAssertion(existing)}\0${existing.location ? JSON.stringify(existing.location) : ""}` === identity);
+    const status = item.kind === "inference" ? "hypothesis" : "confirmed";
+    const repositoryTool = item.location ? successfulRepositoryDescriptors(tools).get(JSON.stringify(item.location)) : undefined;
+    const controllerVerified = item.kind === "repository" && activationId && repositoryTool ? { activationId, tool: repositoryTool } : undefined;
+    if (!evidence) {
+      const superseded = network.evidence.filter((existing) => (existing.lineageKey ?? hash({ kind: existing.kind, assertion: evidenceAssertion(existing), source: propositionSignature(existing.source), location: existing.location ? { canonicalPath: existing.location.canonicalPath, range: existing.location.range, observation: existing.location.observation } : undefined })) === lineageKey).sort((left, right) => (right.createdRevision ?? 0) - (left.createdRevision ?? 0))[0];
+      evidence = { ...item, assertion, controllerVerified, status, text: normalize(item.text), source: normalize(item.source), id: `e${network.nextEvidenceId++}`, fingerprint, createdRevision: network.revision + 1, lineageKey, supersedesEvidenceId: superseded?.id, statusTimeline: [{ status, revision: network.revision + 1, ...(activationId ? { activationId } : {}), reason: "Evidence admitted.", evidenceRefs: [] }] };
+      network.evidence.push(evidence); changed = true;
+    } else {
+      evidence.assertion ??= assertion;
+      evidence.lineageKey ??= lineageKey;
+      if (status === "confirmed" && evidence.status === "stale") { appendEvidenceStatus(evidence, "confirmed", network.revision + 1, "Repository evidence re-observed.", [], activationId); changed = true; }
+    }
+    if (controllerVerified && !evidence.controllerVerified) { evidence.controllerVerified = controllerVerified; changed = true; }
+    if (!region.evidenceIds.includes(evidence.id)) { region.evidenceIds.push(evidence.id); changed = true; }
+    localEvidence.set(item.source, evidence.id);
+    if (item.location) for (const read of successfulRepositoryReads(tools)) if (read.chunkId && JSON.stringify(read.location) === JSON.stringify(item.location)) localEvidence.set(read.chunkId, evidence.id);
+  }
+  return { refs: localEvidence, changed };
+}
+
+function resolveDecisionBoundaryEvidence(proposal: DecisionBoundaryProposal, localEvidence: ReadonlyMap<string, string>): DecisionBoundaryProposal {
+  const refs = (values: string[]) => values.map((ref) => localEvidence.get(ref) ?? ref);
+  return { ...proposal, variables: proposal.variables.map((item) => ({ ...item, evidenceRefs: refs(item.evidenceRefs) })), permittedPairs: proposal.permittedPairs.map((item) => ({ ...item, evidenceRefs: refs(item.evidenceRefs) })) };
+}
+
+function applyEvidenceValidations(network: SolutionNetwork, validations: SolutionDelta["validations"], localEvidence: ReadonlyMap<string, string>): boolean {
+  let changed = false;
+  for (const validation of validations ?? []) {
+    const claim = network.evidence.find((item) => item.id === validation.claimRef && item.kind === "inference");
+    if (!claim || claim.status === "rejected" || validation.verdict === "unresolved") continue;
+    const resolvedRefs = [...new Set(validation.evidenceRefs.map((ref) => localEvidence.get(ref) ?? ref))];
+    const grounded = resolvedRefs.length > 0 && resolvedRefs.every((ref) => ref === "task" || network.evidence.some((item) => item.id === ref && item.kind !== "inference" && (item.status ?? "confirmed") === "confirmed"));
+    if (!grounded) continue;
+    appendEvidenceStatus(claim, validation.verdict, network.revision + 1, normalize(validation.reason), resolvedRefs);
+    claim.validationEvidenceRefs = resolvedRefs;
+    claim.validationReason = normalize(validation.reason);
+    changed = true;
+  }
+  return changed;
 }
 
 /**
@@ -759,7 +1117,7 @@ function bindRequirement(
 ): { ownerIndex: number; criterionIndex: number } {
   if (requirement.scopeKey !== undefined || requirement.criterionIndex !== undefined) {
     const ownerIndex = scopes.findIndex((scope) => slug(scope.key) === slug(requirement.scopeKey ?? ""));
-    if (ownerIndex < 0) throw new Error(`Material requirement ${requirement.key} cites unknown ${noun} "${requirement.scopeKey ?? ""}". Cite the supplied key of an owning ${noun}.`);
+    if (ownerIndex < 0) throw new Error(`Material requirement ${requirement.key} cites unknown ${noun} "${requirement.scopeKey ?? ""}". Use scopeKey ${scopes.map((scope) => `"${scope.key}"`).join(" or ")} with criterionIndex.`);
     const criteria = scopes[ownerIndex]!.acceptanceCriteria;
     const index = requirement.criterionIndex ?? -1;
     const criterion = criteria[index];
@@ -801,17 +1159,78 @@ function assertAcyclicScopeDependencies(network: SolutionNetwork, proposed: Read
   for (const scopeId of dependencies.keys()) visit(scopeId);
 }
 
-export function validateSolutionDelta(state: SolutionLodState, regionId: string, capabilityOrDelta: Capability | SolutionDelta, maybeDelta?: SolutionDelta): void {
+export function validateSolutionDelta(state: SolutionLodState, regionId: string, capabilityOrDelta: Capability | SolutionDelta, maybeDelta?: SolutionDelta, tools?: readonly AgentToolTrace[]): void {
   const capability: Capability = typeof capabilityOrDelta === "string" ? capabilityOrDelta : capabilityOrDelta.resolvedAnswer ? "inspect" : "synthesize";
   const delta = normalizeDelta(typeof capabilityOrDelta === "string" ? maybeDelta! : capabilityOrDelta);
   const region = state.network.regions.find((item) => item.id === regionId);
   if (!region) return;
-  for (const factId of delta.factIds) if (!state.network.evidence.some((item) => item.id === factId)) throw new Error(`Unknown graph fact ID ${factId}.`);
+  const reads = successfulRepositoryReads(tools);
+  const suppliedSources = new Set(delta.evidence.filter((item) => item.kind === "repository" || item.kind === "tool").flatMap((item) => [item.source, ...reads.filter((read) => read.chunkId && item.location && JSON.stringify(read.location) === JSON.stringify(item.location)).map((read) => read.chunkId!)]));
+  const activation = state.network.activations.findLast((item) => item.regionId === regionId && item.capability === capability && (item.status === "queued" || item.status === "running"));
+  const visibleRefs = activation?.readRefs ? new Set(activation.readRefs.map((item) => item.ref)) : undefined;
+  for (const factId of delta.factIds) {
+    const evidence = state.network.evidence.find((item) => item.id === factId);
+    if (factId !== "task" && (!evidence || !isConfirmedEvidence(state.network, factId) || visibleRefs && !visibleRefs.has(factId))) throw new Error(`Unknown, stale, or unprojected graph fact ID ${factId}. factIds accepts only confirmed FACTS-section referenceIds or "task"; chunkIds and new observations belong in evidence with their exact chunkId.`);
+  }
   if (new Set(delta.factIds).size !== delta.factIds.length) throw new Error("Graph fact IDs must be unique.");
+  if (delta.materialRequirementEvidence?.length) {
+    const ids = delta.materialRequirementEvidence.map((item) => item.requirementId);
+    if (new Set(ids).size !== ids.length) throw new Error("A material requirement may have at most one evidence refresh per inspection result.");
+    for (const refresh of delta.materialRequirementEvidence) {
+      if (!(region.requirementIds ?? []).includes(refresh.requirementId as RequirementId)) throw new Error(`Material requirement evidence refresh cites unknown or non-local requirement ${refresh.requirementId}.`);
+      if (!refresh.evidenceRefs.every((ref) => ref === "task" || isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error(`Material requirement ${refresh.requirementId} evidence refresh requires task or confirmed repository/tool evidence.`);
+    }
+  }
   rejectUnrequestedDeferredWork(state, [delta.region?.objective, ...(delta.region?.acceptanceCriteria ?? []), ...(delta.taskScopes ?? []).flatMap((item) => [item.objective, ...item.acceptanceCriteria]), ...(delta.materialRequirements ?? []).map((item) => item.text), delta.certifiedVerdict?.proposition, delta.certifiedVerdict?.implementationScope, ...delta.candidates.map((item) => item.proposition)]);
+  for (const request of delta.activations) if (!roleSupportsCapabilities(request.capability, request.requiredCapabilities)) throw new Error(`${request.capability} cannot satisfy required capabilities: ${request.requiredCapabilities.join(", ")}.`);
   if (capability === "inspect") {
+    validateRepositoryProvenance(delta.evidence, tools);
+    if (delta.evidence.some((item) => item.kind === "tool")) throw new Error("Inspection cannot author confirmed tool evidence. Use kind 'repository' with an exact repository observation descriptor, or return an inference hypothesis.");
     if (delta.candidates.length || delta.constraints.length || delta.select.length || delta.variables?.length)
       throw new Error("Inspection may report sourced facts or a complete answer, but may not propose, reject, constrain, select solution alternatives, or declare shared choices.");
+    const criteria = delta.region?.acceptanceCriteria ?? region.acceptanceCriteria;
+    const criterionIds = delta.region?.acceptanceCriteria ? criteria.map((_, index) => `criterion:${region.scopeId}:${index}` as CriterionId) : region.criterionIds;
+    const unresolved = new Set(delta.region?.acceptanceCriteria ? criterionIds : region.inspectionObligationIds ?? region.criterionIds);
+    const mapped = new Set<number>();
+    const settled = new Set<number>();
+    for (const item of delta.criterionEvidence) {
+      if (mapped.has(item.criterionIndex)) throw new Error(`Inspection criterion #${item.criterionIndex} is mapped more than once.`);
+      mapped.add(item.criterionIndex);
+      const criterionId = criterionIds[item.criterionIndex];
+      if (!criterionId) throw new Error(`Inspection cites unknown criterion #${item.criterionIndex}.`);
+      if (!unresolved.has(criterionId) && !delta.region?.acceptanceCriteria) throw new Error(`Inspection criterion ${criterionId} is already closed.`);
+      if (!item.evidenceRefs.every((ref) => ref === "task" || isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error(`Inspection criterion ${criterionId} requires task or confirmed repository/tool evidence.`);
+      const verdict = item.verdict ?? "satisfied";
+      if (verdict !== "satisfied" && !item.reason) throw new Error(`Inspection criterion ${criterionId} requires a reason for verdict ${verdict}.`);
+      if (verdict === "satisfied" || verdict === "unsatisfied") settled.add(item.criterionIndex);
+    }
+    const remaining = criterionIds.filter((id, index) => unresolved.has(id) && !settled.has(index));
+    const terminalInspection = Boolean(delta.certifiedVerdict || delta.alreadySatisfied || delta.resolvedAnswer || delta.taskScopes?.length);
+    if (delta.decisionBoundary && remaining.length) throw new Error(`A decision boundary requires evidence closure for every unresolved criterion: ${remaining.join(", ")}. Add criterionEvidence mapping every listed criterion index to "task" or an exact repository chunkId/source supplied in this result; criteria proposed in this same result are obligations of this result.`);
+    if (!terminalInspection && !delta.decisionBoundary && delta.activations.length === 0 && criteria.length && delta.criterionEvidence.length === 0)
+      throw new Error(`Inspection facts must close at least one unresolved criterion; remaining=${[...unresolved].join(", ") || "none"}. Return a decision boundary when none remain.`);
+    for (const request of delta.activations.filter((item) => item.capability === "inspect")) {
+      const targets = request.contextRefs.filter((ref): ref is CriterionId => unresolved.has(ref as CriterionId));
+      if (unresolved.size && targets.length !== 1) throw new Error(`An inspection follow-up must target exactly one unresolved criterion ID in contextRefs: ${[...unresolved].join(", ")}.`);
+    }
+    if (delta.decisionBoundary) {
+      if (region.allowedVariablesLocked && !exactSet(delta.decisionBoundary.variables.map((item) => slug(item.name)), region.allowedVariables.map(slug)))
+        throw new Error(`The decision boundary must declare exactly the controller-locked allowed variables: ${region.allowedVariables.join(", ")}.`);
+      const preview = cloneNetwork(state.network);
+      const previewRegion = preview.regions.find((item) => item.id === regionId)!;
+      const local = mergeEvidence(preview, previewRegion, delta.evidence, "preview", tools, "inspect").refs;
+      applyEvidenceValidations(preview, delta.validations, local);
+      admitDecisionBoundary(preview, regionId, resolveDecisionBoundaryEvidence(delta.decisionBoundary, local));
+    }
+    if (delta.materialRequirements?.length) {
+      for (const requirement of delta.materialRequirements) {
+        if (!requirement.evidenceRefs.every((ref) => ref === "task" || isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error(`Material requirement ${requirement.key} requires task or confirmed repository/tool evidence.`);
+      }
+      if (!delta.taskScopes?.length) {
+        const criteria = delta.region?.acceptanceCriteria ?? region.acceptanceCriteria;
+        for (const requirement of delta.materialRequirements) bindRequirement(requirement, [{ key: region.id, acceptanceCriteria: criteria }], "root criterion");
+      }
+    }
     if (delta.taskScopes?.length) {
       if (region.edge !== "root" || delta.taskScopes.length < 2) throw new Error("Root AND decomposition requires at least two independently verifiable task scopes and is valid only at the root.");
       const keys = delta.taskScopes.map((item) => slug(item.key));
@@ -854,27 +1273,47 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
         const invalid = [...owners].filter(([, count]) => count !== 1);
         if (invalid.length) throw new Error(`Every material root requirement must have exactly one task-scope owner: ${invalid.map(([key, count]) => `${key}=${count}`).join(", ")}. Bind each requirement with scopeKey (+ criterionIndex), or list its key in exactly one scope's requirementKeys.`);
       }
-      const suppliedSources = new Set(delta.evidence.filter((item) => item.kind === "repository" || item.kind === "tool").map((item) => item.source));
       for (const disposition of delta.taskDispositions ?? []) {
         if (!normalize(disposition.reason)) throw new Error("Every non-scope task disposition requires an explicit reason.");
         if (!disposition.evidenceRefs.every((ref) => ref === "task" || isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error(`Task disposition ${disposition.key} requires task or confirmed repository/tool evidence.`);
       }
     }
     if (delta.materialRequirements?.length && region.edge !== "root") throw new Error("Material requirement inventory may be authored only once at the root.");
-    if (delta.materialRequirements?.length && state.network.materialRequirements?.length) throw new Error("The typed root material-requirement inventory is immutable once established.");
+    const hasAuthoredRequirements = state.network.materialRequirements?.some((item) => !item.id.startsWith("requirement:root-criterion-"));
+    if (delta.materialRequirements?.length && hasAuthoredRequirements) {
+      const proposed = delta.materialRequirements.map((item) => {
+        if (delta.taskScopes?.length) {
+          const { ownerIndex, criterionIndex } = bindRequirement(item, delta.taskScopes);
+          const scopeId = `scope:${region.id}:${slug(delta.taskScopes[ownerIndex]!.key)}` as ScopeId;
+          return { id: `requirement:${slug(item.key)}`, key: slug(item.key), text: normalize(item.text), scopeId, criterionId: `criterion:${scopeId}:${criterionIndex}` };
+        }
+        const { criterionIndex } = bindRequirement(item, [{ key: region.id, acceptanceCriteria: criteria }], "root criterion");
+        return { id: `requirement:${slug(item.key)}`, key: slug(item.key), text: normalize(item.text), scopeId: region.scopeId, criterionId: criterionIds[criterionIndex] };
+      }).sort((left, right) => left.id.localeCompare(right.id));
+      const existing = (state.network.materialRequirements ?? []).map(({ id, key, text, scopeId, criterionId }) => ({ id, key, text, scopeId, criterionId })).sort((left, right) => left.id.localeCompare(right.id));
+      if (JSON.stringify(proposed) !== JSON.stringify(existing)) throw new Error("The typed root material-requirement identities and ownership are immutable once established; only evidence references may be refreshed.");
+    }
     if (delta.certifiedVerdict) {
       if (region.delivery !== "change" || delta.candidates.length || delta.constraints.length || delta.taskScopes?.length) throw new Error("A certified supplied verdict is valid only for one mechanically fixed change without a competing domain or task split.");
       if (!region.acceptanceCriteria.length && !delta.region?.acceptanceCriteria?.length) throw new Error("A certified supplied verdict requires observable acceptance criteria.");
-      const suppliedSources = new Set(delta.evidence.filter((item) => item.kind === "repository" || item.kind === "tool").map((item) => item.source));
       if (!delta.certifiedVerdict.evidenceRefs.every((ref) => isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error("A certified supplied verdict requires only confirmed repository/tool evidence references.");
       if (delta.certifiedVerdict.evidenceRefs.some((ref) => ref === "task")) throw new Error("A certified supplied verdict requires repository-grounded evidence, not the request alone.");
+    }
+    if (delta.alreadySatisfied) {
+      if (region.delivery !== "change" || delta.candidates.length || delta.constraints.length || delta.taskScopes?.length || delta.certifiedVerdict) throw new Error("Already-satisfied inspection is valid only for one unchanged repository state without a competing domain or task split.");
+      const criteria = delta.region?.acceptanceCriteria ?? region.acceptanceCriteria;
+      const indexes = delta.alreadySatisfied.criterionEvidence.map((item) => item.criterionIndex).sort((left, right) => left - right);
+      if (!criteria.length || JSON.stringify(indexes) !== JSON.stringify(criteria.map((_, index) => index))) throw new Error("Already-satisfied inspection requires exactly one evidence mapping for every criterion position.");
+      for (const item of delta.alreadySatisfied.criterionEvidence) if (!item.evidenceRefs.every((ref) => isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error(`Already-satisfied criterion #${item.criterionIndex} requires confirmed repository/tool evidence.`);
     }
     if (delta.region?.objective) {
       const sameGoal = slug(delta.region.objective) === slug(region.objective);
       if (!sameGoal)
         throw new Error("Inspection may not rewrite the assigned objective. Omit the optional 'objective' field entirely — never restate, summarize, or paraphrase the goal in your result.");
     }
-  } else if (capability === "synthesize" && (delta.taskScopes?.length || delta.taskDispositions?.length || delta.materialRequirements?.length || delta.certifiedVerdict)) throw new Error("Synthesis cannot create or reassign root scopes, dispositions, requirements, or a certified supplied verdict.");
+    if (region.allowedVariablesLocked && delta.region?.allowedVariables && !exactSet(delta.region.allowedVariables.map(slug), region.allowedVariables.map(slug)))
+      throw new Error(`Inspection may not rewrite controller-locked allowed variables: ${region.allowedVariables.join(", ")}.`);
+  } else if (capability === "synthesize" && (delta.taskScopes?.length || delta.taskDispositions?.length || delta.materialRequirements?.length || delta.materialRequirementEvidence?.length || delta.certifiedVerdict || delta.alreadySatisfied || delta.decisionBoundary)) throw new Error("Synthesis cannot create or reassign root scopes, boundaries, dispositions, requirements, or inspection verdicts.");
   else if (capability === "synthesize" && delta.region && Object.keys(delta.region).length) {
     const sameCriteria = JSON.stringify([...(delta.region.acceptanceCriteria ?? region.acceptanceCriteria).map((item) => normalize(item))].sort()) === JSON.stringify([...region.acceptanceCriteria.map((item) => normalize(item))].sort());
     const sameVariables = JSON.stringify([...(delta.region.allowedVariables ?? region.allowedVariables)].sort()) === JSON.stringify([...region.allowedVariables].sort());
@@ -903,12 +1342,12 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
     const preview = { ...state.network, variables: previewVariables } as SolutionNetwork;
     for (const item of delta.candidates) resolveStances(preview, regionId, item.stances ?? []);
   }
-  if (delta.candidates.length > MAX_DOMAIN_CANDIDATES) throw new Error("A region may contain at most seven materially distinct current-level alternatives. Refine the decision boundary instead of silently pruning candidates.");
   // Mirror mergeSolutionDelta: an answer is honored only when the delta marks the goal as answer-only.
   const resolvedAnswer = delta.region?.delivery === "answer" ? delta.resolvedAnswer : undefined;
   if (delta.region?.delivery && delta.region.delivery !== region.delivery && !resolvedAnswer)
     throw new Error("Delivery type may change only through a complete resolvedAnswer. A standalone delivery rewrite is not a clarification — return resolvedAnswer with the evidence-backed answer instead.");
   if (resolvedAnswer) {
+    if (region.edge !== "root" && region.delivery === "change") throw new Error("A non-root change scope has controller-owned delivery and cannot be rewritten as an answer. Return the requested facts and preserve its implementation contract.");
     const known = new Set(["task", ...state.network.evidence.map((item) => item.id)]);
     const suppliedSources = new Set(delta.evidence.map((item) => item.source));
     if (!resolvedAnswer.evidenceRefs.some((ref) => known.has(ref) || suppliedSources.has(ref)))
@@ -1001,13 +1440,14 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
 }
 
 /** Direct reducer callers may omit defaulted delta arrays; Zod-normalized graph paths never do. */
-function normalizeDelta(delta: SolutionDelta): SolutionDelta {  return { ...delta, candidates: delta.candidates ?? [], constraints: delta.constraints ?? [], evidence: delta.evidence ?? [], factIds: delta.factIds ?? [], validations: delta.validations ?? [], select: delta.select ?? [], activations: delta.activations ?? [], variables: delta.variables ?? [], taskScopes: delta.taskScopes ?? [], taskDispositions: delta.taskDispositions ?? [] };
+function normalizeDelta(delta: SolutionDelta): SolutionDelta {  return { ...delta, candidates: delta.candidates ?? [], constraints: delta.constraints ?? [], evidence: delta.evidence ?? [], factIds: delta.factIds ?? [], validations: delta.validations ?? [], criterionEvidence: delta.criterionEvidence ?? [], select: delta.select ?? [], activations: delta.activations ?? [], variables: delta.variables ?? [], taskScopes: delta.taskScopes ?? [], taskDispositions: delta.taskDispositions ?? [] };
 }
 
+const generatedStances = (item: DomainGenerationOutput["candidates"][number]) => item.coordinates.flatMap((coordinate) => coordinate.applicability === "applies" ? coordinate.stances.map((stance) => ({ variable: coordinate.variableId, ...stance })) : []);
 const synthesisDelta = (output: DomainGenerationOutput, candidateItems = output.candidates): SolutionDelta => ({
-  region: {}, evidence: output.evidence, factIds: [], variables: output.variables,
-  candidates: candidateItems.map((item) => ({ ...item, outcome: "possible" as const, reasons: [] })),
-  constraints: output.constraints, select: [], activations: [], validations: [],
+  region: {}, evidence: output.evidence, factIds: [], variables: [],
+  candidates: candidateItems.map((item) => ({ key: item.key, proposition: item.proposition, evidenceRefs: item.evidenceRefs, stances: generatedStances(item), outcome: "possible" as const, reasons: [] })),
+  constraints: [], select: [], activations: [], validations: [], criterionEvidence: [],
 });
 
 function exactSet(actual: readonly string[], expected: readonly string[]): boolean {
@@ -1015,63 +1455,90 @@ function exactSet(actual: readonly string[], expected: readonly string[]): boole
 }
 
 export function validateSynthesisOutput(state: SolutionLodState, activation: Activation, output: SynthesisOutput): void {
-  if (activation.capability !== "synthesize" || !activation.operation || activation.operation !== output.operation)
-    throw new Error(`Synthesis output operation ${output.operation} does not match activation operation ${activation.operation ?? "missing"}.`);
+  if (activation.capability !== "synthesize" || !activation.operation) throw new Error("Synthesis requires a trusted activation operation.");
   const region = state.network.regions.find((item) => item.id === activation.regionId);
   if (!region) throw new Error(`Unknown synthesis region ${activation.regionId}.`);
-  rejectUnrequestedDeferredWork(state, output.operation === "generate-domain" ? output.candidates.map((item) => item.proposition) : output.operation === "challenge-domain" ? [output.verdict === "counterexample" ? output.candidate.proposition : undefined, output.verdict === "needs-fact" ? output.request : undefined] : [output.inspectionRequest?.request, ...output.hardConstraints.map((item) => item.reason)]);
-  const fingerprint = domainFingerprint(state.network, region.id);
-  if (output.operation === "generate-domain") {
+  const fingerprint = boundDomainFingerprint(state.network, region.id);
+  if (activation.operation === "generate-domain") {
+    const generated = output as DomainGenerationOutput;
+    if (generated.outcome !== "candidates") throw new Error(`generate-domain cannot return ${output.outcome}.`);
+    rejectUnrequestedDeferredWork(state, generated.candidates.map((item) => item.proposition));
     if (region.candidateIds.length) throw new Error(`generate-domain requires an ungenerated region; ${region.id} already has a domain.`);
-    if (output.constraints.length) throw new Error("generate-domain must return an empty constraints array.");
-    if (output.candidates.some((item) => /^(other|something else|miscellaneous|none of the above)$/i.test(normalize(item.proposition)))) throw new Error("A generated candidate must be a concrete material solution family, not a vague residual alternative.");
-    if (new Set(output.candidates.map((item) => slug(item.proposition))).size !== output.candidates.length) throw new Error("Generated candidates must be materially distinct; duplicate paraphrases are not separate solution families.");
-    validateSolutionDelta(state, region.id, "synthesize", synthesisDelta(output));
+    if (!region.decisionBoundary) throw new Error("generate-domain requires a controller-admitted decision boundary.");
+    if (generated.candidates.some((item) => /^(other|something else|miscellaneous|none of the above)$/i.test(normalize(item.proposition)))) throw new Error("A generated candidate must be a concrete material solution family, not a vague residual alternative.");
+    const variableIds = region.decisionBoundary.variables.map((item) => item.id).sort();
+    if (!region.allowedVariables.length && generated.candidates.length !== 1) throw new Error("A fixed boundary with no allowed variables admits exactly one implementation family.");
+    const admittedPairs = new Set(region.decisionBoundary.permittedPairs.map((item) => pairKey(item.leftVariableId, item.rightVariableId)));
+    const semanticSignatures = new Set<string>();
+    for (const candidate of generated.candidates) {
+      if (!exactSet(candidate.coordinates.map((item) => item.variableId), variableIds)) throw new Error(`Generated candidate ${candidate.key} requires exactly one applicability record for every admitted boundary variable.`);
+      const touched = candidate.coordinates.filter((item) => item.applicability === "applies").map((item) => item.variableId);
+      if (touched.length > 2) throw new Error(`Generated candidate ${candidate.key} touches more than two shared variables; the decision boundary must use one composite variable or decompose the work.`);
+      if (touched.length === 2 && !admittedPairs.has(pairKey(touched[0]!, touched[1]!))) throw new Error(`Generated candidate ${candidate.key} touches an unadmitted variable pair.`);
+      for (const coordinate of candidate.coordinates) if (coordinate.applicability === "applies") {
+        const canonical = coordinate.stances.map((stance) => `${stance.relation}\0${slug(canonicalLabel(state.network, coordinate.variableId, stance.valueLabel))}`);
+        if (new Set(canonical).size !== canonical.length) throw new Error(`Generated candidate ${candidate.key} contains a duplicate stance.`);
+        const required = new Set(coordinate.stances.filter((stance) => stance.relation === "requires").map((stance) => slug(canonicalLabel(state.network, coordinate.variableId, stance.valueLabel))));
+        if (required.size > 1) throw new Error(`Generated candidate ${candidate.key} requires multiple options for shared choice ${coordinate.variableId}; use one composite option or decompose the work.`);
+      }
+      const signature = candidateSignature(candidate.proposition, resolveStances(state.network, region.id, generatedStances(candidate)));
+      if (semanticSignatures.has(signature)) throw new Error("Generated candidates are duplicates unless they differ on an admitted structured decision; prose-only variants are one solution family.");
+      semanticSignatures.add(signature);
+    }
+    validateSolutionDelta(state, region.id, "synthesize", synthesisDelta(generated));
     return;
   }
-  if (output.domainFingerprint !== fingerprint || activation.domainFingerprint !== fingerprint)
-    throw new Error(`Stale ${output.operation} result: expected exact domain fingerprint ${fingerprint ?? "none"}, received ${output.domainFingerprint}.`);
+  if (output.outcome === "candidates" || !("boundDomainFingerprint" in output) || output.boundDomainFingerprint !== fingerprint || (activation.boundDomainFingerprint ?? activation.domainFingerprint) !== fingerprint)
+    throw new Error(`Stale ${activation.operation} result: expected exact bound domain fingerprint ${fingerprint ?? "none"}, received ${"boundDomainFingerprint" in output ? output.boundDomainFingerprint : "none"}.`);
   const viable = region.candidateIds.filter((id) => state.network.candidates.find((item) => item.id === id)?.status !== "eliminated").sort();
-  if (output.operation === "challenge-domain") {
-    if (output.verdict === "accept" && !exactSet(output.viableCandidateIds, viable)) throw new Error("Challenge acceptance must reference every and only currently viable candidate ID.");
-    if (output.verdict === "counterexample") {
-      for (const ref of [...output.evidenceRefs, ...output.candidate.evidenceRefs]) if (!isConfirmedEvidence(state.network, ref)) throw new Error(`Counterexample cites unresolved, invented, or stale evidence reference ${ref}.`);
-      const stances = resolveStances(state.network, region.id, output.candidate.stances ?? []);
-      const id = candidateId(region.id, output.candidate.key);
+  if (activation.operation === "challenge-domain") {
+    const challenge = output as DomainChallengeOutput;
+    rejectUnrequestedDeferredWork(state, [challenge.outcome === "counterexample" ? challenge.candidate.proposition : challenge.outcome === "boundary-counterexample" ? challenge.missingFamily.proposition : undefined, challenge.outcome === "needs-fact" ? challenge.request : undefined]);
+    if (!region.allowedVariables.length && (challenge.outcome === "counterexample" || challenge.outcome === "boundary-counterexample")) throw new Error("A fixed boundary with no allowed variables has no alternative family to add; accept its sole viable candidate or request one precise missing fact.");
+    if (challenge.outcome === "accept" && !exactSet(challenge.viableCandidateIds, viable)) throw new Error("Challenge acceptance must reference every and only currently viable candidate ID.");
+    if (challenge.outcome === "counterexample") {
+      for (const ref of [...challenge.evidenceRefs, ...challenge.candidate.evidenceRefs]) if (!isConfirmedEvidence(state.network, ref)) throw new Error(`Counterexample cites unresolved, invented, or stale evidence reference ${ref}.`);
+      if (!region.decisionBoundary || !exactSet(challenge.candidate.coordinates.map((item) => item.variableId), region.decisionBoundary.variables.map((item) => item.id))) throw new Error("Challenge counterexample must position the missing family on every admitted boundary variable.");
+      const stances = resolveStances(state.network, region.id, generatedStances(challenge.candidate));
+      const id = candidateId(region.id, challenge.candidate.key);
       if (state.network.candidates.some((item) => !item.historical && item.id === id)) throw new Error(`Challenge counterexample must add one genuinely new candidate ID; ${id} already exists.`);
-      const signature = candidateSignature(output.candidate.proposition, stances);
-      if (state.network.candidates.some((item) => !item.historical && item.regionId === region.id && candidateSignature(item.proposition, item.stances ?? []) === signature)) throw new Error("Challenge counterexample duplicates an existing candidate by proposition and stance identity.");
-    } else if (output.verdict === "needs-fact") {
-      for (const ref of output.contextRefs) if (!knownRef(state.network, ref)) throw new Error(`Challenge inspection request cites unknown context reference ${ref}.`);
+      const signature = candidateSignature(challenge.candidate.proposition, stances);
+      if (state.network.candidates.some((item) => !item.historical && item.regionId === region.id && candidateSignature(item.proposition, item.stances ?? []) === signature)) throw new Error("Challenge counterexample must differ on an admitted structured decision; prose-only variants are one solution family.");
+    } else if (challenge.outcome === "boundary-counterexample") {
+      for (const ref of challenge.evidenceRefs) if (!isConfirmedEvidence(state.network, ref)) throw new Error(`Boundary counterexample cites unresolved, invented, or stale evidence reference ${ref}.`);
+    } else if (challenge.outcome === "needs-fact") {
+      for (const ref of challenge.contextRefs) if (!knownRef(state.network, ref)) throw new Error(`Challenge inspection request cites unknown context reference ${ref}.`);
+      const targets = challenge.contextRefs.filter((ref) => region.criterionIds.includes(ref as CriterionId));
+      if (region.criterionIds.length && targets.length !== 1) throw new Error(`Challenge may reopen inspection only for exactly one criterion ID: ${region.criterionIds.join(", ")}.`);
     }
     return;
   }
+  const selection = output as CandidateSelectionOutput;
+  rejectUnrequestedDeferredWork(state, [selection.outcome === "needs-fact" ? selection.inspectionRequest.request : undefined, ...(selection.outcome === "hard-constraint" ? selection.hardConstraints.map((item) => item.reason) : [])]);
   if (!region.acceptedFingerprint || region.acceptedFingerprint !== fingerprint) throw new Error("Candidate selection requires the exact current domain fingerprint to have a fresh accepted challenge verdict.");
-  if (!exactSet(output.comparisons.map((item) => item.candidateId), viable)) throw new Error("Candidate selection must compare every and only currently viable candidate ID.");
-  if (output.hardConstraints.length) {
-    if (output.basis !== "hard-constraint" || output.inspectionRequest) throw new Error("New hard constraints require hard-constraint basis without a simultaneous inspection request.");
-    if (output.selectedCandidateId) throw new Error("A newly discovered hard constraint must land without a selection; the changed domain must be challenged again.");
-    for (const constraint of output.hardConstraints) {
+  if (!exactSet(selection.comparisons.map((item) => item.candidateId), viable)) throw new Error("Candidate selection must compare every and only currently viable candidate ID.");
+  if (selection.outcome === "hard-constraint") {
+    if (!region.allowedVariables.length) throw new Error("A fixed boundary with no allowed variables must select its sole viable candidate or request one precise missing fact.");
+    for (const constraint of selection.hardConstraints) {
       if (!["requires", "excludes", "refutes"].includes(constraint.kind)) throw new Error(`Selection hardConstraints may contain only requires, excludes, or refutes; ${constraint.kind} is not a hard elimination rule.`);
       if (!constraint.evidenceRefs.length || constraint.evidenceRefs.some((ref) => !isConfirmedEvidence(state.network, ref))) throw new Error(`Selection hard constraint ${constraint.subject} -> ${constraint.target} requires cited confirmed evidence.`);
     }
-    validateSolutionDelta(state, region.id, "synthesize", { region: {}, evidence: [], factIds: [], variables: [], candidates: [], constraints: output.hardConstraints, select: [], activations: [], validations: [] });
+    validateSolutionDelta(state, region.id, "synthesize", { region: {}, evidence: [], factIds: [], variables: [], candidates: [], constraints: selection.hardConstraints, select: [], activations: [], validations: [], criterionEvidence: [] });
     return;
   }
-  if (output.basis === "only-viable") {
-    if (viable.length !== 1 || output.selectedCandidateId !== viable[0]) throw new Error("only-viable selection must name the sole viable candidate.");
+  if (selection.outcome === "needs-fact") {
+    for (const ref of selection.inspectionRequest.contextRefs) if (!knownRef(state.network, ref)) throw new Error(`Selection inspection request cites unknown context reference ${ref}.`);
+    const targets = selection.inspectionRequest.contextRefs.filter((ref) => region.criterionIds.includes(ref as CriterionId));
+    if (region.criterionIds.length && targets.length !== 1) throw new Error(`Selection may reopen inspection only for exactly one criterion ID: ${region.criterionIds.join(", ")}.`);
     return;
   }
-  if (output.basis === "needs-fact") {
-    if (output.selectedCandidateId || !output.inspectionRequest) throw new Error("An unresolved preference tie must request exactly one grounding fact and must not select.");
-    for (const ref of output.inspectionRequest.contextRefs) if (!knownRef(state.network, ref)) throw new Error(`Selection inspection request cites unknown context reference ${ref}.`);
+  if (viable.length === 1) {
+    if (viable.length !== 1 || selection.selectedCandidateId !== viable[0]) throw new Error("only-viable selection must name the sole viable candidate.");
     return;
   }
-  if (output.basis === "hard-constraint") throw new Error("hard-constraint basis requires at least one new hard constraint.");
-  if (output.basis !== "lexicographic" || !output.selectedCandidateId) throw new Error("Selection must use only-viable, lexicographic, needs-fact, or hard-constraint basis consistently.");
   const rank = { preferred: 0, neutral: 1, disfavored: 2 } as const;
-  const tuples = output.comparisons.map((item) => ({ id: item.candidateId, tuple: [rank[item.userPreference], rank[item.repositoryCompatibility], rank[item.changeScope], rank[item.irreversibleRisk]] as const }));
-  for (const item of output.comparisons) {
+  const tuples = selection.comparisons.map((item) => ({ id: item.candidateId, tuple: [rank[item.userPreference], rank[item.repositoryCompatibility], rank[item.changeScope], rank[item.irreversibleRisk]] as const }));
+  for (const item of selection.comparisons) {
     if ((item.userPreference !== "neutral" || item.repositoryCompatibility !== "neutral") && !item.evidenceRefs.length) throw new Error(`Preference claims for ${item.candidateId} require corresponding user or repository references.`);
     if (item.evidenceRefs.some((ref) => !isConfirmedEvidence(state.network, ref))) throw new Error(`Preference comparison for ${item.candidateId} cites an unresolved or stale reference.`);
     if (item.userPreference !== "neutral" && !item.evidenceRefs.some((ref) => ref === "task" || state.network.evidence.find((evidence) => evidence.id === ref)?.kind === "user")) throw new Error(`User-preference comparison for ${item.candidateId} requires a user reference.`);
@@ -1080,95 +1547,133 @@ export function validateSynthesisOutput(state: SolutionLodState, activation: Act
   tuples.sort((left, right) => { for (let index = 0; index < 4; index++) { const difference = left.tuple[index]! - right.tuple[index]!; if (difference) return difference; } return left.id.localeCompare(right.id); });
   const sameRank = (left: typeof tuples[number], right: typeof tuples[number]) => left.tuple.every((value, index) => value === right.tuple[index]);
   if (tuples[1] && sameRank(tuples[0]!, tuples[1]!)) throw new Error("The earliest applicable preference tier has no unique winner; request one grounding fact.");
-  if (output.selectedCandidateId !== tuples[0]?.id) throw new Error(`Lexicographic selection must choose ${tuples[0]?.id}.`);
+  if (selection.selectedCandidateId !== tuples[0]?.id) throw new Error(`Lexicographic selection must choose ${tuples[0]?.id}.`);
 }
 
 export function mergeSynthesisOutput(state: SolutionLodState, activationId: string, output: SynthesisOutput): SolutionNetwork {
   const activation = state.network.activations.find((item) => item.id === activationId);
   if (!activation) throw new Error(`Unknown activation ${activationId}`);
   validateSynthesisOutput(state, activation, output);
-  if (output.operation === "generate-domain") {
-    let network = mergeSolutionDelta(state, activationId, synthesisDelta(output));
+  if (activation.operation === "generate-domain") {
+    const generated = output as DomainGenerationOutput;
+    let network = mergeSolutionDelta(state, activationId, synthesisDelta(generated));
     const region = network.regions.find((item) => item.id === activation.regionId)!;
-    region.cegarRound = 0; region.acceptedFingerprint = null; region.challengeVerdict = null; transitionRegion(region, "challenging");
+    region.progress.cegarRounds = progressEntry(); region.acceptedFingerprint = null; region.challengeVerdict = null; transitionRegion(region, "challenging");
     refreshDomainControls(network); network.revision++;
     return network;
   }
   let network = cloneNetwork(state.network);
   let region = network.regions.find((item) => item.id === activation.regionId)!;
-  if (output.operation === "challenge-domain") {
-    region.challengeVerdict = output.verdict;
-    if (output.verdict === "accept") { region.acceptedFingerprint = output.domainFingerprint; transitionRegion(region, "selecting"); }
-    else if (output.verdict === "counterexample") {
-      const diagnostic = JSON.stringify({ key: output.candidate.key, proposition: output.candidate.proposition, stances: output.candidate.stances, reason: output.reason, evidence: { counterexample: output.evidenceRefs, candidate: output.candidate.evidenceRefs } });
-      if (region.cegarRound >= MAX_CEGAR_ROUNDS || region.candidateIds.length >= MAX_DOMAIN_CANDIDATES) {
-        transitionRegion(region, "blocked", `${region.cegarRound >= MAX_CEGAR_ROUNDS ? "CEGAR repair" : "seven-candidate domain"} bound exceeded: unresolved counterexample ${output.candidate.proposition}; details=${diagnostic}`);
+  if (activation.operation === "challenge-domain") {
+    const challenge = output as DomainChallengeOutput;
+    region.challengeVerdict = challenge.outcome;
+    switch (challenge.outcome) {
+    case "accept": region.acceptedFingerprint = challenge.boundDomainFingerprint; transitionRegion(region, "selecting"); break;
+    case "counterexample": {
+      const diagnostic = JSON.stringify({ key: challenge.candidate.key, proposition: challenge.candidate.proposition, coordinates: challenge.candidate.coordinates, reason: challenge.reason, evidence: { counterexample: challenge.evidenceRefs, candidate: challenge.candidate.evidenceRefs } });
+      if (region.progress.cegarRounds.count >= MAX_CEGAR_ROUNDS || region.candidateIds.length >= MAX_DOMAIN_CANDIDATES) {
+        const bound = region.candidateIds.length >= MAX_DOMAIN_CANDIDATES ? `candidate bound ${MAX_DOMAIN_CANDIDATES} reached` : "CEGAR repair bound exceeded";
+        transitionRegion(region, "blocked", `${bound}: unresolved counterexample ${challenge.candidate.proposition}; details=${diagnostic}`);
         network.revision++;
         return network;
       }
       const beforeIds = new Set(region.candidateIds);
-      const delta: SolutionDelta = { region: {}, evidence: [], factIds: [], variables: [], candidates: [{ ...output.candidate, outcome: "possible", reasons: [] }], constraints: [], select: [], activations: [], validations: [] };
+      const delta: SolutionDelta = synthesisDelta({ outcome: "candidates", evidence: [], candidates: [challenge.candidate] });
       network = mergeSolutionDelta({ ...state, network } as SolutionLodState, activationId, delta);
       region = network.regions.find((item) => item.id === activation.regionId)!;
       const addedIds = region.candidateIds.filter((id) => !beforeIds.has(id));
-      if (addedIds.length !== 1 || addedIds[0] !== candidateId(region.id, output.candidate.key)) throw new Error("Counterexample repair must add exactly one genuinely new candidate ID.");
-      region.cegarRound += 1; region.acceptedFingerprint = null; region.noProgressCount = 0; region.noProgressFingerprint = null; transitionRegion(region, "challenging");
-    } else {
+      if (addedIds.length !== 1 || addedIds[0] !== candidateId(region.id, challenge.candidate.key)) throw new Error("Counterexample repair must add exactly one genuinely new candidate ID.");
+      region.progress.cegarRounds = { count: region.progress.cegarRounds.count + 1, fingerprint: boundDomainFingerprint(network, region.id), unresolvedCriterionIds: [...region.criterionIds] }; region.acceptedFingerprint = null; transitionRegion(region, "challenging");
+      break;
+    }
+    case "boundary-counterexample":
+      if (region.progress.cegarRounds.count >= MAX_CEGAR_ROUNDS) transitionRegion(region, "blocked", `CEGAR repair bound exceeded: unresolved boundary counterexample ${challenge.missingFamily.proposition}.`);
+      else {
+        region.progress.cegarRounds = { count: region.progress.cegarRounds.count + 1, fingerprint: hash(challenge.missingFamily), unresolvedCriterionIds: [...region.criterionIds] };
+        for (const candidate of network.candidates.filter((item) => item.regionId === region.id && !item.historical)) candidate.historical = true;
+        for (const variable of network.variables.filter((item) => item.ownerRegionId === region.id && !item.historical)) variable.historical = true;
+        region.candidateIds = []; region.selectedCandidateIds = []; region.decisionBoundary = undefined; region.enumerationFingerprint = null; region.boundDomainFingerprint = null; region.domainFingerprint = null; region.acceptedFingerprint = null; region.challengeVerdict = null; region.certifiedLeaf = undefined; region.answer = undefined;
+        region.inspectionObligationIds = [...region.criterionIds];
+        purgeDescendants(network, region.id); transitionRegion(region, "inspecting", undefined, "superposed");
+      }
+      break;
+    case "needs-fact":
+      region.inspectionObligationIds = challenge.contextRefs.filter((ref): ref is CriterionId => region.criterionIds.includes(ref as CriterionId));
       transitionRegion(region, "inspecting");
-      addActivation(network, { capability: "inspect", regionId: region.id, request: output.request, expectedDelta: output.expectedDelta, contextRefs: output.contextRefs, senderActivationId: activation.id });
+      addActivation(network, { capability: "inspect", requiredCapabilities: challenge.requiredCapabilities, regionId: region.id, request: challenge.request, expectedDelta: challenge.expectedDelta, contextRefs: challenge.contextRefs, senderActivationId: activation.id });
+      break;
+    default: assertNever(challenge);
     }
     network.revision++; return propagateNetwork(network);
   }
-  if (output.hardConstraints.length) {
-    const delta: SolutionDelta = { region: {}, evidence: [], factIds: [], variables: [], candidates: [], constraints: output.hardConstraints, select: [], activations: [], validations: [] };
+  const selection = output as CandidateSelectionOutput;
+  switch (selection.outcome) {
+  case "hard-constraint": {
+    const delta: SolutionDelta = { region: {}, evidence: [], factIds: [], variables: [], candidates: [], constraints: selection.hardConstraints, select: [], activations: [], validations: [], criterionEvidence: [] };
     network = mergeSolutionDelta({ ...state, network } as SolutionLodState, activationId, delta);
     region = network.regions.find((item) => item.id === activation.regionId)!;
-    region.acceptedFingerprint = null; region.challengeVerdict = null; region.noProgressCount = 0; region.noProgressFingerprint = null; transitionRegion(region, "challenging"); network.revision++;
+    region.acceptedFingerprint = null; region.challengeVerdict = null; region.progress.selectionNoProgress = progressEntry(); transitionRegion(region, "challenging"); network.revision++;
     return propagateNetwork(network);
   }
-  if (output.basis === "needs-fact") {
-    const comparisons = output.comparisons.map((item) => ({ ...item, evidenceRefs: [...item.evidenceRefs].sort() })).sort((left, right) => left.candidateId.localeCompare(right.candidateId));
-    const request = { request: normalize(output.inspectionRequest!.request), expectedDelta: normalize(output.inspectionRequest!.expectedDelta), contextRefs: [...new Set(output.inspectionRequest!.contextRefs)].sort() };
-    const signature = createHash("sha256").update(JSON.stringify({ domainFingerprint: output.domainFingerprint, request, comparisons })).digest("hex").slice(0, 16);
-    region.noProgressCount = region.noProgressFingerprint === signature ? region.noProgressCount + 1 : 1;
-    region.noProgressFingerprint = signature;
-    if (region.noProgressCount >= MAX_NO_PROGRESS_CYCLES) transitionRegion(region, "blocked", `Selection for ${region.id} made no progress for two identical comparison cycles.`);
-    else { transitionRegion(region, "inspecting"); addActivation(network, { capability: "inspect", regionId: region.id, request: output.inspectionRequest!.request, expectedDelta: output.inspectionRequest!.expectedDelta, contextRefs: output.inspectionRequest!.contextRefs, senderActivationId: activation.id }); }
+  case "needs-fact": {
+    const comparisons = selection.comparisons.map((item) => ({ ...item, evidenceRefs: [...item.evidenceRefs].sort() })).sort((left, right) => left.candidateId.localeCompare(right.candidateId));
+    const signature = hash({ viableDomain: region.candidateIds.filter((id) => network.candidates.find((item) => item.id === id)?.status !== "eliminated").sort(), confirmedPreferenceFacts: comparisons.flatMap((item) => item.evidenceRefs).filter((ref) => isConfirmedEvidence(network, ref)).map((ref) => resolveContextReference(network, ref)?.fingerprint).filter(Boolean).sort(), commitment: region.selectedCandidateIds });
+    const ledger = region.progress.selectionNoProgress;
+    ledger.count = ledger.fingerprint === signature ? ledger.count + 1 : 1;
+    ledger.fingerprint = signature;
+    ledger.unresolvedCriterionIds = [...region.criterionIds];
+    if (ledger.count >= MAX_NO_PROGRESS_CYCLES) transitionRegion(region, "blocked", `Selection for ${region.id} made no progress for two semantic comparison cycles; fingerprint=${signature}; unresolvedCriterionIds=${region.criterionIds.join(",") || "none"}.`);
+    else { region.inspectionObligationIds = selection.inspectionRequest.contextRefs.filter((ref): ref is CriterionId => region.criterionIds.includes(ref as CriterionId)); transitionRegion(region, "inspecting"); addActivation(network, { capability: "inspect", requiredCapabilities: selection.inspectionRequest.requiredCapabilities, regionId: region.id, request: selection.inspectionRequest.request, expectedDelta: selection.inspectionRequest.expectedDelta, contextRefs: selection.inspectionRequest.contextRefs, senderActivationId: activation.id }); }
     network.revision++; return network;
   }
-  const selected = network.candidates.find((item) => item.id === output.selectedCandidateId)!;
+  case "selected": break;
+  default: assertNever(selection);
+  }
+  const selected = network.candidates.find((item) => item.id === selection.selectedCandidateId)!;
   for (const candidate of network.candidates.filter((item) => item.regionId === region.id)) candidate.declaredStatus = candidate.id === selected.id ? "selected" : "possible";
   purgeDescendants(network, region.id);
-  region.noProgressCount = 0; region.noProgressFingerprint = null; transitionRegion(region, "selected"); network.revision++;
+  region.selectionPremiseRefs = [...new Set([...selection.comparisons.flatMap((item) => item.evidenceRefs), ...region.constraintIds.flatMap((id) => network.constraints.find((item) => item.id === id)?.evidenceRefs ?? [])])].sort();
+  region.implementationPremiseRefs = undefined; region.verificationPremiseRefs = undefined;
+  region.progress.selectionNoProgress = progressEntry(); transitionRegion(region, "selected"); network.revision++;
   return propagateNetwork(network);
 }
 
-export function mergeSolutionDelta(state: SolutionLodState, activationId: string, rawDelta: SolutionDelta): SolutionNetwork {
+export function mergeSolutionDelta(state: SolutionLodState, activationId: string, rawDelta: SolutionDelta, tools?: readonly AgentToolTrace[]): SolutionNetwork {
   const delta = normalizeDelta(rawDelta);
-  const network = cloneNetwork(state.network);
+  const sourceActivation = state.network.activations.find((item) => item.id === activationId);
+  const sourceRegion = state.network.regions.find((item) => item.id === sourceActivation?.regionId);
+  const inspectionBefore = sourceRegion ? inspectionProgressFingerprint(state.network, sourceRegion) : null;
+  let network = cloneNetwork(state.network);
   const activation = network.activations.find((item) => item.id === activationId);
   if (!activation) throw new Error(`Unknown activation ${activationId}`);
-  const region = network.regions.find((item) => item.id === activation.regionId);
-  if (!region) throw new Error(`Unknown activation region ${activation.regionId}`);
+  const initialRegion = network.regions.find((item) => item.id === activation.regionId);
+  if (!initialRegion) throw new Error(`Unknown activation region ${activation.regionId}`);
+  let region: SolutionRegion = initialRegion;
   let changed = false;
   if (delta.region) {
     if (delta.region.objective && delta.region.objective !== region.objective) { region.objective = delta.region.objective; changed = true; }
     const mergeResolvedAnswer = delta.region.delivery === "answer" ? delta.resolvedAnswer : undefined;
     if (delta.region.delivery && delta.region.delivery !== region.delivery && !mergeResolvedAnswer) throw new Error(`Delivery rewrite from "${region.delivery}" to "${delta.region.delivery}" is only valid through a complete resolvedAnswer.`);
     if (delta.region.delivery && delta.region.delivery !== region.delivery) { region.delivery = delta.region.delivery; changed = true; }
-    if (delta.region.allowedVariables) { region.allowedVariables = [...new Set(delta.region.allowedVariables.map(normalize).filter(Boolean))]; changed = true; }
-    if (delta.region.acceptanceCriteria) { region.acceptanceCriteria = [...new Set(delta.region.acceptanceCriteria.map(normalize).filter(Boolean))]; region.criterionIds = region.acceptanceCriteria.map((_, index) => `criterion:${region.scopeId}:${index}` as const); changed = true; }
+    if (delta.region.allowedVariables) {
+      const next = [...new Set(delta.region.allowedVariables.map(normalize).filter(Boolean))];
+      if (JSON.stringify(next) !== JSON.stringify(region.allowedVariables)) { region.allowedVariables = next; changed = true; }
+    }
+    if (delta.region.acceptanceCriteria) {
+      const next = [...new Set(delta.region.acceptanceCriteria.map(normalize).filter(Boolean))];
+      if (JSON.stringify(next) !== JSON.stringify(region.acceptanceCriteria)) { region.acceptanceCriteria = next; region.criterionIds = next.map((_, index) => `criterion:${region.scopeId}:${index}` as const); region.inspectionObligationIds = [...region.criterionIds]; region.criterionVerdicts = []; region.inspectionAttempts = 0; changed = true; }
+    }
   }
   if (activation.capability === "inspect" && region.edge === "root" && delta.taskScopes?.length) {
     const taskScopes = delta.taskScopes;
     region.acceptanceCriteria = delta.taskScopes.map((item) => normalize(item.objective));
     region.criterionIds = region.acceptanceCriteria.map((_, index) => `criterion:${region.scopeId}:${index}` as const);
-    const requirementDefinitions = delta.materialRequirements?.length ? delta.materialRequirements : taskScopes.map((item) => ({ key: item.key, text: item.objective, scopeKey: item.key, criterionIndex: 0 }));
+    const requirementDefinitions = delta.materialRequirements?.length ? delta.materialRequirements : taskScopes.map((item) => ({ key: item.key, text: item.objective, scopeKey: item.key, criterionIndex: 0, evidenceRefs: [] }));
     network.materialRequirements = requirementDefinitions.map((item) => {
       const { ownerIndex, criterionIndex } = bindRequirement(item, taskScopes);
       const owner = taskScopes[ownerIndex]!;
       const scopeId = `scope:${region.id}:${slug(owner.key)}` as ScopeId;
-      return { id: `requirement:${slug(item.key)}` as RequirementId, key: slug(item.key), text: normalize(item.text), scopeId, criterionId: `criterion:${scopeId}:${criterionIndex}` as CriterionId };
+      return { id: `requirement:${slug(item.key)}` as RequirementId, key: slug(item.key), text: normalize(item.text), scopeId, criterionId: `criterion:${scopeId}:${criterionIndex}` as CriterionId, evidenceRefs: [...item.evidenceRefs] };
     });
     for (const [index, scope] of delta.taskScopes.entries()) {
       const scopeId = `scope:${region.id}:${slug(scope.key)}` as const;
@@ -1176,7 +1681,8 @@ export function mergeSolutionDelta(state: SolutionLodState, activationId: string
       const childId = `r${network.nextRegionId++}`;
       const requirementIds = network.materialRequirements.filter((item) => item.scopeId === scopeId).map((item) => item.id);
       const dependencyScopeIds = [...new Set((scope.dependencyScopeIds ?? []).map((dependency) => resolveScopeDependency(network, region.id, taskScopes, dependency)).filter((item): item is ScopeId => Boolean(item)))];
-      network.regions.push({ id: childId, key: normalize(scope.key), parentId: region.id, edge: "partOf", lod: region.lod + 1, objective: normalize(scope.objective), delivery: scope.delivery, allowedVariables: [...scope.allowedVariables], acceptanceCriteria: [...scope.acceptanceCriteria], coveredCriteria: [index], status: "unformed", reopens: 0, reopenFingerprint: null, candidateIds: [], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: [], artifactIds: [], scopeId, criterionIds: scope.acceptanceCriteria.map((_, criterionIndex) => `criterion:${scopeId}:${criterionIndex}` as const), domainPhase: "inspecting", domainFingerprint: null, acceptedFingerprint: null, cegarRound: 0, challengeVerdict: null, noProgressFingerprint: null, noProgressCount: 0, requirementIds, dependencyScopeIds, mutationResources: [...new Set(scope.mutationResources ?? [])].sort(), selectionAge: 0 });
+      const criterionIds = scope.acceptanceCriteria.map((_, criterionIndex) => `criterion:${scopeId}:${criterionIndex}` as const);
+      network.regions.push({ id: childId, key: normalize(scope.key), parentId: region.id, edge: "partOf", lod: region.lod + 1, objective: normalize(scope.objective), delivery: scope.delivery, allowedVariables: [...scope.allowedVariables], acceptanceCriteria: [...scope.acceptanceCriteria], coveredCriteria: [index], status: "unformed", progress: emptyProgress(), candidateIds: [], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: [], artifactIds: [], scopeId, criterionIds, inspectionObligationIds: [...criterionIds], domainPhase: "inspecting", domainFingerprint: null, acceptedFingerprint: null, challengeVerdict: null, requirementIds, dependencyScopeIds, mutationResources: [...new Set(scope.mutationResources ?? [])].sort(), selectionAge: 0 });
     }
     region.requirementIds = network.materialRequirements.map((item) => item.id);
     transitionRegion(region, "selected", undefined, "collapsed");
@@ -1185,30 +1691,55 @@ export function mergeSolutionDelta(state: SolutionLodState, activationId: string
     const rootScopes = [{ key: region.id, acceptanceCriteria: region.acceptanceCriteria }];
     network.materialRequirements = delta.materialRequirements.map((item) => {
       const { criterionIndex } = bindRequirement(item, rootScopes, "root criterion");
-      return { id: `requirement:${slug(item.key)}` as RequirementId, key: slug(item.key), text: normalize(item.text), scopeId: region.scopeId, criterionId: region.criterionIds[criterionIndex]! };
+      return { id: `requirement:${slug(item.key)}` as RequirementId, key: slug(item.key), text: normalize(item.text), scopeId: region.scopeId, criterionId: region.criterionIds[criterionIndex]!, evidenceRefs: [...item.evidenceRefs] };
     });
     region.requirementIds = network.materialRequirements.map((item) => item.id);
   } else if (activation.capability === "inspect" && region.edge === "root" && !network.materialRequirements?.length && region.acceptanceCriteria.length) {
-    network.materialRequirements = region.acceptanceCriteria.map((criterion, index) => ({ id: `requirement:root-criterion-${index}` as RequirementId, key: `root-criterion-${index}`, text: criterion, scopeId: region.scopeId, criterionId: region.criterionIds[index]! }));
+    network.materialRequirements = region.acceptanceCriteria.map((criterion, index) => ({ id: `requirement:root-criterion-${index}` as RequirementId, key: `root-criterion-${index}`, text: criterion, scopeId: region.scopeId, criterionId: region.criterionIds[index]!, evidenceRefs: [] }));
     region.requirementIds = network.materialRequirements.map((item) => item.id);
   }
   const resolvedAnswer = delta.region?.delivery === "answer" ? delta.resolvedAnswer : undefined;
-  const localEvidence = mergeEvidence(network, region, delta.evidence);
-  for (const factId of delta.factIds) region.evidenceIds = [...new Set([...region.evidenceIds, factId])];
-  if (activation.capability === "inspect" && region.edge === "root" && delta.taskDispositions?.length) {
-    network.taskDispositions = delta.taskDispositions.map((item) => ({ ...item, key: slug(item.key), request: normalize(item.request), reason: normalize(item.reason), evidenceRefs: [...new Set(item.evidenceRefs.map((ref) => localEvidence.get(ref) ?? ref))].sort() }));
+  const mergedEvidence = mergeEvidence(network, region, delta.evidence, activation.id, tools, activation.capability);
+  const localEvidence = mergedEvidence.refs;
+  changed ||= mergedEvidence.changed;
+  for (const factId of delta.factIds) { const evidenceId = localEvidence.get(factId) ?? factId; if (!region.evidenceIds.includes(evidenceId)) { region.evidenceIds.push(evidenceId); changed = true; } }
+  if (activation.capability === "inspect" && region.edge === "root") {
+    const authored = new Map((delta.materialRequirements ?? []).map((item) => [`requirement:${slug(item.key)}`, item.evidenceRefs]));
+    for (const refresh of delta.materialRequirementEvidence ?? []) authored.set(refresh.requirementId, refresh.evidenceRefs);
+    for (const requirement of network.materialRequirements ?? []) if (authored.has(requirement.id)) {
+      const refs = [...new Set(authored.get(requirement.id)!.map((ref) => localEvidence.get(ref) ?? ref))].sort();
+      if (JSON.stringify(refs) !== JSON.stringify(requirement.evidenceRefs)) { requirement.evidenceRefs = refs; changed = true; }
+    }
+  }
+  if (applyEvidenceValidations(network, delta.validations, localEvidence)) changed = true;
+  if (activation.capability === "inspect" && delta.criterionEvidence.length) {
+    region.inspectionObligationIds ??= [...region.criterionIds];
+    region.criterionVerdicts ??= [];
+    const closed = new Set<CriterionId>();
+    for (const item of delta.criterionEvidence) {
+      const criterionId = region.criterionIds[item.criterionIndex];
+      if (!criterionId) continue;
+      const verdict = item.verdict ?? "satisfied";
+      const evidenceRefs = [...new Set(item.evidenceRefs.map((ref) => localEvidence.get(ref) ?? ref))].sort();
+      const previous: InspectionCriterionResult | undefined = region.criterionVerdicts.find((entry) => entry.criterionId === criterionId);
+      const contradictory: boolean = Boolean(previous && previous.verdict !== verdict && previous.verdict !== "unknown" && verdict !== "unknown");
+      const next: InspectionCriterionResult = contradictory
+        ? { criterionId, verdict: "unknown" as const, evidenceRefs: [...new Set([...previous!.evidenceRefs, ...evidenceRefs])].sort(), reason: `Contradictory inspection verdicts: ${previous!.verdict} and ${verdict}.` }
+        : { criterionId, verdict, evidenceRefs, ...(item.reason ? { reason: normalize(item.reason) } : {}) };
+      region.criterionVerdicts = region.criterionVerdicts.filter((entry) => entry.criterionId !== criterionId).concat(next);
+      if (next.verdict === "satisfied" || next.verdict === "unsatisfied") closed.add(criterionId);
+    }
+    region.inspectionObligationIds = region.inspectionObligationIds.filter((id) => !closed.has(id));
+    region.progress.inspectionNoProgress = { count: 0, fingerprint: inspectionProgressFingerprint(network, region), unresolvedCriterionIds: [...region.inspectionObligationIds] };
     changed = true;
   }
-  for (const validation of delta.validations ?? []) {
-    const claim = network.evidence.find((item) => item.id === validation.claimRef && item.kind === "inference");
-    if (!claim || claim.status === "rejected") continue;
-    if (validation.verdict === "unresolved") continue;
-    const resolvedRefs = [...new Set(validation.evidenceRefs.map((ref) => localEvidence.get(ref) ?? ref))];
-    const grounded = resolvedRefs.length > 0 && resolvedRefs.every((ref) => ref === "task" || network.evidence.some((item) => item.id === ref && item.kind !== "inference" && (item.status ?? "confirmed") === "confirmed"));
-    if (!grounded) continue;
-    claim.status = validation.verdict;
-    claim.validationEvidenceRefs = resolvedRefs;
-    claim.validationReason = normalize(validation.reason);
+  if (activation.capability === "inspect" && delta.decisionBoundary) {
+    network = admitDecisionBoundary(network, region.id, resolveDecisionBoundaryEvidence(delta.decisionBoundary, localEvidence));
+    region = network.regions.find((item) => item.id === activation.regionId)!;
+    changed = true;
+  }
+  if (activation.capability === "inspect" && region.edge === "root" && delta.taskDispositions?.length) {
+    network.taskDispositions = delta.taskDispositions.map((item) => ({ ...item, key: slug(item.key), request: normalize(item.request), reason: normalize(item.reason), evidenceRefs: [...new Set(item.evidenceRefs.map((ref) => localEvidence.get(ref) ?? ref))].sort() }));
     changed = true;
   }
   for (const declaration of delta.variables ?? []) {
@@ -1229,9 +1760,21 @@ export function mergeSolutionDelta(state: SolutionLodState, activationId: string
     const candidate: SolutionCandidate = { id, regionId: region.id, key: "certified-verdict", proposition: normalize(delta.certifiedVerdict.proposition), status: "selected", declaredStatus: "selected", evidenceIds, declaredEvidenceIds: evidenceIds, eliminationReasons: [], declaredEliminationReasons: [], stances: [], createdRevision: network.revision + 1, sourceActivationId: activation.id };
     network.candidates = network.candidates.filter((item) => item.regionId !== region.id).concat(candidate);
     region.candidateIds = [id]; region.selectedCandidateIds = [id]; region.mutationResources = [...new Set(delta.certifiedVerdict.mutationResources)].sort();
-    region.certifiedLeaf = { criterionIds: [...region.criterionIds], implementationScope: normalize(delta.certifiedVerdict.implementationScope), evidenceRefs: evidenceIds, mutationResources: [...region.mutationResources], checks: region.criterionIds.map((criterionId) => ({ criterionId, commandOrObservation: "Verify the criterion against the measured repository change." })) };
-    region.domainFingerprint = domainFingerprint(network, region.id); region.acceptedFingerprint = region.domainFingerprint; region.challengeVerdict = "accept";
+    region.certifiedLeaf = { criterionIds: [...region.criterionIds], requirementIds: [...(region.requirementIds ?? [])], implementationScope: normalize(delta.certifiedVerdict.implementationScope), evidenceRefs: evidenceIds, mutationResources: [...region.mutationResources], checks: region.criterionIds.map((criterionId) => ({ criterionId, commandOrObservation: "Verify the criterion against the measured repository change." })) };
+    region.enumerationFingerprint = enumerationFingerprint(network, region.id); region.boundDomainFingerprint = boundDomainFingerprint(network, region.id); region.domainFingerprint = region.boundDomainFingerprint; region.acceptedFingerprint = region.boundDomainFingerprint; region.challengeVerdict = "accept";
     transitionRegion(region, "selected", undefined, "actionable");
+    changed = true;
+  }
+  if (activation.capability === "inspect" && delta.alreadySatisfied) {
+    const evidenceIds = [...new Set(delta.alreadySatisfied.criterionEvidence.flatMap((item) => item.evidenceRefs).map((ref) => localEvidence.get(ref) ?? ref).filter((ref) => network.evidence.some((item) => item.id === ref)))].sort();
+    const id = candidateId(region.id, "already-satisfied");
+    const candidate: SolutionCandidate = { id, regionId: region.id, key: "already-satisfied", proposition: normalize(delta.alreadySatisfied.proposition), status: "selected", declaredStatus: "selected", evidenceIds, declaredEvidenceIds: evidenceIds, eliminationReasons: [], declaredEliminationReasons: [], stances: [], createdRevision: network.revision + 1, sourceActivationId: activation.id };
+    network.candidates = network.candidates.filter((item) => item.regionId !== region.id).concat(candidate);
+    region.candidateIds = [id]; region.selectedCandidateIds = [id]; region.mutationResources = [...new Set(delta.alreadySatisfied.verificationResources)].sort();
+    region.certifiedLeaf = { criterionIds: [...region.criterionIds], requirementIds: [...(region.requirementIds ?? [])], implementationScope: "Verify the already-satisfied repository state.", evidenceRefs: evidenceIds, mutationResources: [...region.mutationResources], checks: delta.alreadySatisfied.criterionEvidence.map((item) => ({ criterionId: region.criterionIds[item.criterionIndex]!, commandOrObservation: `Verify criterion #${item.criterionIndex + 1} against current repository state.` })) };
+    region.implementationPremiseRefs = evidenceIds;
+    region.enumerationFingerprint = enumerationFingerprint(network, region.id); region.boundDomainFingerprint = boundDomainFingerprint(network, region.id); region.domainFingerprint = region.boundDomainFingerprint; region.acceptedFingerprint = region.boundDomainFingerprint; region.challengeVerdict = "accept";
+    transitionRegion(region, "selected", undefined, "implemented");
     changed = true;
   }
   const incomingCandidateIds = new Set<string>();
@@ -1247,7 +1790,7 @@ export function mergeSolutionDelta(state: SolutionLodState, activationId: string
     const stances = resolveStances(network, region.id, item.stances ?? []);
     const signature = candidateSignature(item.proposition, stances);
     const duplicate = network.candidates.find((existing) => !existing.historical && existing.regionId === region.id && existing.id !== id && candidateSignature(existing.proposition, existing.stances ?? []) === signature);
-    if (duplicate) throw new Error(`Alternative "${item.key}" duplicates established candidate "${duplicate.key}" by normalized proposition and stances. Reuse the established candidate key.`);
+    if (duplicate) throw new Error(`Alternative "${item.key}" duplicates established candidate "${duplicate.key}" by structured decision stance. Reuse the established candidate key.`);
     // Legacy deltas can describe candidates, but cannot leave a latent commitment for a later acceptance to resurrect.
     const authoredStatus = item.outcome === "eliminated" || item.outcome === "selected" ? "possible" : item.outcome;
     if (!candidate) {
@@ -1333,18 +1876,36 @@ export function mergeSolutionDelta(state: SolutionLodState, activationId: string
     network.constraints.push(constraint); region.constraintIds.push(constraint.id); changed = true;
   }
   if (region.delivery === "answer" && delta.answer && delta.answer !== region.answer) { region.answer = normalize(delta.answer); changed = true; }
-  // Formation: facts gathered for an unformed region make it ready for synthesis.
-  if (activation.capability === "inspect" && !delta.certifiedVerdict) { transitionRegion(region, region.candidateIds.length ? "challenging" : "ungenerated", undefined, region.status === "unformed" ? "superposed" : undefined); changed = true; }
+  let permitFollowup = true;
+  if (activation.capability === "inspect" && delta.activations.some((request) => request.capability === "inspect")) {
+    const fingerprint = inspectionProgressFingerprint(network, region);
+    const ledger = region.progress.inspectionNoProgress;
+    if (fingerprint !== inspectionBefore) region.progress.inspectionNoProgress = { count: 0, fingerprint, unresolvedCriterionIds: [...(region.inspectionObligationIds ?? region.criterionIds)] };
+    else {
+      ledger.count += 1;
+      ledger.fingerprint = fingerprint;
+      ledger.unresolvedCriterionIds = [...(region.inspectionObligationIds ?? region.criterionIds)];
+      if (ledger.count >= MAX_NO_PROGRESS_CYCLES) {
+        transitionRegion(region, "blocked", `Inspection for ${region.id} made no semantic progress for two consecutive follow-up requests; fingerprint=${fingerprint}; unresolvedCriterionIds=${ledger.unresolvedCriterionIds.join(",") || "none"}.`);
+        permitFollowup = false;
+        changed = true;
+      }
+    }
+  }
+  if (permitFollowup) for (const request of delta.activations) if (addActivation(network, { ...request, regionId: request.regionId ?? region.id, contextRefs: request.contextRefs, senderActivationId: activation.id })) changed = true;
+  if (activation.capability === "inspect" && !delta.certifiedVerdict && !delta.taskScopes?.length && !resolvedAnswer && changed) {
+    const phase = delta.decisionBoundary ? "ungenerated" : region.candidateIds.length ? "challenging" : "inspecting";
+    if (region.domainPhase !== phase || region.status === "unformed") transitionRegion(region, phase, undefined, region.status === "unformed" ? "superposed" : undefined);
+  }
   assertAcyclicPrimalGraph(network);
-  if (changed) network.revision++;
-  for (const request of delta.activations) addActivation(network, { ...request, regionId: request.regionId ?? region.id, contextRefs: request.contextRefs, senderActivationId: activation.id });
+  if (changed && network.revision === state.network.revision) network.revision++;
   return propagateNetwork(network);
 }
 
 export function validateRefinementOutput(state: SolutionLodState, regionId: string, output: RefinementOutput): void {
   const region = state.network.regions.find((item) => item.id === regionId);
   if (!region) return;
-  rejectUnrequestedDeferredWork(state, [output.certifiedLeaf?.implementationScope, ...output.children.flatMap((item) => [item.objective, ...item.acceptanceCriteria])]);
+  rejectUnrequestedDeferredWork(state, [output.outcome === "leaf" ? output.certifiedLeaf.implementationScope : undefined, ...(output.outcome === "children" ? output.children.flatMap((item) => [item.objective, ...item.acceptanceCriteria]) : [])]);
   if (output.evidence.some((item) => item.kind !== "inference")) throw new Error("Refinement is tool-free and cannot create confirmed repository/tool/user evidence. Reuse supplied facts or request one specific inspection.");
   // Degenerate case: an unauthored criteria list leaves one anonymous implicit criterion.
   // Any child then trivially addresses position 0 — normalize silently instead of demanding
@@ -1352,18 +1913,27 @@ export function validateRefinementOutput(state: SolutionLodState, regionId: stri
   const authoredCount = region.acceptanceCriteria.length;
   const criteriaCount = Math.max(authoredCount, 1);
   const inRange = (value: number) => Number.isInteger(value) && value >= 0 && value < criteriaCount;
-  if (Boolean(output.certifiedLeaf) === Boolean(output.children.length)) throw new Error("Refinement must return either one certified leaf contract or one or more children, never both or neither.");
-  if (output.certifiedLeaf) {
+  if (output.outcome === "boundary") { admitDecisionBoundary(state.network, regionId, output.decisionBoundary); return; }
+  if (output.outcome === "need-fact") {
+    for (const ref of output.inspection.contextRefs) if (!knownRef(state.network, ref)) throw new Error(`Refinement inspection request cites unknown context reference ${ref}.`);
+    return;
+  }
+  if (output.outcome === "leaf") {
     if (/\b(?:estimate|later|defer(?:red)?|follow-up)\b/i.test(output.certifiedLeaf.implementationScope)) throw new Error("A certified leaf must name bounded implementable work, not an estimate or deferred follow-up.");
     if (JSON.stringify([...new Set(output.certifiedLeaf.criterionIds)].sort()) !== JSON.stringify([...region.criterionIds].sort())) throw new Error("A certified leaf must own every exact current criterion ID and no others.");
+    if (!exactSet(output.certifiedLeaf.requirementIds ?? [], region.requirementIds ?? [])) throw new Error("A certified leaf must close every exact current material requirement ID and no others.");
     const checkIds = output.certifiedLeaf.checks.map((check) => check.criterionId);
     if (new Set(checkIds).size !== checkIds.length || JSON.stringify([...checkIds].sort()) !== JSON.stringify([...region.criterionIds].sort())) throw new Error("A certified leaf requires exactly one executable check witness per criterion ID.");
     if (region.delivery === "change" && !output.certifiedLeaf.mutationResources.length) throw new Error("A change-delivery certified leaf requires at least one bounded mutation resource path.");
     if (output.certifiedLeaf.mutationResources.some((resource) => !normalize(resource))) throw new Error("A certified leaf cannot contain an empty mutation resource path.");
     for (const ref of output.certifiedLeaf.evidenceRefs) if (!knownRef(state.network, ref) || !isConfirmedEvidence(state.network, ref)) throw new Error(`Certified leaf cites unresolved or stale evidence reference ${ref}.`);
+    if (!exactSet(output.atomicityWitness.criterionIds, output.certifiedLeaf.criterionIds)) throw new Error("A leaf atomicity witness must cover every exact certified criterion ID and no others.");
+    if (!exactSet(output.atomicityWitness.requirementIds, output.certifiedLeaf.requirementIds ?? [])) throw new Error("A leaf atomicity witness must cover every exact certified material requirement ID and no others.");
+    if (!exactSet(output.atomicityWitness.mutationResources.map(normalize), output.certifiedLeaf.mutationResources.map(normalize))) throw new Error("A leaf atomicity witness must cover every exact certified mutation resource and no others.");
     return;
   }
-  const covered = new Set<number>();
+  if (output.outcome !== "children") return assertNever(output);
+  const criterionOwners = new Map(Array.from({ length: criteriaCount }, (_, index) => [index, 0]));
   const seenKeys = new Set<string>();
   const requirementOwners = new Map((region.requirementIds ?? []).map((id) => [id, 0]));
   const knownScopes = new Set(state.network.regions.map((item) => item.scopeId));
@@ -1379,8 +1949,7 @@ export function validateRefinementOutput(state: SolutionLodState, regionId: stri
     const normalizedCovered = authoredCount === 0 && child.coveredCriteria.length === 0 ? [0] : child.coveredCriteria;
     if (!normalizedCovered.length || !normalizedCovered.every(inRange))
       throw new Error(`Child "${child.key}" does not address any known success criterion. Link it to at least one criterion position of the parent — valid positions here: 0..${criteriaCount - 1}${region.acceptanceCriteria.map((criterion, index) => `; ${index}: ${criterion}`).join("")}.`);
-    for (const index of normalizedCovered) covered.add(index);
-    for (const index of normalizedCovered) if (output.children.some((other) => other !== child && (authoredCount === 0 && other.coveredCriteria.length === 0 ? [0] : other.coveredCriteria).includes(index))) throw new Error(`Parent criterion ${index} has duplicate child ownership. Every criterion must belong to exactly one typed scope.`);
+    for (const index of new Set(normalizedCovered)) criterionOwners.set(index, criterionOwners.get(index)! + 1);
     for (const requirementId of child.requirementIds ?? []) {
       if (!requirementOwners.has(requirementId as RequirementId)) throw new Error(`Child "${child.key}" cites requirement ${requirementId} outside its parent scope.`);
       requirementOwners.set(requirementId as RequirementId, requirementOwners.get(requirementId as RequirementId)! + 1);
@@ -1396,11 +1965,30 @@ export function validateRefinementOutput(state: SolutionLodState, regionId: stri
       if (boundary === ancestorBoundary) throw new Error(`Child "${child.key}" repeats ancestor boundary ${ancestor.id}. Return certifiedLeaf for atomic work or identify a genuinely narrower decision/deliverable boundary.`);
     }
   }
-  const missing = Array.from({ length: criteriaCount }, (_, index) => index).filter((index) => !covered.has(index));
+  const missing = [...criterionOwners].filter(([, count]) => count === 0).map(([index]) => index);
   if (missing.length)
     throw new Error(`The children do not collectively cover the parent success criteria: no child addresses criterion position(s) ${missing.join(", ")}. Add or extend a child so every criterion is covered.`);
-  const invalidRequirements = [...requirementOwners].filter(([, count]) => count !== 1);
-  if (invalidRequirements.length) throw new Error(`Every material requirement must have exactly one child owner: ${invalidRequirements.map(([id, count]) => `${id}=${count}`).join(", ")}.`);
+  const uncoveredRequirements = [...requirementOwners].filter(([, count]) => count === 0);
+  if (uncoveredRequirements.length) throw new Error(`Every material requirement must be covered by at least one child: ${uncoveredRequirements.map(([id]) => id).join(", ")}.`);
+  const overlappingRequirements = [...requirementOwners].filter(([, count]) => count > 1);
+  if (overlappingRequirements.length) throw new Error(`Material requirement IDs must remain uniquely owned; sibling scopes overlap at ${overlappingRequirements.map(([id]) => id).join(", ")}.`);
+  const resourceOwners = new Map((region.mutationResources ?? []).map((resource) => [normalize(resource), 0]));
+  const childResources: string[] = [];
+  for (const child of output.children) for (const rawResource of child.mutationResources ?? []) {
+    const resource = normalize(rawResource);
+    if (resourceOwners.size && !resourceOwners.has(resource)) throw new Error(`Child "${child.key}" cites mutation resource ${rawResource} outside its parent scope.`);
+    if (resourceOwners.has(resource)) resourceOwners.set(resource, resourceOwners.get(resource)! + 1);
+    if (childResources.some((existing) => existing === resource || existing.startsWith(`${resource}/`) || resource.startsWith(`${existing}/`))) throw new Error(`Sibling mutation resources overlap at ${rawResource}.`);
+    childResources.push(resource);
+  }
+  const invalidResourceOwners = [...resourceOwners].filter(([, count]) => count !== 1);
+  if (invalidResourceOwners.length) throw new Error(`Bounded parent mutation resources must be partitioned exactly once: ${invalidResourceOwners.map(([resource]) => resource).join(", ")}.`);
+  const parentMeasure = [criteriaCount, region.requirementIds?.length ?? 0, region.mutationResources?.length ?? 0, new Set(region.allowedVariables.map(slug)).size];
+  const parentVariables = new Set(region.allowedVariables.map(slug));
+  for (const child of output.children) {
+    const childMeasure = [new Set(authoredCount === 0 && child.coveredCriteria.length === 0 ? [0] : child.coveredCriteria).size, new Set(child.requirementIds ?? []).size, region.mutationResources?.length ? new Set(child.mutationResources ?? []).size : 0, new Set(child.allowedVariables.map(slug).filter((variable) => parentVariables.has(variable))).size];
+    if (!childMeasure.some((value, index) => value < parentMeasure[index]!)) throw new Error(`Child "${child.key}" does not strictly decrease an inherited refinement dimension; reject restatement or wrapper decomposition.`);
+  }
   assertAcyclicScopeDependencies(state.network, output.children.map((child) => ({ scopeId: `scope:${region.id}:${normalize(child.key)}` as ScopeId, dependencyScopeIds: [...new Set(child.dependencyScopeIds ?? [])] as ScopeId[] })));
   for (const child of output.children) {
     if (child.edge === "refines") {
@@ -1421,9 +2009,10 @@ export function validateRefinementOutput(state: SolutionLodState, regionId: stri
 export function validateImplementationOutput(state: SolutionLodState, regionId: string, output: ImplementationOutput): void {
   const region = state.network.regions.find((item) => item.id === regionId);
   if (!region) throw new Error(`Unknown implementation region ${regionId}`);
-  rejectUnrequestedDeferredWork(state, [output.summary, output.blocker]);
+  rejectUnrequestedDeferredWork(state, [output.summary, output.outcome === "blocked" ? output.blocker : undefined]);
   if (region.delivery === "change" && (!region.certifiedLeaf || !hasSelectedImplementationFamily(state.network, region))) throw new Error(`Implementation requires one accepted selected implementation family and a certified leaf contract for ${regionId}.`);
-  if (output.status === "blocked") {
+  if (region.certifiedLeaf && !exactSet(region.certifiedLeaf.requirementIds ?? [], region.requirementIds ?? [])) throw new Error(`Implementation requires exact material requirement closure for ${regionId}.`);
+  if (output.outcome === "blocked") {
     if (!normalize(output.blocker ?? output.summary)) throw new Error("A blocked implementation must name the concrete missing fact or conflict.");
     return;
   }
@@ -1431,8 +2020,7 @@ export function validateImplementationOutput(state: SolutionLodState, regionId: 
   const failed = output.checks.filter((check) => !check.passed);
   if (failed.length) throw new Error(`Implementation cannot complete while checks fail: ${failed.map((item) => item.name).join(", ")}.`);
   if (output.checks.some((check) => !normalize(check.evidence))) throw new Error("Every implementation check must include observable evidence.");
-  if (output.status === "already-satisfied" && output.changedFiles.length) throw new Error("An already-satisfied implementation cannot report changed files.");
-  if (taskReferencesTodo(state.originalTask) && !normalize(output.todoDisposition ?? "")) throw new Error("A task that references TODO requires explicit TODO disposition evidence.");
+  if (taskReferencesTodo(state.network.authority.task.exactText) && !normalize(output.todoDisposition ?? "")) throw new Error("A task that references TODO requires explicit TODO disposition evidence.");
 }
 
 export function validateVerificationOutput(state: SolutionLodState, regionId: string, output: VerificationOutput): void {
@@ -1441,22 +2029,41 @@ export function validateVerificationOutput(state: SolutionLodState, regionId: st
   rejectUnrequestedDeferredWork(state, [output.summary, ...output.findings.map((item) => item.problem)]);
   const live = new Map(state.network.regions.map((item) => [item.id, item]));
   const findingKeys = new Set<string>();
+  const checks = output.checks.map((check) => ({ ...check, disposition: check.disposition ?? "criterion-gating" as const, criterionIds: check.criterionIds ?? [], baselineEvidenceRefs: check.baselineEvidenceRefs ?? [], requiredEvidence: check.requiredEvidence ?? [] }));
+  const gatingChecks = checks.filter((check) => check.disposition === "criterion-gating" || check.disposition === "release-gating");
+  for (const check of checks) {
+    if (!normalize(check.evidence)) throw new Error("Every verification check requires observable evidence.");
+    if (check.criterionIds.some((id) => !region.criterionIds.includes(id as CriterionId))) throw new Error(`Verification check ${check.name} cites a criterion outside ${regionId}.`);
+    if (check.disposition === "criterion-gating" && check.criterionIds.length > 1) throw new Error("A criterion-gating check may own at most one exact criterion.");
+    if (check.disposition === "release-gating" && check.criterionIds.length) throw new Error("A release-gating check must not impersonate a criterion check.");
+    if (check.disposition === "preexisting" && (!normalize(check.reason ?? "") || !check.baselineEvidenceRefs.length || check.baselineEvidenceRefs.some((ref) => !isConfirmedEvidence(state.network, ref)))) throw new Error("A preexisting check failure requires a reason and confirmed baseline evidence.");
+    if (check.disposition === "out-of-scope" && (!normalize(check.reason ?? "") || check.criterionIds.length)) throw new Error("An out-of-scope check requires a reason and cannot own a current criterion.");
+    if (check.disposition === "environmental" && (check.passed || !normalize(check.resolutionOwner ?? "") || !check.requiredEvidence.length || output.outcome !== "fail")) throw new Error("An environmental check must fail with a resolution owner and required resume evidence under a fail verdict.");
+  }
   for (const finding of output.findings) {
     const target = live.get(finding.regionId);
     if (!target) throw new Error(`Verification finding references missing region ${finding.regionId}.`);
     if (!target.criterionIds.includes(finding.criterionId as SolutionRegion["criterionIds"][number])) throw new Error(`Verification finding does not name an exact criterion identity of ${finding.regionId}: ${finding.criterionId}`);
     if (!normalize(finding.problem) || !normalize(finding.evidence)) throw new Error("Every verification finding requires a concrete problem and observed evidence.");
+    const external = finding.target.kind === "environment" || finding.target.kind === "external";
+    if (external && (!normalize(finding.resolutionOwner ?? "") || !finding.requiredEvidence?.length)) throw new Error("Environment and external findings require a resolution owner and required resume evidence.");
+    if (output.outcome === "fail" && !external) throw new Error("A fail verdict is reserved for environment or external blockers.");
+    if (external && output.outcome !== "fail") throw new Error("Environment and external findings must route through fail to controller-owned blocked-external.");
+    if (output.outcome === "repair" && (finding.target.kind === "environment" || finding.target.kind === "external")) throw new Error("External findings have no graph-owned repair route.");
+    if (output.outcome === "repair" && target.delivery === "change" && finding.target.kind !== "files") throw new Error("A local change repair finding must target one or more affected files.");
+    if (output.outcome === "repair" && target.delivery === "answer" && finding.target.kind !== "answer") throw new Error("An answer repair finding must target the answer.");
+    if (output.outcome === "reopen" && (!finding.invalidatedPremiseRefs?.length || finding.invalidatedPremiseRefs.some((ref) => !isConfirmedEvidence(state.network, ref)))) throw new Error("Reopening an earlier decision requires confirmed invalidated premise references.");
     const key = `${finding.regionId}\0${finding.criterionId}`;
     if (findingKeys.has(key)) throw new Error(`Verification contains multiple findings for the same exact criterion ${finding.criterionId}.`);
     findingKeys.add(key);
-    if (output.verdict === "repair" && finding.regionId !== regionId) throw new Error("A repair verdict may target only the region being verified; use reopen for an earlier choice.");
+    if (output.outcome === "repair" && finding.regionId !== regionId) throw new Error("A repair verdict may target only the region being verified; use reopen for an earlier choice.");
   }
-  if (output.verdict === "pass") {
+  if (output.outcome === "pass") {
     if (output.findings.length) throw new Error("A passing verification cannot contain defect findings.");
-    if (!output.checks.length || output.checks.some((check) => !check.passed || !normalize(check.evidence)))
+    if (!gatingChecks.length || gatingChecks.some((check) => !check.passed))
       throw new Error("Verification may pass only with passing checks containing observable evidence.");
-    for (const criterion of region.acceptanceCriteria) {
-      if (!output.checks.some((check) => normalize(`${check.name} ${check.evidence}`).includes(normalize(criterion))))
+    for (const [index, criterion] of region.acceptanceCriteria.entries()) {
+      if (!gatingChecks.some((check) => check.disposition === "criterion-gating" && (check.criterionIds.includes(region.criterionIds[index]!) || !check.criterionIds.length && normalize(`${check.name} ${check.evidence}`).includes(normalize(criterion)))))
         throw new Error(`Verification pass has no criterion-specific evidence for: ${criterion}`);
     }
     const evidence = output.completionEvidence;
@@ -1467,12 +2074,17 @@ export function validateVerificationOutput(state: SolutionLodState, regionId: st
       const implementationOutcome = evidence!.implementationOutcome ?? (measuredFiles.length ? "changed" : "already-satisfied");
       if (JSON.stringify([...new Set(criterionIds)].sort()) !== JSON.stringify([...region.criterionIds].sort())) throw new Error("Verification must confirm every exact criterion identity.");
       if (evidence!.fullChecks.some((check) => !normalize(check))) throw new Error("Every configured release gate requires observable evidence.");
-      if (taskReferencesTodo(state.originalTask) && !normalize(evidence!.todoDisposition ?? "")) throw new Error("A task that references TODO requires explicit TODO disposition evidence.");
+      if (taskReferencesTodo(state.network.authority.task.exactText) && !normalize(evidence!.todoDisposition ?? "")) throw new Error("A task that references TODO requires explicit TODO disposition evidence.");
       if (implementationOutcome === "changed" && (!measuredFiles.length || JSON.stringify([...new Set(evidence!.changedFiles)].sort()) !== JSON.stringify([...new Set(measuredFiles)].sort()))) throw new Error("Changed implementation evidence must exactly match non-empty measured implementation artifacts.");
       if (implementationOutcome === "already-satisfied" && (measuredFiles.length || evidence!.changedFiles.length || !evidence!.inspectionEvidenceRefs?.length || evidence!.inspectionEvidenceRefs.some((ref) => !isConfirmedEvidence(state.network, ref)))) throw new Error("Already-satisfied completion requires confirmed inspection evidence, no measured changes, and verifier confirmation of every criterion.");
     }
-  } else if (!output.findings.length) throw new Error(`${output.verdict} verification requires at least one criterion-linked finding.`);
-  if (output.findings.some((finding) => finding.severity === "high") && output.verdict === "pass") throw new Error("High-severity review findings block completion.");
+    const verifier = state.network.activations.findLast((item) => item.regionId === regionId && item.capability === "verify" && (item.status === "running" || item.status === "queued"));
+    const unresolved = state.network.findings.filter((item) => item.regionId === regionId && region.criterionIds.includes(item.criterionId) && (item.status === "open" || item.status === "repairing"));
+    if (unresolved.some((item) => item.status !== "repairing" || !verifier?.findingIds?.includes(item.id))) throw new Error("Verification pass must cite every repairing finding; open findings require a successful repair first.");
+  } else if (!output.findings.length) throw new Error(`${output.outcome} verification requires at least one criterion-linked finding.`);
+  if (gatingChecks.some((check) => !check.passed) && output.outcome === "pass") throw new Error("Failed criterion or release gates block completion.");
+  for (const check of gatingChecks.filter((item) => !item.passed && item.criterionIds.length)) if (!output.findings.some((finding) => check.criterionIds.includes(finding.criterionId))) throw new Error(`Failed gating check ${check.name} requires a matching criterion finding.`);
+  if (output.findings.some((finding) => finding.severity === "high") && output.outcome === "pass") throw new Error("High-severity review findings block completion.");
 }
 
 export function validatePresentationAnswer(state: SolutionLodState, regionId: string, answer: string): void {
@@ -1491,10 +2103,9 @@ function retractRegion(network: SolutionNetwork, regionId: string): void {
   network.activations = network.activations.map((item) => item.regionId !== regionId ? item : { ...item, historical: true, status: item.status === "queued" || item.status === "running" ? "superseded" : item.status, error: item.error ?? `Historical activation: conditional region ${regionId} was retracted.` });
   const retired = new Set([...network.candidates.filter((item) => item.historical).map((item) => item.id), ...network.variables.filter((item) => item.historical).map((item) => item.id)]);
   network.constraints = network.constraints.map((item) => retired.has(item.subject) || retired.has(item.target) || [...retired].some((ref) => item.subject.startsWith(`${ref}:`) || item.target.startsWith(`${ref}:`)) ? { ...item, historical: true } : item);
-  network.materialRequirements = network.materialRequirements?.filter((requirement) => network.regions.some((item) => item.scopeId === requirement.scopeId));
 }
 
-function conditionalDefinition(definition: RefinementOutput["children"][number]): string {
+function conditionalDefinition(definition: Extract<RefinementOutput, { outcome: "children" }>["children"][number]): string {
   return hash({ key: normalize(definition.key), objective: normalize(definition.objective), edge: definition.edge, delivery: definition.delivery, allowedVariables: [...definition.allowedVariables].map(normalize).sort(), acceptanceCriteria: [...definition.acceptanceCriteria].map(normalize), coveredCriteria: [...definition.coveredCriteria].sort((a, b) => a - b), requirementIds: [...(definition.requirementIds ?? [])].sort(), dependencyScopeIds: [...(definition.dependencyScopeIds ?? [])].sort(), mutationResources: [...(definition.mutationResources ?? [])].map(normalize).sort(), unresolvedVariable: definition.unresolvedVariable ? slug(definition.unresolvedVariable) : undefined });
 }
 
@@ -1507,26 +2118,41 @@ function resetConditionalRegion(network: SolutionNetwork, region: SolutionRegion
   const retired = new Set([...network.candidates.filter((item) => item.historical).map((item) => item.id), ...network.variables.filter((item) => item.historical).map((item) => item.id)]);
   network.constraints = network.constraints.map((item) => retired.has(item.subject) || retired.has(item.target) || [...retired].some((ref) => item.subject.startsWith(`${ref}:`) || item.target.startsWith(`${ref}:`)) ? { ...item, historical: true } : item);
   region.candidateIds = []; region.selectedCandidateIds = []; region.constraintIds = []; region.evidenceIds = []; region.activationIds = []; region.artifactIds = [];
-  region.acceptedFingerprint = null; region.domainFingerprint = null; region.challengeVerdict = null; region.certifiedLeaf = undefined; region.answer = undefined; region.reopens = 0; region.reopenFingerprint = null; region.noProgressCount = 0; region.noProgressFingerprint = null; region.convergenceCycles = undefined;
+  region.acceptedFingerprint = null; region.enumerationFingerprint = null; region.boundDomainFingerprint = null; region.domainFingerprint = null; region.decisionBoundary = undefined; region.challengeVerdict = null; region.certifiedLeaf = undefined; region.answer = undefined; region.progress = emptyProgress(); region.convergenceCycles = undefined;
+  region.inspectionAttempts = 0;
   transitionRegion(region, "inspecting", undefined, "unformed");
 }
 
 export function mergeRefinementOutput(networkInput: SolutionNetwork, activationId: string, output: RefinementOutput): SolutionNetwork {
-  const network = cloneNetwork(networkInput);
+  let network = cloneNetwork(networkInput);
   const activation = network.activations.find((item) => item.id === activationId);
   if (!activation) throw new Error(`Unknown activation ${activationId}`);
-  const region = network.regions.find((item) => item.id === activation.regionId);
+  let region = network.regions.find((item) => item.id === activation.regionId);
   if (!region) throw new Error(`Unknown activation region ${activation.regionId}`);
   activation.status = "completed";
-  mergeEvidence(network, region, output.evidence);
+  mergeEvidence(network, region, output.evidence, activation.id, undefined, "refine");
+  if (output.outcome === "need-fact") {
+    const request = output.inspection;
+    transitionRegion(region, "inspecting", undefined, "superposed");
+    addActivation(network, { capability: "inspect", ...request, regionId: region.id, senderActivationId: activation.id });
+    network.revision++;
+    return network;
+  }
+  if (output.outcome === "boundary") {
+    network = admitDecisionBoundary(network, region.id, output.decisionBoundary);
+    region = network.regions.find((item) => item.id === activation.regionId)!;
+    transitionRegion(region, "ungenerated", undefined, "superposed");
+    return network;
+  }
   const parentSelection = region.selectedCandidateIds[0];
-  if (output.certifiedLeaf) {
-    region.certifiedLeaf = { criterionIds: [...output.certifiedLeaf.criterionIds] as CriterionId[], implementationScope: normalize(output.certifiedLeaf.implementationScope), evidenceRefs: [...new Set(output.certifiedLeaf.evidenceRefs)], mutationResources: [...new Set(output.certifiedLeaf.mutationResources.map(normalize))].sort(), checks: output.certifiedLeaf.checks.map((check) => ({ criterionId: check.criterionId as CriterionId, commandOrObservation: normalize(check.commandOrObservation) })) };
+  if (output.outcome === "leaf") {
+    region.certifiedLeaf = { criterionIds: [...output.certifiedLeaf.criterionIds] as CriterionId[], requirementIds: [...(output.certifiedLeaf.requirementIds ?? [])] as RequirementId[], implementationScope: normalize(output.certifiedLeaf.implementationScope), evidenceRefs: [...new Set(output.certifiedLeaf.evidenceRefs)], mutationResources: [...new Set(output.certifiedLeaf.mutationResources.map(normalize))].sort(), checks: output.certifiedLeaf.checks.map((check) => ({ criterionId: check.criterionId as CriterionId, commandOrObservation: normalize(check.commandOrObservation) })) };
     region.mutationResources = [...region.certifiedLeaf.mutationResources];
     transitionRegion(region, "selected", undefined, "actionable");
     network.revision++;
     return propagateNetwork(network);
   }
+  if (output.outcome !== "children") return assertNever(output);
   const incomingKeys = new Set(output.children.map((item) => normalize(item.key)));
   for (const child of network.regions.filter((item) => item.parentId === region.id)) if (!incomingKeys.has(normalize(child.key))) retractRegion(network, child.id);
   for (const definition of output.children) {
@@ -1537,14 +2163,14 @@ export function mergeRefinementOutput(networkInput: SolutionNetwork, activationI
     const definitionFingerprint = conditionalDefinition(definition);
     if (existing) {
       if (existing.definitionFingerprint !== definitionFingerprint) resetConditionalRegion(network, existing);
-      existing.key = key; existing.objective = normalize(definition.objective); existing.edge = definition.edge; existing.delivery = definition.delivery ?? region.delivery; existing.allowedVariables = [...new Set(definition.allowedVariables.map(normalize).filter(Boolean))].sort(); existing.acceptanceCriteria = definition.acceptanceCriteria.map(normalize); existing.coveredCriteria = coveredCriteria.sort((a, b) => a - b); existing.criterionIds = definition.acceptanceCriteria.map((_, index) => `criterion:${existing.scopeId}:${index}` as const); existing.requirementIds = [...new Set(definition.requirementIds ?? [])].sort() as RequirementId[]; existing.dependencyScopeIds = [...new Set(definition.dependencyScopeIds ?? [])].sort() as ScopeId[]; existing.mutationResources = [...new Set((definition.mutationResources ?? []).map(normalize))].sort(); existing.definitionFingerprint = definitionFingerprint; existing.allowedVariables = definition.edge === "refines" && definition.unresolvedVariable ? [normalize(definition.unresolvedVariable)] : existing.allowedVariables;
+      existing.key = key; existing.objective = normalize(definition.objective); existing.edge = definition.edge; existing.delivery = definition.delivery ?? region.delivery; existing.allowedVariables = [...new Set(definition.allowedVariables.map(normalize).filter(Boolean))].sort(); existing.acceptanceCriteria = definition.acceptanceCriteria.map(normalize); existing.coveredCriteria = coveredCriteria.sort((a, b) => a - b); existing.criterionIds = definition.acceptanceCriteria.map((_, index) => `criterion:${existing.scopeId}:${index}` as const); existing.requirementIds = [...new Set(definition.requirementIds ?? [])].sort() as RequirementId[]; existing.dependencyScopeIds = [...new Set(definition.dependencyScopeIds ?? [])].sort() as ScopeId[]; existing.mutationResources = [...new Set((definition.mutationResources ?? []).map(normalize))].sort(); existing.definitionFingerprint = definitionFingerprint;
       continue;
     }
     network.regions.push({
       id: `r${network.nextRegionId++}`, key, parentId: region.id, parentCandidateId: parentSelection, edge: definition.edge,
       lod: region.lod + 1, objective: normalize(definition.objective), delivery: definition.delivery ?? region.delivery,
-      allowedVariables: definition.edge === "refines" && definition.unresolvedVariable ? [normalize(definition.unresolvedVariable)] : [...new Set(definition.allowedVariables.map(normalize).filter(Boolean))].sort(), acceptanceCriteria: definition.acceptanceCriteria.map(normalize), coveredCriteria: coveredCriteria.sort((a, b) => a - b),
-      status: "unformed", reopens: 0, reopenFingerprint: null, candidateIds: [], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: [], artifactIds: [], scopeId: `scope:${region.id}:${key}`, criterionIds: definition.acceptanceCriteria.map((_, index) => `criterion:${region.id}:${key}:${index}` as const), domainPhase: "inspecting", domainFingerprint: null, acceptedFingerprint: null, cegarRound: 0, challengeVerdict: null, noProgressFingerprint: null, noProgressCount: 0, requirementIds: [...new Set(definition.requirementIds ?? [])].sort() as RequirementId[], dependencyScopeIds: [...new Set(definition.dependencyScopeIds ?? [])].sort() as ScopeId[], mutationResources: [...new Set((definition.mutationResources ?? []).map(normalize))].sort(), definitionFingerprint, selectionAge: 0,
+      allowedVariables: [...new Set(definition.allowedVariables.map(normalize).filter(Boolean))].sort(), acceptanceCriteria: definition.acceptanceCriteria.map(normalize), coveredCriteria: coveredCriteria.sort((a, b) => a - b),
+      status: "unformed", progress: emptyProgress(), candidateIds: [], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: [], artifactIds: [], scopeId: `scope:${region.id}:${key}`, criterionIds: definition.acceptanceCriteria.map((_, index) => `criterion:${region.id}:${key}:${index}` as const), inspectionObligationIds: definition.acceptanceCriteria.map((_, index) => `criterion:${region.id}:${key}:${index}` as const), domainPhase: "inspecting", domainFingerprint: null, acceptedFingerprint: null, challengeVerdict: null, requirementIds: [...new Set(definition.requirementIds ?? [])].sort() as RequirementId[], dependencyScopeIds: [...new Set(definition.dependencyScopeIds ?? [])].sort() as ScopeId[], mutationResources: [...new Set((definition.mutationResources ?? []).map(normalize))].sort(), definitionFingerprint, selectionAge: 0,
     });
   }
   transitionRegion(region, "selected", undefined, "collapsed");
@@ -1552,19 +2178,20 @@ export function mergeRefinementOutput(networkInput: SolutionNetwork, activationI
   return propagateNetwork(network);
 }
 
-export function queueActivation(networkInput: SolutionNetwork, capability: Capability, regionId: string, request: string, expectedDelta: string, contextRefs: string[] = []): SolutionNetwork {
-  const network = cloneNetwork(networkInput); addActivation(network, { capability, regionId, request, expectedDelta, contextRefs }); return network;
+export function queueActivation(networkInput: SolutionNetwork, capability: Capability, regionId: string, request: string, expectedDelta: string, contextRefs: string[] = [], findingIds: string[] = []): SolutionNetwork {
+  const network = cloneNetwork(networkInput); addActivation(network, { capability, requiredCapabilities: [...DEFAULT_ACTIVATION_CAPABILITIES[capability]], regionId, request, expectedDelta, contextRefs, findingIds: [...new Set(findingIds)].sort() }); return network;
 }
 
 function queueSynthesis(networkInput: SolutionNetwork, operation: SynthesisOperation, regionId: string, request: string, expectedDelta: string, contextRefs: string[]): SolutionNetwork {
   const network = cloneNetwork(networkInput);
   const region = network.regions.find((item) => item.id === regionId);
-  addActivation(network, { capability: "synthesize", operation, domainFingerprint: region?.domainFingerprint, regionId, request, expectedDelta, contextRefs });
+  addActivation(network, { capability: "synthesize", requiredCapabilities: [...DEFAULT_ACTIVATION_CAPABILITIES.synthesize], operation, domainFingerprint: region?.boundDomainFingerprint, boundDomainFingerprint: region?.boundDomainFingerprint, regionId, request, expectedDelta, contextRefs });
   return network;
 }
 
 export function markActivation(networkInput: SolutionNetwork, activationId: string, status: Activation["status"], sessionId?: string, error?: string): SolutionNetwork {
   const network = cloneNetwork(networkInput); const activation = network.activations.find((item) => item.id === activationId); if (!activation) return network;
+  if (status === "failed") for (const finding of network.findings.filter((item) => activation.findingIds?.includes(item.id) && item.status === "open")) if (!finding.repairActivationIds.includes(activationId)) finding.repairActivationIds.push(activationId);
   activation.status = status; activation.sessionId = sessionId ?? activation.sessionId; activation.error = error; return network;
 }
 
@@ -1572,18 +2199,27 @@ export function setRegionStatus(networkInput: SolutionNetwork, regionId: string,
   const network = cloneNetwork(networkInput); const region = network.regions.find((item) => item.id === regionId); if (region) transitionRegion(region, status === "blocked" || status === "stalled" ? "blocked" : region.domainPhase, region.blockedReason, status); return network;
 }
 
-function addArtifact(network: SolutionNetwork, region: SolutionRegion, activationId: string, artifact: Omit<SolutionNetwork["artifacts"][number], "id" | "regionId" | "activationId">): void {
-  const item = { ...artifact, id: `x${network.nextArtifactId++}`, regionId: region.id, activationId, createdRevision: network.revision + 1 };
+function addArtifact(network: SolutionNetwork, region: SolutionRegion, activationId: string, artifact: Omit<SolutionNetwork["artifacts"][number], "id" | "regionId" | "activationId" | "fingerprint"> & { fingerprint?: string }): void {
+  const fingerprint = artifact.fingerprint ?? hash({ kind: artifact.kind, path: artifact.path, summary: normalize(artifact.summary), passed: artifact.passed, checkKind: artifact.checkKind });
+  const item = { ...artifact, fingerprint, id: `x${network.nextArtifactId++}`, regionId: region.id, activationId, createdRevision: network.revision + 1 };
   network.artifacts.push(item); region.artifactIds.push(item.id);
 }
 
-export function completeImplementation(networkInput: SolutionNetwork, activationId: string, output: ImplementationOutput, actualChangedFiles: string[]): SolutionNetwork {
+export function completeImplementation(networkInput: SolutionNetwork, activationId: string, output: ImplementationOutput, actualChangedFiles: string[], changedFileFingerprints: Readonly<Record<string, string>> = {}): SolutionNetwork {
   let network = cloneNetwork(networkInput); const activation = network.activations.find((item) => item.id === activationId); const region = network.regions.find((item) => item.id === activation?.regionId);
   if (!activation || !region) return network;
-  if (output.status === "completed" && !actualChangedFiles.length) {
+  for (const finding of network.findings.filter((item) => activation.findingIds?.includes(item.id) && item.status === "open")) if (!finding.repairActivationIds.includes(activationId)) finding.repairActivationIds.push(activationId);
+  if (output.outcome === "completed" && !actualChangedFiles.length) {
     activation.status = "failed";
     activation.error = "Implementation rejected: no measured workspace change.";
     transitionRegion(region, "selected", "A change task cannot complete without a measured workspace-change artifact.", "actionable");
+    network.revision++;
+    return network;
+  }
+  if (output.outcome === "already-satisfied" && actualChangedFiles.length) {
+    activation.status = "failed";
+    activation.error = "Implementation rejected: already-satisfied output conflicts with a measured workspace change.";
+    transitionRegion(region, "blocked", activation.error, "blocked");
     network.revision++;
     return network;
   }
@@ -1591,7 +2227,7 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
   const allowed = [...new Set((region.certifiedLeaf?.mutationResources ?? region.mutationResources ?? []).map(normalizePath).filter(Boolean))];
   const outsideScope = actualChangedFiles.map(normalizePath).filter((file) => !allowed.some((resource) => file === resource || file.startsWith(`${resource}/`)));
   if (outsideScope.length) {
-    for (const file of [...new Set(actualChangedFiles)]) addArtifact(network, region, activationId, { kind: "file", path: file, summary: `Changed ${file}` });
+    for (const file of [...new Set(actualChangedFiles)]) addArtifact(network, region, activationId, { kind: "file", path: file, summary: `Changed ${file}`, fingerprint: changedFileFingerprints[file] ?? hash({ kind: "file", path: file, summary: `Changed ${file}` }) });
     activation.status = "failed";
     activation.error = `Implementation changed files outside the certified mutation scope: ${outsideScope.join(", ")}.`;
     transitionRegion(region, "blocked", activation.error, "blocked");
@@ -1599,20 +2235,29 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
     return network;
   }
   activation.status = "completed";
-  for (const file of [...new Set(actualChangedFiles)]) addArtifact(network, region, activationId, { kind: "file", path: file, summary: `Changed ${file}` });
-  const reportedOnly = [...new Set(output.changedFiles)].filter((file) => !actualChangedFiles.includes(file));
-  if (reportedOnly.length) addArtifact(network, region, activationId, { kind: "check", summary: `Unconfirmed model-reported files: ${reportedOnly.join(", ")}`, passed: false });
-  for (const check of output.checks) addArtifact(network, region, activationId, { kind: "check", summary: `${check.name}: ${check.evidence}`, passed: check.passed });
-  for (const request of output.activations) addActivation(network, { ...request, regionId: request.regionId ?? region.id, contextRefs: request.contextRefs, senderActivationId: activation.id });
-  if (output.status === "already-satisfied") {
+  const repairedVerificationIds = new Set(network.findings.filter((item) => activation.findingIds?.includes(item.id)).map((item) => item.sourceActivationId));
+  if (output.outcome !== "blocked" && activation.findingIds?.length) for (const artifact of network.artifacts) {
+    const producer = network.activations.find((item) => item.id === artifact.activationId)?.capability;
+    if (artifact.regionId === region.id && !artifact.historical && (producer === "implement" || producer === "present" || repairedVerificationIds.has(artifact.activationId))) artifact.historical = true;
+  }
+  region.implementationPremiseRefs = [...new Set([...(activation.readRefs ?? []).filter((ref) => ref.kind === "evidence").map((ref) => ref.ref), ...(region.certifiedLeaf?.evidenceRefs ?? [])])].sort();
+  region.verificationPremiseRefs = undefined;
+  for (const file of [...new Set(actualChangedFiles)]) addArtifact(network, region, activationId, { kind: "file", path: file, summary: `Changed ${file}`, fingerprint: changedFileFingerprints[file] ?? hash({ kind: "file", path: file, summary: `Changed ${file}` }) });
+  for (const check of output.checks) addArtifact(network, region, activationId, { kind: "check", checkKind: "focused", summary: `${check.name}: ${check.evidence}`, passed: check.passed });
+  switch (output.outcome) {
+  case "already-satisfied":
     addArtifact(network, region, activationId, { kind: "check", summary: `Already-satisfied proof: ${output.checks.map((item) => `${item.name}: ${item.evidence}`).join("; ")}`, passed: true });
     transitionRegion(region, "selected", undefined, "implemented");
-  } else if (output.status === "completed") transitionRegion(region, "selected", undefined, "implemented");
-  else if (countReopen(network, region)) {
+    break;
+  case "completed": transitionRegion(region, "selected", undefined, "implemented"); break;
+  case "blocked": if (countReopen(network, region)) {
     transitionRegion(region, "challenging", undefined, "superposed"); region.contradiction = output.blocker || output.summary || "Implementation reported a missing prerequisite."; region.selectedCandidateIds = [];
     region.acceptedFingerprint = null; region.challengeVerdict = null; region.certifiedLeaf = undefined; transitionRegion(region, "challenging");
     for (const candidate of network.candidates.filter((item) => item.regionId === region.id && item.status === "selected")) { candidate.status = "possible"; candidate.declaredStatus = "possible"; }
+  } break;
+  default: assertNever(output);
   }
+  if (output.outcome !== "blocked") for (const finding of network.findings.filter((item) => activation.findingIds?.includes(item.id) && item.status === "open")) finding.status = "repairing";
   network.revision++; return network;
 }
 
@@ -1620,7 +2265,7 @@ function retainImplementationMutation(networkInput: SolutionNetwork, activationI
   const network = cloneNetwork(networkInput); const originalRegion = network.regions.find((item) => item.id === regionId); const region = originalRegion ?? network.regions.find((item) => item.edge === "root"); const activation = network.activations.find((item) => item.id === activationId);
   const ownershipMessage = originalRegion ? message : `${message} Original region ${regionId} no longer exists; ownership was retained at the root.`;
   if (!region) {
-    for (const file of [...new Set(changedFiles)]) network.artifacts.push({ id: `x${network.nextArtifactId++}`, regionId, activationId, kind: "file", path: file, summary: `Changed ${file}`, createdRevision: network.revision + 1 });
+    for (const file of [...new Set(changedFiles)]) network.artifacts.push({ id: `x${network.nextArtifactId++}`, regionId, activationId, kind: "file", path: file, summary: `Changed ${file}`, fingerprint: hash({ kind: "file", path: file, summary: `Changed ${file}` }), createdRevision: network.revision + 1 });
     network.revision++;
     return network;
   }
@@ -1631,27 +2276,138 @@ function retainImplementationMutation(networkInput: SolutionNetwork, activationI
   return network;
 }
 
+function findingRoute(finding: VerificationFinding, outcome: VerificationOutput["outcome"]): FindingRoute {
+  if (finding.target.kind === "environment" || finding.target.kind === "external") return { kind: "blocked-external", regionId: finding.regionId, resolutionOwner: normalize(finding.resolutionOwner!), requiredEvidence: [...new Set(finding.requiredEvidence!)].sort() };
+  if (outcome === "reopen") return { kind: "reopen-decision", regionId: finding.regionId, invalidatedPremiseRefs: [...new Set(finding.invalidatedPremiseRefs!)].sort() };
+  return finding.target.kind === "answer" ? { kind: "answer-repair", regionId: finding.regionId } : { kind: "local-repair", regionId: finding.regionId };
+}
+
+function addFinding(network: SolutionNetwork, activationId: string, finding: VerificationFinding, outcome: VerificationOutput["outcome"]): SolutionFinding {
+  const item: SolutionFinding = { ...finding, criterionId: finding.criterionId as CriterionId, target: { ...finding.target, refs: [...finding.target.refs].sort() }, evidenceRefs: [...finding.evidenceRefs].sort(), id: `f${network.nextFindingId++}`, route: findingRoute(finding, outcome), status: "open", sourceActivationId: activationId, repairActivationIds: [], createdRevision: network.revision + 1 };
+  delete (item as SolutionFinding & { invalidatedPremiseRefs?: string[] }).invalidatedPremiseRefs;
+  delete (item as SolutionFinding & { resolutionOwner?: string }).resolutionOwner;
+  delete (item as SolutionFinding & { requiredEvidence?: string[] }).requiredEvidence;
+  network.findings.push(item);
+  return item;
+}
+
+function liveLeafCertificateIds(network: SolutionNetwork, scopeId: ScopeId): string[] {
+  const root = network.regions.find((item) => item.scopeId === scopeId);
+  if (!root) return [];
+  const leaves = (region: SolutionRegion): SolutionRegion[] => { const children = network.regions.filter((item) => item.parentId === region.id); return children.length ? children.flatMap(leaves) : [region]; };
+  return leaves(root).map((item) => item.completionCertificateId).filter((id): id is string => Boolean(id));
+}
+
+function certificateDependencyState(network: SolutionNetwork, certificate: CompletionCertificate, visiting = new Set<string>()): unknown {
+  if (visiting.has(certificate.id)) return { cycle: certificate.id };
+  visiting.add(certificate.id);
+  const state = {
+    criteria: network.regions.find((item) => item.id === certificate.regionId)?.criterionIds ?? [],
+    requirements: network.regions.find((item) => item.id === certificate.regionId)?.requirementIds ?? [],
+    selected: certificate.selectedFamilyIds.map((id) => { const item = network.candidates.find((candidate) => candidate.id === id); return item ? { id, status: item.status, historical: Boolean(item.historical) } : { id, missing: true }; }),
+    equivalence: certificate.equivalenceProofConstraintIds.map((id) => { const item = network.constraints.find((constraint) => constraint.id === id); return item ? { id, kind: item.kind, subject: item.subject, target: item.target, historical: Boolean(item.historical), evidenceRefs: [...item.evidenceRefs].sort() } : { id, missing: true }; }),
+    premises: certificate.premiseRefs.map((id) => id === "task" ? { id, fingerprint: hash(network.authority.task), status: "confirmed" } : (() => { const item = network.evidence.find((evidence) => evidence.id === id); return item ? { id, fingerprint: item.fingerprint, status: item.status ?? (item.kind === "inference" ? "hypothesis" : "confirmed") } : { id, missing: true }; })()),
+    dependencies: certificate.dependencyCertificateRefs.map((id) => { const item = network.certificates.find((entry) => entry.id === id); return item ? { id, fingerprint: item.fingerprint, valid: isCompletionCertificateValid(network, item, visiting) } : { id, missing: true }; }),
+    artifacts: [...(certificate.measuredArtifactIds ?? []), ...(certificate.focusedCheckArtifactIds ?? []), ...(certificate.releaseCheckArtifactIds ?? [])].map((id) => { const item = network.artifacts.find((artifact) => artifact.id === id); return item ? { id, fingerprint: item.fingerprint, historical: Boolean(item.historical), passed: item.passed, kind: item.kind, checkKind: item.checkKind } : { id, missing: true }; }),
+    findings: certificate.resolvedFindingIds.map((id) => { const item = network.findings.find((finding) => finding.id === id); return item ? { id, status: item.status } : { id, missing: true }; }),
+    verifier: (() => { const item = network.activations.find((activation) => activation.id === certificate.verificationActivationId); return item ? { id: item.id, capability: item.capability, status: item.status, outcome: item.roleOutcome, historical: Boolean(item.historical), readRefs: item.readRefs ?? [], readsCurrent: verifierDependenciesCurrent(network, item) } : { id: certificate.verificationActivationId, missing: true }; })(),
+  };
+  visiting.delete(certificate.id);
+  return state;
+}
+
+function verifierDependenciesCurrent(network: SolutionNetwork, activation: Activation): boolean {
+  return (activation.readRefs ?? []).filter((item) => item.kind !== "region" && item.kind !== "finding").every((read) => { const current = resolveContextReference(network, read.ref); return current?.kind === read.kind && current.fingerprint === read.fingerprint; });
+}
+
+function selectedFamilyProofValid(network: SolutionNetwork, certificate: CompletionCertificate): boolean {
+  const region = network.regions.find((item) => item.id === certificate.regionId);
+  if (!region || !certificate.selectedFamilyIds.length || JSON.stringify([...certificate.selectedFamilyIds].sort()) !== JSON.stringify([...region.selectedCandidateIds].sort())) return false;
+  if (certificate.selectedFamilyIds.some((id) => !network.candidates.some((item) => item.id === id && item.status === "selected" && !item.historical))) return false;
+  if (certificate.selectedFamilyIds.length === 1) return certificate.equivalenceProofConstraintIds.length === 0;
+  const adjacent = new Map(certificate.selectedFamilyIds.map((id) => [id, [] as string[]]));
+  for (const id of certificate.equivalenceProofConstraintIds) { const item = network.constraints.find((constraint) => constraint.id === id && constraint.kind === "equivalent" && !constraint.historical); if (!item || !adjacent.has(item.subject) || !adjacent.has(item.target)) return false; adjacent.get(item.subject)!.push(item.target); adjacent.get(item.target)!.push(item.subject); }
+  const reached = new Set<string>(); const queue = [certificate.selectedFamilyIds[0]!];
+  while (queue.length) { const id = queue.shift()!; if (reached.has(id)) continue; reached.add(id); queue.push(...adjacent.get(id)!); }
+  return reached.size === certificate.selectedFamilyIds.length;
+}
+
+export function isCompletionCertificateValid(network: SolutionNetwork, certificateOrId: CompletionCertificate | string, visiting = new Set<string>()): boolean {
+  const certificate = typeof certificateOrId === "string" ? network.certificates.find((item) => item.id === certificateOrId) : certificateOrId;
+  if (!certificate || certificate.fingerprint !== hash({ ...certificate, fingerprint: undefined }) || !selectedFamilyProofValid(network, certificate)) return false;
+  const region = network.regions.find((item) => item.id === certificate.regionId);
+  if (!region || !exactSet(region.criterionIds, certificate.criterionIds) || !exactSet(region.requirementIds ?? [], certificate.requirementIds ?? [])) return false;
+  if (certificate.premiseRefs.some((id) => { const item = network.evidence.find((evidence) => evidence.id === id); return id !== "task" && (!item || item.status === "stale" || item.status === "rejected"); })) return false;
+  if ([...(certificate.focusedCheckArtifactIds ?? []), ...(certificate.releaseCheckArtifactIds ?? [])].some((id) => !network.artifacts.some((item) => item.id === id && !item.historical && item.kind === "check" && item.passed))) return false;
+  if ((certificate.measuredArtifactIds ?? []).some((id) => !network.artifacts.some((item) => item.id === id && !item.historical && (item.kind === "file" || item.kind === "answer")))) return false;
+  if (Object.entries(certificate.artifactFingerprints).some(([id, fingerprint]) => network.artifacts.find((item) => item.id === id)?.fingerprint !== fingerprint)) return false;
+  if (certificate.resolvedFindingIds.some((id) => !network.findings.some((item) => item.id === id && item.status === "resolved"))) return false;
+  if (network.findings.some((item) => item.regionId === region.id && region.criterionIds.includes(item.criterionId) && (item.status === "open" || item.status === "repairing"))) return false;
+  const verifier = network.activations.find((item) => item.id === certificate.verificationActivationId);
+  if (!verifier || verifier.capability !== "verify" || verifier.status !== "completed" || verifier.roleOutcome !== "pass" || verifier.historical || !verifierDependenciesCurrent(network, verifier)) return false;
+  return certificate.dependencyFingerprint === hash(certificateDependencyState(network, certificate, visiting));
+}
+
+function createCompletionCertificate(network: SolutionNetwork, region: SolutionRegion, activation: Activation): void {
+  const selectedFamilyIds = [...region.selectedCandidateIds].sort();
+  const equivalenceProofConstraintIds = selectedFamilyIds.length > 1 ? network.constraints.filter((item) => !item.historical && item.kind === "equivalent" && selectedFamilyIds.includes(item.subject) && selectedFamilyIds.includes(item.target)).map((item) => item.id).sort() : [];
+  const liveArtifacts = region.artifactIds.map((id) => network.artifacts.find((item) => item.id === id)).filter((item): item is NonNullable<typeof item> => Boolean(item)).filter((item) => !item.historical);
+  const measuredArtifactIds = liveArtifacts.filter((item) => item.kind === (region.delivery === "answer" ? "answer" : "file")).map((item) => item.id).sort();
+  const focusedCheckArtifactIds = liveArtifacts.filter((item) => item.kind === "check" && (item.checkDisposition === "criterion-gating" || !item.checkDisposition && (item.checkKind === "focused" || item.checkKind === "verification"))).map((item) => item.id).sort();
+  const releaseCheckArtifactIds = liveArtifacts.filter((item) => item.kind === "check" && (item.checkDisposition === "release-gating" || !item.checkDisposition && item.checkKind === "release")).map((item) => item.id).sort();
+  const dependencyCertificateRefs = [...new Set((region.dependencyScopeIds ?? []).flatMap((scopeId) => liveLeafCertificateIds(network, scopeId)))].sort();
+  const requirementEvidenceRefs = (network.materialRequirements ?? []).filter((item) => (region.requirementIds ?? []).includes(item.id)).flatMap((item) => item.evidenceRefs);
+  const premiseRefs = [...new Set([...(region.selectionPremiseRefs ?? []), ...(region.certifiedLeaf?.evidenceRefs ?? []), ...(region.implementationPremiseRefs ?? []), ...(region.verificationPremiseRefs ?? []), ...requirementEvidenceRefs])].sort();
+  const resolvedFindingIds = network.findings.filter((item) => item.regionId === region.id && region.criterionIds.includes(item.criterionId) && item.status === "resolved").map((item) => item.id).sort();
+  const artifactIds = [...measuredArtifactIds, ...focusedCheckArtifactIds, ...releaseCheckArtifactIds];
+  const artifactFingerprints = Object.fromEntries(artifactIds.map((id) => [id, network.artifacts.find((item) => item.id === id)!.fingerprint]));
+  const certificate: CompletionCertificate = { id: `k${network.nextCertificateId++}`, fingerprint: "", regionId: region.id, criterionIds: [...region.criterionIds].sort(), requirementIds: [...(region.requirementIds ?? [])].sort(), selectedFamilyIds, equivalenceProofConstraintIds, premiseRefs, dependencyCertificateRefs, dependencyFingerprint: "", measuredArtifactIds, focusedCheckArtifactIds, releaseCheckArtifactIds, artifactFingerprints, resolvedFindingIds, verificationActivationId: activation.id, createdRevision: network.revision + 1 };
+  certificate.dependencyFingerprint = hash(certificateDependencyState(network, certificate));
+  certificate.fingerprint = hash({ ...certificate, fingerprint: undefined });
+  network.certificates.push(certificate);
+  region.completionCertificateId = certificate.id;
+}
+
 export function completeVerification(networkInput: SolutionNetwork, activationId: string, output: VerificationOutput): SolutionNetwork {
   let network = cloneNetwork(networkInput); const activation = network.activations.find((item) => item.id === activationId); const region = network.regions.find((item) => item.id === activation?.regionId);
   if (!activation || !region) return network;
   activation.status = "completed";
-  for (const check of output.checks) addArtifact(network, region, activationId, { kind: "check", summary: `${check.name}: ${check.evidence}`, passed: check.passed });
-  if (output.verdict === "pass" && output.completionEvidence) addArtifact(network, region, activationId, { kind: "completion-review", summary: output.completionEvidence.correctnessReview, passed: true, implementationOutcome: output.completionEvidence.implementationOutcome ?? (output.completionEvidence.changedFiles.length ? "changed" : "already-satisfied"), criterionIds: (output.completionEvidence.criterionIds ?? region.criterionIds) as CriterionId[], focusedTests: output.completionEvidence.focusedTests, fullChecks: output.completionEvidence.fullChecks, todoDisposition: output.completionEvidence.todoDisposition, findings: [] });
-  for (const finding of output.findings) addArtifact(network, region, activationId, { kind: "completion-review", summary: finding.problem, passed: false, criterionIds: [finding.criterionId as CriterionId], findings: [{ ...finding, criterionId: finding.criterionId as CriterionId, repairRegionId: finding.repairRegionId ?? finding.regionId }] });
-  for (const request of output.activations) addActivation(network, { ...request, regionId: request.regionId ?? region.id, contextRefs: request.contextRefs, senderActivationId: activation.id });
+  activation.roleOutcome = output.outcome;
+  region.verificationPremiseRefs = [...new Set([...(activation.readRefs ?? []).filter((ref) => ref.kind === "evidence").map((ref) => ref.ref), ...(output.completionEvidence?.inspectionEvidenceRefs ?? [])])].sort();
+  for (const raw of output.checks) {
+    const check = { ...raw, disposition: raw.disposition ?? "criterion-gating" as const, criterionIds: raw.criterionIds ?? [], baselineEvidenceRefs: raw.baselineEvidenceRefs ?? [], requiredEvidence: raw.requiredEvidence ?? [] };
+    addArtifact(network, region, activationId, { kind: "check", checkKind: check.disposition === "criterion-gating" ? "focused" : check.disposition === "release-gating" ? "release" : "verification", checkDisposition: check.disposition, summary: `${check.name}: ${check.evidence}`, passed: check.passed, criterionIds: check.criterionIds as CriterionId[], evidenceRefs: check.baselineEvidenceRefs, resolutionOwner: check.resolutionOwner, requiredEvidence: check.requiredEvidence });
+  }
+  if (output.outcome === "pass" && output.completionEvidence) addArtifact(network, region, activationId, { kind: "completion-review", summary: output.completionEvidence.correctnessReview, passed: true, implementationOutcome: output.completionEvidence.implementationOutcome ?? (output.completionEvidence.changedFiles.length ? "changed" : "already-satisfied"), criterionIds: (output.completionEvidence.criterionIds ?? region.criterionIds) as CriterionId[], focusedTests: output.completionEvidence.focusedTests, fullChecks: output.completionEvidence.fullChecks, todoDisposition: output.completionEvidence.todoDisposition });
+  const admittedFindings = output.findings.map((finding) => addFinding(network, activationId, finding as VerificationFinding, output.outcome));
   const unresolved = [...new Set(output.findings.map((item) => item.criterionId as CriterionId))].sort();
-  if (!recordSemanticCycle(network, region, "verify", semanticInputFingerprint(network, region), hash({ verdict: output.verdict, findings: output.findings.map((item) => ({ regionId: item.regionId, criterionId: item.criterionId, problem: normalize(item.problem), evidence: normalize(item.evidence) })).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))) }), unresolved)) { network.revision++; return network; }
-  if (output.verdict === "pass") transitionRegion(region, "selected", undefined, "verified");
-  else if (output.verdict === "repair") {
-    for (const targetId of new Set(output.findings.map((item) => item.regionId))) {
+  if (!recordSemanticCycle(network, region, "verify", semanticInputFingerprint(network, region), hash({ outcome: output.outcome, findings: output.findings.map((item) => ({ regionId: item.regionId, criterionId: item.criterionId, problem: normalize(item.problem), evidence: normalize(item.evidence) })).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))) }), unresolved)) { network.revision++; return network; }
+  switch (output.outcome) {
+  case "pass":
+    for (const finding of network.findings.filter((item) => activation.findingIds?.includes(item.id) && item.status === "repairing")) finding.status = "resolved";
+    createCompletionCertificate(network, region, activation);
+    transitionRegion(region, "selected", undefined, "verified");
+    break;
+  case "repair":
+    for (const targetId of new Set(admittedFindings.map((item) => item.route.regionId))) {
       const target = network.regions.find((item) => item.id === targetId);
-      if (target && recordSemanticCycle(network, target, "repair", semanticInputFingerprint(network, target), hash(unresolved.filter((id) => target.criterionIds.includes(id))), unresolved.filter((id) => target.criterionIds.includes(id)))) transitionRegion(target, "selected", undefined, "actionable");
+      if (target) {
+        const fingerprint = repairProgressFingerprint(network, target);
+        const ledger = target.progress.repairCycles;
+        target.progress.repairCycles = { count: ledger.fingerprint === fingerprint ? ledger.count + 1 : 1, fingerprint, unresolvedCriterionIds: unresolved.filter((id) => target.criterionIds.includes(id)) };
+        if (recordSemanticCycle(network, target, "repair", semanticInputFingerprint(network, target), hash(unresolved.filter((id) => target.criterionIds.includes(id))), unresolved.filter((id) => target.criterionIds.includes(id)))) transitionRegion(target, "selected", undefined, "actionable");
+      }
     }
-  } else if (output.verdict === "reopen") {
-    for (const targetId of new Set(output.findings.map((item) => item.regionId)))
+    break;
+  case "reopen":
+    for (const targetId of new Set(admittedFindings.map((item) => item.route.regionId)))
       network = reopenRegion(network, targetId, output.summary || output.findings.filter((item) => item.regionId === targetId).map((item) => item.problem).join("; "));
-  } else {
-    transitionRegion(region, "blocked", output.summary || output.findings.map((item) => item.problem).join("; "), "blocked");
+    break;
+  case "fail":
+    transitionRegion(region, "blocked", admittedFindings.map((item) => { const route = item.route as Extract<FindingRoute, { kind: "blocked-external" }>; return `${item.problem} Resolution owner: ${route.resolutionOwner}. Required evidence: ${route.requiredEvidence.join(", ")}.`; }).join(" "), "blocked");
+    region.blockedDetails = { kind: "blocked-external", unresolvedCriterionIds: admittedFindings.map((item) => item.criterionId) };
+    break;
+  default: assertNever(output);
   }
   network.revision++; return network;
 }
@@ -1659,18 +2415,48 @@ export function completeVerification(networkInput: SolutionNetwork, activationId
 export function completePresentation(networkInput: SolutionNetwork, activationId: string, answer: string): SolutionNetwork {
   const network = cloneNetwork(networkInput); const activation = network.activations.find((item) => item.id === activationId); const region = network.regions.find((item) => item.id === activation?.regionId);
   if (!activation || !region) return network;
-  activation.status = "completed"; const input = semanticInputFingerprint(network, region); const output = hash(normalize(answer)); region.answer = answer; addArtifact(network, region, activationId, { kind: "answer", summary: answer }); if (recordSemanticCycle(network, region, "present", input, output, region.criterionIds)) transitionRegion(region, "selected", undefined, "implemented"); network.revision++; return network;
+  activation.status = "completed";
+  for (const finding of network.findings.filter((item) => activation.findingIds?.includes(item.id) && item.status === "open")) { if (!finding.repairActivationIds.includes(activationId)) finding.repairActivationIds.push(activationId); finding.status = "repairing"; }
+  if (activation.findingIds?.length) for (const artifact of network.artifacts.filter((item) => item.regionId === region.id && item.kind === "answer" && !item.historical)) artifact.historical = true;
+  const input = semanticInputFingerprint(network, region); const output = hash(normalize(answer)); region.answer = answer; addArtifact(network, region, activationId, { kind: "answer", summary: answer }); if (recordSemanticCycle(network, region, "present", input, output, region.criterionIds)) transitionRegion(region, "selected", undefined, "implemented"); network.revision++; return network;
 }
 
-/** A content fingerprint over the region's evidence and artifact contents: fresh ids carrying identical content keep it stable, so only genuinely new content can reset the reopen counter. */
-function regionContentFingerprint(network: SolutionNetwork, region: SolutionRegion): string {
-  const evidence = [...new Set(region.evidenceIds.map((id) => network.evidence.find((item) => item.id === id)?.fingerprint ?? `missing:${id}`))].sort();
-  const artifacts = [...new Set(region.artifactIds.map((id) => network.artifacts.find((item) => item.id === id && !item.historical)).filter((item): item is SolutionNetwork["artifacts"][number] => Boolean(item)).map((item) => `${item.kind}\0${item.path ?? ""}\0${item.summary}\0${item.passed ?? ""}`))].sort();
-  return createHash("sha256").update(`${evidence.join("\0")}\n${artifacts.join("\0")}`).digest("hex").slice(0, 16);
+export function applyActivationOutput(snapshot: SolutionLodState | SolutionNetwork, activation: Activation, output: ActivationOutput, changedFiles: string[] = [], tools?: readonly AgentToolTrace[], changedFileFingerprints: Readonly<Record<string, string>> = {}): SolutionNetwork {
+  const state = "network" in snapshot ? snapshot : stateForNetwork(snapshot);
+  const live = state.network.activations.find((item) => item.id === activation.id);
+  if (!live || live.capability !== activation.capability || live.operation !== activation.operation) throw new Error(`Activation ${activation.id} does not match the supplied snapshot.`);
+  let network: SolutionNetwork;
+  switch (activation.capability) {
+  case "synthesize": network = mergeSynthesisOutput(state, activation.id, output as SynthesisOutput); break;
+  case "inspect": validateSolutionDelta(state, activation.regionId, "inspect", output as SolutionDelta, tools); network = mergeSolutionDelta(state, activation.id, output as SolutionDelta, tools); break;
+  case "refine": validateRefinementOutput(state, activation.regionId, output as RefinementOutput); network = mergeRefinementOutput(state.network, activation.id, output as RefinementOutput); break;
+  case "implement": validateImplementationOutput(state, activation.regionId, output as ImplementationOutput); network = completeImplementation(state.network, activation.id, output as ImplementationOutput, changedFiles, changedFileFingerprints); break;
+  case "verify": validateVerificationOutput(state, activation.regionId, output as VerificationOutput); network = completeVerification(state.network, activation.id, output as VerificationOutput); break;
+  case "present": { const answer = (output as { outcome: "answer"; answer: string }).answer; validatePresentationAnswer(state, activation.regionId, answer); network = completePresentation(state.network, activation.id, answer); break; }
+  default: assertNever(activation.capability);
+  }
+  const result = network.activations.find((item) => item.id === activation.id);
+  if (result?.status === "failed") throw new Error(result.error ?? `Activation ${activation.id} output was rejected.`);
+  if (activation.capability === "inspect") {
+    const inspected = network.regions.find((item) => item.id === activation.regionId);
+    if (inspected) inspected.inspectionAttempts = (inspected.inspectionAttempts ?? 0) + 1;
+  }
+  return propagateNetwork(result?.status === "completed" ? network : markActivation(network, activation.id, "completed"));
+}
+
+function reopenProgressFingerprint(network: SolutionNetwork, region: SolutionRegion): string {
+  const premiseRefs = network.findings.filter((item) => item.regionId === region.id && item.status !== "superseded" && item.route.kind === "reopen-decision").flatMap((item) => item.route.kind === "reopen-decision" ? item.route.invalidatedPremiseRefs : []).filter((ref) => isConfirmedEvidence(network, ref)).sort();
+  return hash(premiseRefs.map((ref) => [ref, resolveContextReference(network, ref)?.fingerprint]));
+}
+
+function repairProgressFingerprint(network: SolutionNetwork, region: SolutionRegion): string {
+  const effects = region.artifactIds.map((id) => network.artifacts.find((item) => item.id === id && !item.historical && (item.kind === "file" || item.kind === "answer"))).filter(Boolean).map((item) => item!.fingerprint).sort();
+  const findings = network.findings.filter((item) => item.regionId === region.id && item.status !== "superseded").map((item) => [item.criterionId, item.problem, item.status]).sort();
+  return hash({ effects, findings });
 }
 
 function semanticInputFingerprint(network: SolutionNetwork, region: SolutionRegion): string {
-  return hash({ objective: normalize(region.objective), criteria: region.criterionIds.map((id, index) => [id, normalize(region.acceptanceCriteria[index] ?? "")]).sort(), evidence: region.evidenceIds.map((id) => network.evidence.find((item) => item.id === id)?.fingerprint ?? `missing:${id}`).sort(), files: region.artifactIds.map((id) => network.artifacts.find((item) => item.id === id)).filter((item) => item && !item.historical && item.kind === "file").map((item) => [item!.path ?? "", normalize(item!.summary)]).sort() });
+  return hash({ objective: normalize(region.objective), criteria: region.criterionIds.map((id, index) => [id, normalize(region.acceptanceCriteria[index] ?? "")]).sort(), evidence: region.evidenceIds.map((id) => network.evidence.find((item) => item.id === id)?.fingerprint ?? `missing:${id}`).sort(), files: region.artifactIds.map((id) => network.artifacts.find((item) => item.id === id)).filter((item) => item && !item.historical && item.kind === "file").map((item) => [item!.path ?? "", item!.fingerprint]).sort() });
 }
 
 function recordSemanticCycle(network: SolutionNetwork, region: SolutionRegion, kind: SemanticCycleKind, inputFingerprint: string, outputFingerprint: string, unresolvedCriterionIds: CriterionId[]): boolean {
@@ -1695,14 +2481,15 @@ function recordSemanticCycle(network: SolutionNetwork, region: SolutionRegion, k
  * the region to terminal "stalled" instead of reopening. Returns whether the reopen may proceed.
  */
 function countReopen(network: SolutionNetwork, region: SolutionRegion): boolean {
-  const fingerprint = regionContentFingerprint(network, region);
-  if (fingerprint !== region.reopenFingerprint) { region.reopenFingerprint = fingerprint; region.reopens = 1; return true; }
-  if (region.reopens >= SAME_REVISION_RETRY_POLICY.maxAttempts) {
+  const fingerprint = reopenProgressFingerprint(network, region);
+  const ledger = region.progress.reopenAttempts;
+  if (fingerprint !== ledger.fingerprint) { region.progress.reopenAttempts = { count: 1, fingerprint, unresolvedCriterionIds: [...region.criterionIds] }; return true; }
+  if (ledger.count >= SAME_REVISION_RETRY_POLICY.maxAttempts) {
     transitionRegion(region, "blocked", undefined, "stalled");
-    region.contradiction = `Region ${region.id} stalled: ${region.reopens} reopens without new evidence`;
+    region.contradiction = `Region ${region.id} stalled: ${ledger.count} reopens without a new confirmed defeater; fingerprint=${fingerprint}; unresolvedCriterionIds=${region.criterionIds.join(",") || "none"}`;
     return false;
   }
-  region.reopens += 1;
+  ledger.count += 1;
   return true;
 }
 
@@ -1712,7 +2499,6 @@ export function reopenRegion(networkInput: SolutionNetwork, regionId: string, re
   if (!countReopen(network, region)) return network;
   transitionRegion(region, region.candidateIds.length ? "challenging" : "inspecting", undefined, region.acceptanceCriteria.length ? "superposed" : "unformed"); region.contradiction = reason; region.selectedCandidateIds = [];
   region.acceptedFingerprint = null; region.challengeVerdict = null; region.certifiedLeaf = undefined; transitionRegion(region, region.candidateIds.length ? "challenging" : "inspecting");
-  region.noProgressCount = 0; region.noProgressFingerprint = null;
   region.coveredCriteria = undefined;
   for (const candidate of network.candidates.filter((item) => item.regionId === regionId)) { candidate.status = "possible"; candidate.declaredStatus = "possible"; }
   if (!region.acceptanceCriteria.length) {
@@ -1728,16 +2514,39 @@ export function resetPrunedRegion(networkInput: SolutionNetwork, regionId: strin
   const region = network.regions.find((item) => item.id === regionId);
   if (!region) return network;
   const retired = new Set(region.candidateIds);
+  const retiredLogicalActivationIds = new Set(network.activations.flatMap((item) => item.regionId === regionId && item.logicalActivationId ? [item.logicalActivationId] : []));
   network.candidates = network.candidates.map((item) => retired.has(item.id) ? { ...item, historical: true } : item);
   network.constraints = network.constraints.map((item) => retired.has(item.subject) || retired.has(item.target) ? { ...item, historical: true } : item);
+  network.activations = network.activations.map((item) => item.regionId !== regionId ? item : { ...item, historical: true, status: item.status === "queued" || item.status === "running" ? "superseded" : item.status, error: item.error ?? `Historical activation: region ${regionId} was pruned.` });
+  for (const logicalActivationId of retiredLogicalActivationIds) delete network.schemaRetries[logicalActivationId];
+  network.artifacts = network.artifacts.map((item) => item.regionId === regionId ? { ...item, historical: true } : item);
+  network.findings = network.findings.map((item) => item.regionId === regionId && item.status !== "superseded" ? { ...item, status: "superseded" } : item);
+  network.certificates = network.certificates.filter((item) => item.regionId !== regionId);
   region.candidateIds = [];
   region.selectedCandidateIds = [];
   region.constraintIds = region.constraintIds.filter((id) => !network.constraints.find((item) => item.id === id)?.historical);
+  region.activationIds = [];
+  region.artifactIds = [];
+  region.enumerationFingerprint = null;
+  region.boundDomainFingerprint = null;
   region.domainFingerprint = null;
   region.acceptedFingerprint = null;
   region.challengeVerdict = null;
   region.certifiedLeaf = undefined;
-  transitionRegion(region, region.acceptanceCriteria.length ? "ungenerated" : "inspecting", undefined, region.acceptanceCriteria.length ? "superposed" : "unformed");
+  region.completionCertificateId = undefined;
+  region.selectionPremiseRefs = undefined;
+  region.implementationPremiseRefs = undefined;
+  region.verificationPremiseRefs = undefined;
+  region.answer = undefined;
+  region.inspectionAttempts = 0;
+  region.inspectionObligationIds = [...region.criterionIds];
+  region.criterionVerdicts = [];
+  region.progress = emptyProgress();
+  region.convergenceCycles = [];
+  region.contradiction = undefined;
+  region.blockedDetails = undefined;
+  transitionRegion(region, region.decisionBoundary ? "ungenerated" : "inspecting", undefined, region.acceptanceCriteria.length ? "superposed" : "unformed");
+  network.revision++;
   return network;
 }
 
@@ -1747,11 +2556,11 @@ export function nextQueuedActivation(network: SolutionNetwork): Activation | und
 
 export function activationAdmitted(network: SolutionNetwork, activation: Activation): boolean {
   const region = network.regions.find((item) => item.id === activation.regionId);
-  if (!region || !activationReadsCurrent(network, activation)) return false;
+  if (!region || !activationReadsCurrent(network, activation) || !roleSupportsCapabilities(activation.capability, activationRequiredCapabilities(activation))) return false;
   if (activation.capability === "inspect") return (region.status === "unformed" || region.status === "superposed") && region.domainPhase === "inspecting";
   if (activation.capability === "synthesize") {
-    if (activation.domainFingerprint !== region.domainFingerprint) return false;
-    return activation.operation === "generate-domain" ? region.domainPhase === "ungenerated"
+    if ((activation.boundDomainFingerprint ?? activation.domainFingerprint) !== region.boundDomainFingerprint) return false;
+    return activation.operation === "generate-domain" ? region.domainPhase === "ungenerated" && Boolean(region.decisionBoundary) && region.candidateIds.length === 0
       : activation.operation === "challenge-domain" ? region.domainPhase === "challenging"
       : activation.operation === "select-candidate" && region.domainPhase === "selecting";
   }
@@ -1801,7 +2610,7 @@ export function selectActivationBatch(network: SolutionNetwork, width: number): 
 function dependenciesVerified(network: SolutionNetwork, regionId: string): boolean {
   const region = network.regions.find((item) => item.id === regionId);
   const complete = (item: SolutionRegion): boolean => {
-    if (item.status === "verified") return true;
+    if (item.completionCertificateId && isCompletionCertificateValid(network, item.completionCertificateId)) return true;
     const children = network.regions.filter((child) => child.parentId === item.id);
     return item.status === "collapsed" && children.length > 0 && children.every(complete);
   };
@@ -1809,6 +2618,30 @@ function dependenciesVerified(network: SolutionNetwork, regionId: string): boole
     const dependency = network.regions.find((item) => item.scopeId === scopeId);
     return dependency ? complete(dependency) : false;
   }));
+}
+
+function reconcileCompletionState(networkInput: SolutionNetwork): SolutionNetwork {
+  const network = cloneNetwork(networkInput);
+  for (const finding of network.findings) {
+    const region = network.regions.find((item) => item.id === finding.regionId);
+    if (finding.status !== "superseded" && (!region || !region.criterionIds.includes(finding.criterionId))) finding.status = "superseded";
+  }
+  for (const region of network.regions) {
+    region.inspectionObligationIds ??= [...region.criterionIds];
+    const certificate = network.certificates.find((item) => item.id === region.completionCertificateId);
+    if (!certificate || isCompletionCertificateValid(network, certificate)) continue;
+    region.completionCertificateId = undefined;
+    const currentFindings = network.findings.filter((item) => item.regionId === region.id && region.criterionIds.includes(item.criterionId) && (item.status === "open" || item.status === "repairing"));
+    const external = currentFindings.find((item) => item.route.kind === "blocked-external");
+    if (external) { const route = external.route as Extract<FindingRoute, { kind: "blocked-external" }>; transitionRegion(region, "blocked", `${external.problem} Resolution owner: ${route.resolutionOwner}. Required evidence: ${route.requiredEvidence.join(", ")}.`, "blocked"); continue; }
+    if (currentFindings.some((item) => item.status === "open")) { transitionRegion(region, "selected", undefined, "actionable"); continue; }
+    if (currentFindings.length) { transitionRegion(region, "selected", undefined, "implemented"); continue; }
+    if (!selectedFamilyProofValid(network, certificate) || certificate.premiseRefs.some((id) => region.selectionPremiseRefs?.includes(id) && !isConfirmedEvidence(network, id))) { transitionRegion(region, "selecting", undefined, "superposed"); continue; }
+    const artifacts = [...(certificate.measuredArtifactIds ?? []), ...(certificate.focusedCheckArtifactIds ?? []), ...(certificate.releaseCheckArtifactIds ?? [])];
+    if (artifacts.some((id) => { const item = network.artifacts.find((artifact) => artifact.id === id); return !item || item.historical || item.fingerprint !== certificate.artifactFingerprints[id]; })) { transitionRegion(region, "selected", undefined, "actionable"); continue; }
+    transitionRegion(region, "selected", undefined, "implemented");
+  }
+  return network;
 }
 
 export function supersedeStaleQueuedActivations(networkInput: SolutionNetwork): SolutionNetwork {
@@ -1845,14 +2678,15 @@ export function applyBatchRecords(networkInput: SolutionNetwork, records: Activa
   const application: BatchApplication = { network: networkInput, applied: [], deferred: [], failed: [], superseded: [] };
   const applyDelta = (network: SolutionNetwork, record: ActivationTaskResult): SolutionNetwork => {
     const delta = record.networkDelta!;
-    if (delta.kind === "delta") return markActivation(mergeSolutionDelta(stateForNetwork(network), record.activationId, delta.delta), record.activationId, "completed", record.sessionId);
-    if (delta.kind === "synthesis") return markActivation(mergeSynthesisOutput(stateForNetwork(network), record.activationId, delta.output), record.activationId, "completed", record.sessionId);
-    if (delta.kind === "refinement") return markActivation(mergeRefinementOutput(network, record.activationId, delta.output), record.activationId, "completed", record.sessionId);
-    if (delta.kind === "implementation") return completeImplementation(network, record.activationId, delta.output, delta.changedFiles);
-    if (delta.kind === "verification") return completeVerification(network, record.activationId, delta.output);
-    return completePresentation(network, record.activationId, delta.answer);
+    const activation = network.activations.find((item) => item.id === record.activationId);
+    if (!activation) throw new Error(`Unknown activation ${record.activationId}`);
+    const output = delta.kind === "delta" ? delta.delta : delta.output;
+    const applied = applyActivationOutput(network, activation, output, delta.kind === "implementation" ? delta.changedFiles : [], record.tools, delta.kind === "implementation" ? delta.changedFileFingerprints : {});
+    const landed = applied.activations.find((item) => item.id === record.activationId)!;
+    return markActivation(applied, record.activationId, landed.status, record.sessionId, landed.error);
   };
   for (const record of ordered) {
+    settleSchemaAttempts(current, record);
     const before = current;
     const liveActivation = current.activations.find((item) => item.id === record.activationId);
     if (!liveActivation || liveActivation.status === "completed" || liveActivation.status === "superseded") {
@@ -1941,32 +2775,59 @@ export function applyBatchRecords(networkInput: SolutionNetwork, records: Activa
   application.network = propagateNetwork(current);
   const telemetry = application.network.telemetry ?? emptyTelemetry();
   for (const record of ordered) {
+    telemetry.recordedActivationIds ??= [];
+    if (telemetry.recordedActivationIds.includes(record.activationId)) continue;
+    telemetry.recordedActivationIds.push(record.activationId);
+    if (record.capability === "inspect" && !application.applied.includes(record.activationId)) {
+      const inspected = application.network.regions.find((item) => item.id === record.regionId);
+      if (inspected) inspected.inspectionAttempts = (inspected.inspectionAttempts ?? 0) + 1;
+    }
+    telemetry.activationRecords ??= [];
     const elapsed = Math.max(0, record.finishedAt - record.startedAt);
     const queueMs = Math.max(0, record.startedAt - (networkInput.activations.find((item) => item.id === record.activationId)?.queuedAt ?? record.startedAt));
     const operation = record.operation ?? record.capability;
-    const region = telemetry.regions[record.regionId] ?? { operationCalls: {}, promptChars: 0, validationFailures: 0, repairAttempts: 0, retries: 0, domainSizes: [], noProgressFingerprints: [], elapsedMs: 0, queueMs: 0, roleMs: {}, blockedReasons: [] };
+    const region = telemetry.regions[record.regionId] ?? { operationCalls: {}, promptChars: 0, schemaChars: 0, validationFailures: 0, repairAttempts: 0, retries: 0, domainSizes: [], progressFingerprints: [], elapsedMs: 0, queueMs: 0, roleMs: {}, blockedReasons: [], contextTelemetry: { ...EMPTY_CONTEXT_TELEMETRY } };
     telemetry.activations++;
+    telemetry.physicalActivations++;
+    telemetry.promptAttempts += record.promptAttempts?.length ?? 0;
+    telemetry.schemaRetries += record.schemaRetries ?? 0;
+    telemetry.schemaRepairs += record.schemaRepairs ?? 0;
     telemetry.operationCalls[operation] = (telemetry.operationCalls[operation] ?? 0) + 1;
-    if (record.operation === "challenge-domain" && application.applied.includes(record.activationId) && record.networkDelta?.kind === "synthesis" && record.networkDelta.output.operation === "challenge-domain" && record.networkDelta.output.verdict === "counterexample") telemetry.counterexampleRepairs++;
+    if (record.operation === "challenge-domain" && application.applied.includes(record.activationId) && record.networkDelta?.kind === "synthesis" && record.networkDelta.output.outcome === "counterexample") telemetry.counterexampleRepairs++;
     telemetry.retries += record.retries ?? 0;
+    telemetry.schemaChars ??= 0;
     telemetry.promptChars += record.promptChars ?? 0;
-    telemetry.projectedContextChars += record.promptChars ?? 0;
+    telemetry.schemaChars += record.schemaChars ?? 0;
+    telemetry.projectedContextChars += (record.promptChars ?? 0) - (record.schemaChars ?? 0);
     telemetry.validationFailures += record.validationFailures?.length ?? 0;
     telemetry.queueMs += queueMs;
     telemetry.roleMs[record.capability] = (telemetry.roleMs[record.capability] ?? 0) + elapsed;
     if (record.capability === "implement") telemetry.implementationMs += elapsed;
     if (record.capability === "verify") telemetry.verificationMs += elapsed;
     for (const key of Object.keys(EMPTY_USAGE) as Array<keyof typeof EMPTY_USAGE>) telemetry.usage[key] += record.usage[key];
+    telemetry.contextTelemetry ??= { ...EMPTY_CONTEXT_TELEMETRY };
+    region.contextTelemetry ??= { ...EMPTY_CONTEXT_TELEMETRY };
+    addContextTelemetry(telemetry.contextTelemetry, record.contextTelemetry);
+    addContextTelemetry(region.contextTelemetry, record.contextTelemetry);
+    telemetry.activationRecords.push({
+      activationId: record.activationId, physicalActivationId: record.activationId, logicalActivationId: record.logicalActivationId ?? networkInput.activations.find((item) => item.id === record.activationId)?.logicalActivationId ?? record.activationId, regionId: record.regionId, role: record.capability, operation, outcome: record.outcome, roleOutcome: record.roleOutcome,
+      promptChars: record.promptChars ?? 0, schemaChars: record.schemaChars ?? 0, projectedSectionChars: { ...(record.projectedSectionChars ?? {}) },
+      repositoryReadChars: record.contextTelemetry?.repositoryReadChars ?? 0, otherToolOutputChars: record.contextTelemetry?.otherToolOutputChars ?? 0, bashOutputChars: record.contextTelemetry?.bashOutputChars ?? 0,
+      duplicateReadCharsAvoided: record.contextTelemetry?.duplicateReadCharsAvoided ?? 0,
+      accumulatedSessionInput: record.contextTelemetry?.accumulatedSessionInput ?? record.usage.input, cacheReadInput: record.contextTelemetry?.cacheReadInput ?? record.usage.cacheRead,
+      repairAttempts: record.contextTelemetry?.structuredRepairAttempts ?? record.validationFailures?.length ?? 0, promptAttempts: record.promptAttempts?.length ?? 0, schemaRetries: record.schemaRetries ?? 0, schemaRepairs: record.schemaRepairs ?? 0, usage: { ...record.usage },
+    });
     region.operationCalls[operation] = (region.operationCalls[operation] ?? 0) + 1;
-    region.promptChars += record.promptChars ?? 0; region.validationFailures += record.validationFailures?.length ?? 0; region.retries += record.retries ?? 0; region.elapsedMs += elapsed; region.queueMs += queueMs;
+    region.schemaChars ??= 0;
+    region.promptChars += record.promptChars ?? 0; region.schemaChars += record.schemaChars ?? 0; region.validationFailures += record.validationFailures?.length ?? 0; region.retries += record.retries ?? 0; region.elapsedMs += elapsed; region.queueMs += queueMs;
     region.roleMs[record.capability] = (region.roleMs[record.capability] ?? 0) + elapsed;
     if (record.domainSize !== undefined) region.domainSizes.push(record.domainSize);
     region.repairAttempts += (record.validationFailures?.length ?? 0) || (record.outcome === "deferred" || application.failed.includes(record.activationId) ? 1 : 0);
-    const noProgressFingerprint = application.network.regions.find((item) => item.id === record.regionId)?.noProgressFingerprint;
-    if (noProgressFingerprint && !region.noProgressFingerprints.includes(noProgressFingerprint)) region.noProgressFingerprints.push(noProgressFingerprint);
+    const progressFingerprints = Object.values(application.network.regions.find((item) => item.id === record.regionId)?.progress ?? {}).flatMap((item) => item.fingerprint ? [item.fingerprint] : []);
+    for (const fingerprint of progressFingerprints) if (!region.progressFingerprints.includes(fingerprint)) region.progressFingerprints.push(fingerprint);
     telemetry.regions[record.regionId] = region;
   }
-  telemetry.reopens = application.network.regions.reduce((sum, region) => sum + region.reopens, 0);
+  telemetry.reopens = application.network.regions.reduce((sum, region) => sum + region.progress.reopenAttempts.count, 0);
   telemetry.cycles = application.network.regions.reduce((sum, region) => sum + (region.convergenceCycles?.length ?? 0), 0);
   telemetry.candidates = application.network.candidates.filter((item) => !item.historical).length;
   telemetry.regionCount = application.network.regions.length;
@@ -1977,91 +2838,107 @@ export function applyBatchRecords(networkInput: SolutionNetwork, records: Activa
 }
 
 function stateForNetwork(network: SolutionNetwork): SolutionLodState {
-  return { stateVersion: 8, runId: "", originalTask: "", conversationContext: "", directory: "", worktree: "", phase: "", activeBatch: [], network, results: [], usage: { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, callsUsed: 0, startedAt: 0, result: "" };
+  return { stateVersion: 11, runId: "", directory: "", worktree: "", phase: "", activeBatch: [], network, results: [], usage: { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, callsUsed: 0, startedAt: 0, result: "" };
 }
 
-export function ensureRunnableWork(input: SolutionNetwork, width = 1, originalTask = ""): { network: SolutionNetwork; done: boolean; blocked?: string } {
-  let network = propagateNetwork(input);
-  const unresolvedHigh = network.artifacts.flatMap((item) => item.historical ? [] : item.findings ?? []).find((finding) => finding.severity === "high");
-  if (unresolvedHigh) return { network, done: false, blocked: `Change-delivery audit failed for ${unresolvedHigh.criterionId}: unresolved high-severity correctness review finding in ${unresolvedHigh.files.join(", ")}.` };
+function currentContextRefs(network: SolutionNetwork, refs: string[]): string[] {
+  return refs.filter((ref) => { const evidence = network.evidence.find((item) => item.id === ref); return evidence ? evidence.status !== "stale" && evidence.status !== "rejected" : knownRef(network, ref); });
+}
+
+export function ensureRunnableWork(input: SolutionNetwork, width = 1, maxInspectionsPerRegion = Number.POSITIVE_INFINITY): { network: SolutionNetwork; done: boolean; blocked?: string } {
+  let network = reconcileCompletionState(propagateNetwork(input));
+  let recoveredInspectionLimit = false;
+  for (const region of network.regions) {
+    if (region.status !== "blocked" || region.blockedDetails?.kind !== "inspection-limit" || (region.inspectionAttempts ?? 0) >= maxInspectionsPerRegion) continue;
+    transitionRegion(region, "inspecting", undefined, region.evidenceIds.length ? "superposed" : "unformed");
+    region.blockedDetails = undefined;
+    region.contradiction = undefined;
+    recoveredInspectionLimit = true;
+  }
+  if (recoveredInspectionLimit) network.revision++;
   if (selectActivationBatch(network, width).length) return { network, done: false };
   const required = network.regions;
-  const terminal = required.length > 0 && required.every((region) => region.status === "verified" || region.status === "collapsed" && network.regions.some((child) => child.parentId === region.id));
+  const terminal = required.length > 0 && required.every((region) => region.completionCertificateId && isCompletionCertificateValid(network, region.completionCertificateId) || region.status === "collapsed" && network.regions.some((child) => child.parentId === region.id));
   if (terminal) {
     for (const region of required) {
       const children = required.filter((item) => item.parentId === region.id);
       if (!children.length) continue;
       const expected = region.acceptanceCriteria.length || 1;
       const ownership = Array.from({ length: expected }, (_, index) => children.filter((child) => (child.coveredCriteria ?? []).includes(index)).length);
-      if (ownership.some((count) => count !== 1)) return { network, done: false, blocked: `Root coverage audit failed for ${region.scopeId}: every criterion must have exactly one live child owner.` };
+      if (ownership.some((count) => count === 0)) return { network, done: false, blocked: `Root coverage audit failed for ${region.scopeId}: every criterion must have at least one live child covering it.` };
     }
-    for (const region of required.filter((item) => item.candidateIds.length && item.delivery !== "answer" && item.status === "verified")) if (!hasSelectedImplementationFamily(network, region)) return { network, done: false, blocked: `Completed hard-constraint audit failed for ${region.id}: selection lacks one accepted implementation family at the exact domain fingerprint.` };
-    for (const region of required.filter((item) => item.delivery === "change" && item.status === "verified")) {
-      const artifacts = region.artifactIds.map((id) => network.artifacts.find((item) => item.id === id)).filter((item): item is NonNullable<typeof item> => item !== undefined && !item.historical);
-      const changed = artifacts.some((item) => item.kind === "file");
-      const review = artifacts.find((item) => item.kind === "completion-review" && item.passed);
-      const high = artifacts.flatMap((item) => item.findings ?? []).some((finding) => finding.severity === "high");
-      const criteriaConfirmed = review && region.criterionIds.every((id) => review.criterionIds?.includes(id));
-      const evidenceComplete = review?.focusedTests?.length && review.fullChecks?.length && (!taskReferencesTodo(originalTask) || review.todoDisposition);
-      if (high) return { network, done: false, blocked: `Change-delivery audit failed for ${region.scopeId}: unresolved high-severity correctness review finding.` };
-      if (!review || !criteriaConfirmed || !evidenceComplete || review.implementationOutcome === "changed" !== changed) return { network, done: false, blocked: `Change-delivery audit failed for ${region.scopeId}: completion evidence does not prove measured change delivery or an already-satisfied outcome.` };
-    }
+    const validCertificates = network.certificates.filter((certificate) => isCompletionCertificateValid(network, certificate));
+    const requirementCoverage = (network.materialRequirements ?? []).map((requirement) => ({ id: requirement.id, count: validCertificates.filter((certificate) => certificate.requirementIds.includes(requirement.id)).length }));
+    const uncoveredRequirements = requirementCoverage.filter((item) => item.count === 0);
+    if (uncoveredRequirements.length) return { network, done: false, blocked: `Completion audit failed: every material requirement needs at least one valid leaf certificate (${uncoveredRequirements.map((item) => item.id).join(", ")}).` };
+    const unresolvedFindings = network.findings.filter((item) => item.status === "open" || item.status === "repairing");
+    if (unresolvedFindings.length) return { network, done: false, blocked: `Completion audit failed: unresolved finding IDs ${unresolvedFindings.map((item) => item.id).join(", ")}.` };
     return { network, done: true };
   }
-  const explicitlyBlocked = required.find((region) => region.status === "blocked");
-  if (explicitlyBlocked) return { network, done: false, blocked: explicitlyBlocked.blockedReason ?? explicitlyBlocked.contradiction ?? `Region ${explicitlyBlocked.id} is blocked.` };
   const implementing = required.find((region) => region.status === "implementing");
   if (implementing) return { network, done: false, blocked: `Implementation activation for ${implementing.id} disappeared.` };
-  const actionable = required.find((region) => region.status === "actionable" && dependenciesVerified(network, region.id));
-  if (actionable) {
-    const capability = actionable.delivery === "answer" ? "present" : "implement";
-    network = queueActivation(network, capability, actionable.id, capability === "present" ? "Answer the user using the supplied facts and choices." : "Make the required change and meet every success criterion.", `${capability}:${actionable.id}:${network.revision}`, [...actionable.evidenceIds, ...actionable.constraintIds]);
-    return selectActivationBatch(network, width).length ? { network, done: false } : { network, done: false, blocked: `Could not schedule ${capability} for ${actionable.id}.` };
-  }
-  const implemented = required.find((region) => region.status === "implemented" && dependenciesVerified(network, region.id));
-  if (implemented) {
-    const existing = network.activations.find((activation) => activation.regionId === implemented.id && activation.capability === "verify" && activation.status === "queued");
-    if (existing) {
-      existing.basisRevision = network.revision;
-      existing.contextRefs = [...new Set([implemented.id, ...implemented.artifactIds])];
-      existing.readRefs = activationReadRefs(network, existing.contextRefs);
-      return { network, done: false };
-    }
-    const previousFailure = network.activations.findLast((activation) => activation.regionId === implemented.id && activation.capability === "verify" && activation.status === "failed")?.error;
-    const correction = previousFailure ? ` The previous verifier output was rejected: ${previousFailure} Correct that exact omission with criterion-specific execution evidence.` : "";
-    network = queueActivation(network, "verify", implemented.id, `Check the actual output (changed files or the answer) against every success criterion.${correction}`, `verification:${implemented.id}:${network.revision}`, [...implemented.artifactIds]);
-    return selectActivationBatch(network, width).length ? { network, done: false } : { network, done: false, blocked: `Could not schedule verification for ${implemented.id}.` };
-  }
-  const unrefined = required.find((region) => region.status === "unrefined" && dependenciesVerified(network, region.id));
-  if (unrefined) {
-    network = queueActivation(network, "refine", unrefined.id, "Split the chosen approach into the next steps of work that together cover every success criterion.", `refinement:${unrefined.id}:${network.revision}`, [...unrefined.evidenceIds, ...unrefined.constraintIds]);
-    return selectActivationBatch(network, width).length ? { network, done: false } : { network, done: false, blocked: `Could not schedule refinement for ${unrefined.id}.` };
-  }
   const contradiction = required.find((region) => region.status === "contradiction");
   if (contradiction) return { network, done: false, blocked: `Contradiction in ${contradiction.id}: ${contradiction.contradiction ?? "every candidate was eliminated"}` };
-  const unresolved = required.filter((region) => (region.status === "unformed" || region.status === "superposed") && dependenciesVerified(network, region.id)).sort((left, right) => {
-    const viable = (region: SolutionRegion) => region.candidateIds.filter((id) => network.candidates.find((candidate) => candidate.id === id)?.status !== "eliminated").length;
-    return viable(left) - viable(right) || right.lod - left.lod;
-  });
-  if (unresolved.length) {
-    // Queue the whole formation frontier so read-only batches can fan out across sibling regions.
-    for (const target of unresolved.slice(0, Math.max(1, width))) {
-      if (target.domainPhase === "inspecting" || target.status === "unformed") {
-        transitionRegion(target, "inspecting");
-        network = queueActivation(network, "inspect", target.id, "Find the repository facts needed to form complete alternatives for this goal. Investigate lower-level details when they affect that choice, but do not turn them into choices yet.", `inspection:${target.id}:${network.revision}`, [...target.evidenceIds]);
-      } else if (target.domainPhase === "ungenerated") {
-        network = queueSynthesis(network, "generate-domain", target.id, "Generate every genuinely distinct solution family for this goal, without selecting or eliminating any. Return exactly one family only when no materially different alternative exists.", `generate-domain:${target.id}:${network.revision}`, [...target.evidenceIds, ...target.constraintIds]);
-      } else if (target.domainPhase === "challenging") {
-        network = queueSynthesis(network, "challenge-domain", target.id, "Freshly challenge the bounded local domain: accept it, give one concrete missing family, or request one precise decision-relevant fact.", `challenge-domain:${target.id}:${target.domainFingerprint}:${target.reopens}:${target.noProgressCount}`, [...target.evidenceIds, ...target.constraintIds, ...target.candidateIds]);
-      } else if (target.domainPhase === "selecting") {
-        network = queueSynthesis(network, "select-candidate", target.id, "Compare every viable candidate by the deterministic preference tiers and select one, or request one grounding fact for an unresolved tie.", `select-candidate:${target.id}:${target.domainFingerprint}:${target.reopens}:${target.noProgressCount}`, [...target.evidenceIds, ...target.constraintIds, ...target.candidateIds]);
+  const runnable = required.filter((region) => ["actionable", "implemented", "unrefined", "unformed", "superposed"].includes(region.status) && dependenciesVerified(network, region.id));
+  for (const region of runnable) region.selectionAge = (region.selectionAge ?? 0) + 1;
+  const viable = (region: SolutionRegion) => region.candidateIds.filter((id) => network.candidates.find((candidate) => candidate.id === id)?.status !== "eliminated").length;
+  runnable.sort((left, right) => (right.selectionAge ?? 0) - (left.selectionAge ?? 0) || viable(left) - viable(right) || right.lod - left.lod || left.id.localeCompare(right.id));
+  let scheduledRegions = 0;
+  for (const target of runnable) {
+    if (scheduledRegions >= Math.max(1, width)) break;
+    target.selectionAge = 0;
+    if (target.status === "actionable") {
+      const capability = target.delivery === "answer" ? "present" : "implement";
+      const findingIds = network.findings.filter((item) => item.regionId === target.id && item.status === "open" && item.route.kind !== "blocked-external").map((item) => item.id);
+      network = queueActivation(network, capability, target.id, capability === "present" ? "Answer the user using the supplied facts and choices." : "Make the required change and meet every success criterion.", `${capability}:${target.id}:${network.revision}`, currentContextRefs(network, [...target.evidenceIds, ...target.constraintIds, ...(target.requirementIds ?? [])]), findingIds);
+    } else if (target.status === "implemented") {
+      const previousFailure = network.activations.findLast((activation) => activation.regionId === target.id && activation.capability === "verify" && activation.status === "failed")?.error;
+      const correction = previousFailure ? ` The previous verifier output was rejected: ${previousFailure} Correct that exact omission with criterion-specific execution evidence.` : "";
+      const findingIds = network.findings.filter((item) => item.regionId === target.id && item.status === "repairing").map((item) => item.id);
+      network = queueActivation(network, "verify", target.id, `Check the actual output (changed files or the answer) against every success criterion.${correction}`, `verification:${target.id}:${network.revision}`, currentContextRefs(network, [...target.artifactIds, ...(target.implementationPremiseRefs ?? []), ...(target.requirementIds ?? [])]), findingIds);
+    } else if (target.status === "unrefined") {
+      network = queueActivation(network, "refine", target.id, "Split the chosen approach into the next steps of work that together cover every success criterion and material requirement.", `refinement:${target.id}:${network.revision}`, currentContextRefs(network, [...target.evidenceIds, ...target.constraintIds, ...(target.requirementIds ?? [])]));
+    } else if (target.domainPhase === "inspecting" || target.status === "unformed") {
+      const inspectionLimit = Math.min(2, maxInspectionsPerRegion);
+      if ((target.inspectionAttempts ?? 0) >= inspectionLimit) {
+        const unresolvedCriterionIds = target.inspectionObligationIds ?? target.criterionIds;
+        const verdicts = (target.criterionVerdicts ?? []).filter((item) => unresolvedCriterionIds.includes(item.criterionId)).map((item) => `${item.criterionId}=${item.verdict}`).join(",") || "unreported";
+        transitionRegion(target, "blocked", `Inspection pass limit reached for ${target.id}: used=${target.inspectionAttempts ?? 0} limit=${inspectionLimit}; unresolvedCriterionIds=${unresolvedCriterionIds.join(",") || "none"}; verdicts=${verdicts}.`, "blocked");
+      target.blockedDetails = { kind: "inspection-pass-limit", unresolvedCriterionIds: [...unresolvedCriterionIds] };
+      continue;
       }
+      transitionRegion(target, "inspecting");
+      const criterionIds = target.inspectionObligationIds ?? [];
+      const inspectionPass = Math.min(2, (target.inspectionAttempts ?? 0) + 1);
+      const failedInspections = network.activations.filter((item) => item.regionId === target.id && item.capability === "inspect" && !item.historical && item.status === "failed");
+      const correction = failedInspections.length ? ` The previous inspection output was rejected: ${failedInspections.at(-1)!.error ?? "invalid structured output"} Correct that exact defect.` : "";
+      const passInstruction = inspectionPass === 1 ? "Breadth pass: inspect the minimum dependency closure for every listed criterion." : "Gap pass: inspect only unresolved criteria and contradictions; return unknown or blocked rather than restarting general inspection.";
+      const request = criterionIds.length ? `${passInstruction} ${criterionIds.map((criterionId) => `${criterionId}: ${target.acceptanceCriteria[target.criterionIds.indexOf(criterionId)]}`).join(" | ")}. Return one satisfied, unsatisfied, blocked, or unknown criterionEvidence verdict for every criterion addressed, with exact references.${correction}` : target.acceptanceCriteria.length ? `All inspection obligations are closed. Run the contradiction check over recorded verdicts and return the evidence-backed decision boundary; do not inspect generally.${correction}` : `${passInstruction} ${INITIAL_INSPECTION_REQUEST}${correction}`;
+      const staleEvidence = target.evidenceIds.filter((id) => network.evidence.find((item) => item.id === id)?.status === "stale").sort();
+      const recovery = staleEvidence.length ? `:${hash(staleEvidence)}` : "";
+      network = queueActivation(network, "inspect", target.id, request, `inspection:${target.id}:${criterionIds.join(",") || (target.acceptanceCriteria.length ? "boundary" : network.revision)}${recovery}`, currentContextRefs(network, [...target.evidenceIds, ...(target.requirementIds ?? []), ...criterionIds]));
+    } else if (target.domainPhase === "ungenerated") {
+      if (!target.decisionBoundary) {
+        transitionRegion(target, "inspecting");
+        network = queueActivation(network, "inspect", target.id, "Establish the missing evidence-backed decision boundary before generating solution families.", `decision-boundary:${target.id}:${network.revision}`, currentContextRefs(network, [...target.evidenceIds, ...(target.requirementIds ?? [])]));
+      } else network = queueSynthesis(network, "generate-domain", target.id, "Generate every genuinely distinct solution family for this goal, without selecting or eliminating any. Return exactly one family only when no materially different alternative exists.", `generate-domain:${target.id}:${network.revision}`, currentContextRefs(network, [...target.evidenceIds, ...target.constraintIds, ...(target.requirementIds ?? [])]));
+    } else if (target.domainPhase === "challenging") {
+      network = queueSynthesis(network, "challenge-domain", target.id, "Freshly challenge the bounded local domain: accept it, give one complete missing family, report a boundary counterexample, or request one precise decision-relevant fact.", `challenge-domain:${target.id}:${target.boundDomainFingerprint}:${target.progress.reopenAttempts.count}:${target.progress.cegarRounds.count}:${network.revision}`, currentContextRefs(network, [...target.evidenceIds, ...target.constraintIds, ...target.candidateIds, ...(target.requirementIds ?? [])]));
+    } else if (target.domainPhase === "selecting") {
+      network = queueSynthesis(network, "select-candidate", target.id, "Compare every viable candidate by the deterministic preference tiers and select one, or request one grounding fact for an unresolved tie.", `select-candidate:${target.id}:${target.boundDomainFingerprint}:${target.progress.reopenAttempts.count}:${target.progress.selectionNoProgress.count}:${network.revision}`, currentContextRefs(network, [...target.evidenceIds, ...target.constraintIds, ...target.candidateIds, ...(target.requirementIds ?? [])]));
     }
-    const first = unresolved[0];
-    if (selectActivationBatch(network, width).length) return { network, done: false };
-    return { network, done: false, blocked: `No activation can make a novel state delta for ${first.id}.` };
+    scheduledRegions++;
+  }
+  if (selectActivationBatch(network, width).length) return { network, done: false };
+  const explicitlyBlocked = required.find((region) => region.status === "blocked");
+  if (explicitlyBlocked) return { network, done: false, blocked: explicitlyBlocked.blockedReason ?? explicitlyBlocked.contradiction ?? `Region ${explicitlyBlocked.id} is blocked.` };
+  if (runnable.length) {
+    const first = runnable[0]!;
+    const capability = first.status === "actionable" ? (first.delivery === "answer" ? "present" : "implement") : first.status === "implemented" ? "verify" : first.status === "unrefined" ? "refine" : first.domainPhase === "inspecting" || first.status === "unformed" ? "inspect" : "synthesize";
+    const lastFailure = network.activations.filter((item) => item.regionId === first.id && !item.historical && item.status === "failed").at(-1)?.error;
+    return { network, done: false, blocked: `Could not schedule ${capability} for ${first.id}; No activation can make a novel state delta.${lastFailure ? ` Last failure: ${lastFailure}` : ""}` };
   }
   const stalled = required.find((region) => region.status === "stalled");
-  if (stalled) return { network, done: false, blocked: `Region ${stalled.id} stalled: ${stalled.reopens} reopens without new evidence` };
+  if (stalled) return { network, done: false, blocked: `Region ${stalled.id} stalled: ${stalled.progress.reopenAttempts.count} reopens without a new confirmed defeater` };
   return { network, done: false, blocked: "The solution network has no runnable activation and no completed root." };
 }

@@ -24,7 +24,7 @@ export function structuredAgentNode<State extends Record<string, unknown>, Outpu
       schema: z.toJSONSchema(options.schema) as Record<string, unknown>,
       validateStructured: (value) => options.schema.parse(value),
       schemaName: options.node ?? options.agent,
-      retryCount: options.retries ?? 2,
+      maxAttempts: 1 + (options.retries ?? 2),
     });
     if (result.budgetStop) throw new Error(`${options.node ?? options.agent} reached its ${result.budgetStop.metric} budget (${result.budgetStop.used}/${result.budgetStop.limit})`);
     let value = result.structured;

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MemorySaver } from "@langchain/langgraph";
 import type { CandidateStance, SolutionLodState, SolutionNetwork } from "../src/solution-lod/types.js";
 import { SolutionDeltaSchema } from "../src/solution-lod/types.js";
-import { assertAcyclicPrimalGraph, applyBatchRecords, domainFingerprint, ensureRunnableWork, initialNetwork, mergeSolutionDelta, propagateNetwork, purgeDescendants } from "../src/solution-lod/reducer.js";
+import { admitDecisionBoundary, assertAcyclicPrimalGraph, applyBatchRecords, completeVerification, domainFingerprint, ensureRunnableWork, initialNetwork, mergeSolutionDelta, propagateNetwork, purgeDescendants } from "../src/solution-lod/reducer.js";
 import { projectActivationContext, solutionLodGraph } from "../src/solution-lod/graph.js";
 
 // ─── shared helpers ──────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ function shuffled<T>(random: () => number, items: T[]): T[] {
   return copy;
 }
 const EMPTY_STATE = {
-  stateVersion: 8, runId: "oracle", originalTask: "t", conversationContext: "", directory: "/repo", worktree: "/repo", phase: "", activeBatch: [], results: [], usage: { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, callsUsed: 0, startedAt: 0, result: "",
+  stateVersion: 11, runId: "oracle", directory: "/repo", worktree: "/repo", phase: "", activeBatch: [], results: [], usage: { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, callsUsed: 0, startedAt: 0, result: "",
 } as const;
 
 function acceptOracleDomains(network: SolutionNetwork): void {
@@ -27,10 +27,7 @@ function acceptOracleDomains(network: SolutionNetwork): void {
     region.scopeId ??= `scope:${region.id}`;
     region.criterionIds ??= region.acceptanceCriteria.map((_, index) => `criterion:${region.id}:${index}`);
     region.domainPhase ??= region.candidateIds.length ? "selecting" : "ungenerated";
-    region.cegarRound ??= 0;
     region.challengeVerdict ??= region.candidateIds.length ? "accept" : null;
-    region.noProgressFingerprint ??= null;
-    region.noProgressCount ??= 0;
     region.domainFingerprint = domainFingerprint(network, region.id);
     region.acceptedFingerprint = region.domainFingerprint;
   }
@@ -180,13 +177,13 @@ function buildDirect(seed: number): FastInstance {
     const vid = `v${1 + Math.floor(random() * varCount)}`;
     const label = pick(random, ["alpha", "beta"])!;
     const eid = `e${++ec}`;
-    net.evidence.push({ id: eid, text: eid, source: `s/${eid}`, kind: "repository", fingerprint: eid });
+    net.evidence.push({ id: eid, text: eid, source: `s/${eid}`, kind: "tool", fingerprint: eid });
     net.constraints.push({ id: `cr${i}`, kind: "refutes", subject: "task", target: `${vid}:${label}`, reason: "coordinate refutation", sourceActivationId: "a9", sourceKind: "repo-evidence", evidenceRefs: [eid] });
   }
   for (let i = 0; i < Math.floor(random() * 3); i++) {
     const t = pick(random, net.candidates); if (!t) break;
     const eid = `e${++ec}`;
-    net.evidence.push({ id: eid, text: eid, source: `s/${eid}`, kind: "repository", fingerprint: eid });
+    net.evidence.push({ id: eid, text: eid, source: `s/${eid}`, kind: "tool", fingerprint: eid });
     if (random() < 0.6) net.constraints.push({ id: `ce${i}`, kind: "refutes", subject: eid, target: t.id, reason: "evidence kill", sourceActivationId: "a9", sourceKind: "repo-evidence", evidenceRefs: [eid] });
     else net.constraints.push({ id: `cs${i}`, kind: "supports", subject: eid, target: t.id, reason: "support", sourceActivationId: "a9", sourceKind: "model-inference", evidenceRefs: [eid] });
   }
@@ -476,7 +473,7 @@ describe("merge-boundary suite", () => {
         if (rootVars.length) {
           const tv = pick(random, rootVars)!;
           const src = `src/bc-${ci}.ts:1`;
-          evidence.push({ text: `cite ${src}`, source: src, kind: "repository" });
+          evidence.push({ text: `cite ${src}`, source: src, kind: "tool" });
           constraints.push({ kind: "excludes", subject: ck, target: `${tv.name}:${pick(random, ["alpha", "beta"])!}`, reason: "bc", sourceKind: "repo-evidence", evidenceRefs: [src] });
         }
       }
@@ -500,15 +497,11 @@ describe("merge-boundary suite", () => {
 describe("named regression matrix additions", () => {
   it("three-variable clique cycle is rejected", () => {
     const n = initialNetwork("t");
-    n.variables.push({ id: "v1", name: "a", ownerRegionId: "r1", seedLabels: [] }, { id: "v2", name: "b", ownerRegionId: "r1", seedLabels: [] }, { id: "v3", name: "c", ownerRegionId: "r1", seedLabels: [] });
-    n.candidates.push(
-      { id: "r2:x", regionId: "r2", key: "x", proposition: "", status: "possible", evidenceIds: [], eliminationReasons: [], stances: [{ variableId: "v1", relation: "requires", valueLabel: "p" }, { variableId: "v2", relation: "requires", valueLabel: "q" }] },
-      { id: "r2:y", regionId: "r2", key: "y", proposition: "", status: "possible", evidenceIds: [], eliminationReasons: [], stances: [{ variableId: "v2", relation: "requires", valueLabel: "q" }, { variableId: "v3", relation: "requires", valueLabel: "r" }] },
-    );
-    n.regions.push({ ...n.regions[0], id: "r2", key: "r2", parentId: "r1", edge: "partOf", lod: 1, objective: "", delivery: "change", allowedVariables: [], acceptanceCriteria: [], status: "superposed", candidateIds: ["r2:x", "r2:y"], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: [], artifactIds: [] });
-    expect(() => assertAcyclicPrimalGraph(n)).not.toThrow(); // chain a-b-c is legal
-    n.candidates.push({ id: "r2:z", regionId: "r2", key: "z", proposition: "", status: "possible", evidenceIds: [], eliminationReasons: [], stances: [{ variableId: "v1", relation: "prefers", valueLabel: "p" }, { variableId: "v3", relation: "prefers", valueLabel: "r" }] });
-    expect(() => assertAcyclicPrimalGraph(n)).toThrow(/close a coupling cycle/); // z closes triangle
+    expect(() => admitDecisionBoundary(n, "r1", { basisRevision: n.revision, variables: ["a", "b", "c"].map((key) => ({ key, name: key, ownerRegionId: "r1", seedLabels: [], evidenceRefs: [] })), permittedPairs: [
+      { leftVariableKey: "a", rightVariableKey: "b", evidenceRefs: [] },
+      { leftVariableKey: "b", rightVariableKey: "c", evidenceRefs: [] },
+      { leftVariableKey: "a", rightVariableKey: "c", evidenceRefs: [] },
+    ] })).toThrow(/close a global coupling cycle/);
   });
 
   it("owner-variable invalidation drops stale coordinate constraints", () => {
@@ -516,7 +509,7 @@ describe("named regression matrix additions", () => {
     n.regions.push({ ...n.regions[0], id: "r2", key: "child", parentId: "r1", edge: "partOf", lod: 1, objective: "", delivery: "change", allowedVariables: [], acceptanceCriteria: [], status: "unformed", candidateIds: [], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: [], artifactIds: [] });
     n.variables.push({ id: "v9", name: "sub-choice", ownerRegionId: "r2", seedLabels: [] });
     n.constraints.push({ id: "c9", kind: "refutes", subject: "task", target: "v9:red", reason: "test", sourceActivationId: "a9", sourceKind: "user-task", evidenceRefs: ["eZ"] });
-    n.evidence.push({ id: "eZ", text: "z", source: "z:1", kind: "repository", fingerprint: "z" });
+    n.evidence.push({ id: "eZ", text: "z", source: "z:1", kind: "tool", fingerprint: "z" });
     // Remove the require() call — purgeDescendants is imported at the top.
     purgeDescendants(n, "r1");
     expect(n.variables.find((v) => v.id === "v9")).toBeUndefined();
@@ -525,7 +518,7 @@ describe("named regression matrix additions", () => {
 
   it("exact structured empty-domain witness", () => {
     const n = initialNetwork("t");
-    n.evidence.push({ id: "e1", text: "f", source: "f:1", kind: "repository", fingerprint: "e1" });
+    n.evidence.push({ id: "e1", text: "f", source: "f:1", kind: "tool", fingerprint: "e1" });
     n.candidates.push({ id: "r2:x", regionId: "r2", key: "x", proposition: "", status: "possible", evidenceIds: [], eliminationReasons: [], stances: [] });
     n.regions.push({ ...n.regions[0], id: "r2", key: "r2", parentId: "r1", edge: "partOf", lod: 1, objective: "", delivery: "change", allowedVariables: [], acceptanceCriteria: [], status: "superposed", candidateIds: ["r2:x"], selectedCandidateIds: [], constraintIds: [], evidenceIds: [], activationIds: [], artifactIds: [] });
     n.constraints.push({ id: "c1", kind: "refutes", subject: "e1", target: "r2:x", reason: "dead", sourceActivationId: "a9", sourceKind: "repo-evidence", evidenceRefs: ["e1"] });
@@ -540,13 +533,15 @@ describe("terminal-state replay through the real graph (fully verified checkpoin
   it("completes with a throwing runtime and never invokes a model", async () => {
     const configured = solutionLodGraph({ agents: { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" }, checkpointer: new MemorySaver() });
     const runtime = { call: async () => { throw new Error("NO MODEL"); } };
-    const authored = initialNetwork("settled change");
-    authored.regions = [{ ...authored.regions[0], acceptanceCriteria: ["done"], status: "verified", candidateIds: ["r1:d"], selectedCandidateIds: ["r1:d"], artifactIds: ["x1", "x2"] }];
+    let authored = initialNetwork("settled change");
+    authored.regions = [{ ...authored.regions[0], acceptanceCriteria: ["done"], criterionIds: ["criterion:scope:r1:0"], status: "implemented", candidateIds: ["r1:d"], selectedCandidateIds: ["r1:d"], artifactIds: ["x1"] }];
     authored.candidates = [{ id: "r1:d", regionId: "r1", key: "d", proposition: "", status: "selected", evidenceIds: [], eliminationReasons: [], stances: [] }];
-    authored.artifacts = [{ id: "x1", regionId: "r1", kind: "file", path: "src/x.ts", summary: "Changed src/x.ts", activationId: "a0" }, { id: "x2", regionId: "r1", kind: "completion-review", summary: "reviewed", passed: true, activationId: "a0", implementationOutcome: "changed", criterionIds: [...authored.regions[0]!.criterionIds], focusedTests: ["focused passed"], fullChecks: ["full passed"], findings: [] }];
-    authored.activations = [];
+    authored.artifacts = [{ id: "x1", regionId: "r1", kind: "file", path: "src/x.ts", summary: "Changed src/x.ts", activationId: "a0", fingerprint: "src-x" }];
+    authored.nextArtifactId = 2;
+    authored.activations = [{ id: "a0", capability: "implement", regionId: "r1", request: "done", expectedDelta: "done", contextRefs: ["r1"], status: "completed", basisRevision: 0 }, { id: "a2", capability: "verify", regionId: "r1", request: "verify", expectedDelta: "verify", contextRefs: ["r1", "x1"], status: "running", basisRevision: 0 }];
     acceptOracleDomains(authored);
-    const result = await configured.graph.invoke({ ...configured.initial({ task: "s", directory: "/r", worktree: "/r", runId: "z" }), network: authored }, { recursionLimit: 16, configurable: { thread_id: "z", langgraphOpenCodeRuntime: runtime } });
+    authored = completeVerification(authored, "a2", { outcome: "pass", summary: "verified", findings: [], checks: [{ name: "done", passed: true, evidence: "done" }], completionEvidence: { implementationOutcome: "changed", implementation: "changed", directTest: "focused", correctnessReview: "reviewed", releaseGate: "full", changedFiles: ["src/x.ts"], focusedTests: ["focused passed"], fullChecks: ["full passed"] } });
+    const result = await configured.graph.invoke({ ...configured.initial({ task: { id: "task-z", exactText: "s" }, authoritativeMessages: [], directory: "/r", worktree: "/r", runId: "z" }), network: authored }, { recursionLimit: 16, configurable: { thread_id: "z", langgraphOpenCodeRuntime: runtime } });
     expect(configured.result?.(result as SolutionLodState)).toContain("Implemented and verified");
     expect(configured.progress?.(result as SolutionLodState)?.phase).toBe("completed");
   });
@@ -559,7 +554,7 @@ describe("nonterminal actionable configuration blocks at exploration limit witho
     const authored = initialNetwork("unverified change");
     authored.regions = [{ ...authored.regions[0], acceptanceCriteria: ["done"], candidateIds: ["r1:d"], selectedCandidateIds: ["r1:d"] }];
     authored.candidates = [{ id: "r1:d", regionId: "r1", key: "d", proposition: "", status: "selected", evidenceIds: [], eliminationReasons: [], stances: [] }];
-    const initial = configured.initial({ task: "u", directory: "/r", worktree: "/r", runId: "exh" });
+    const initial = configured.initial({ task: { id: "task-exh", exactText: "u" }, authoritativeMessages: [], directory: "/r", worktree: "/r", runId: "exh" });
     const injected = { ...initial, network: propagateNetwork(authored), callsUsed: 256 };
     const result = await configured.graph.invoke(injected, { recursionLimit: 16, configurable: { thread_id: "exh", langgraphOpenCodeRuntime: runtime } });
     expect(configured.progress?.(result as SolutionLodState)?.phase).toBe("blocked");

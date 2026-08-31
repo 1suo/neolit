@@ -103,7 +103,7 @@ export const InspectionOutputSchema = SolutionDeltaSchema.pick({
 }).extend({
   region: SolutionDeltaSchema.shape.region.unwrap().omit({
     objective: true,
-  }).optional(),
+  }).strict().optional(),
 }).strict();
 
 export type InspectionOutput = z.infer<typeof InspectionOutputSchema>;

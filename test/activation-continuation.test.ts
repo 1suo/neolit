@@ -27,8 +27,8 @@ describe("activation continuation", () => {
     const resumed = source;
     expect(resumed.recovery).toMatchObject({ sessionId: "child-1", strategy: "fork", failureKind: "transport" });
     let call: AgentCall | undefined;
-    const runtime = { call: async (input: AgentCall) => { call = input; return { text: "", structured: { region: { acceptanceCriteria: ["known"] }, evidence: [], candidates: [], constraints: [], select: [], activations: [] }, sessionId: "child-2" }; } };
-    const state = { ...connector.initial({ task: "inspect", directory: "/r", worktree: "/r", runId: "resume" }), network };
+    const runtime = { call: async (input: AgentCall) => { call = input; return { text: "", structured: { outcome: "boundary", region: { acceptanceCriteria: ["known"] }, evidence: [], criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["task"] }], decisionBoundary: { basisRevision: 0, variables: [], permittedPairs: [] } }, sessionId: "child-2" }; } };
+    const state = { ...connector.initial({ task: { id: "task-resume", exactText: "inspect" }, authoritativeMessages: [], directory: "/r", worktree: "/r", runId: "resume" }), network };
     await connector.graph.invoke(state, { configurable: { thread_id: "resume", langgraphOpenCodeRuntime: runtime }, recursionLimit: 3 }).catch(() => {});
     expect(call?.session).toEqual({ strategy: "fork", sessionId: "child-1" });
   });
@@ -45,5 +45,13 @@ describe("activation continuation", () => {
   it("always isolates a fresh challenge operation", () => {
     const source = failed().activations[0]!;
     expect(activationRecovery([source], "challenge-domain", source.idempotencyKey!, source.readRefs!)).toBeUndefined();
+  });
+
+  it("selects the latest matching recovery session", () => {
+    const source = failed().activations[0]!;
+    const latest = structuredClone(source);
+    latest.id = "a2";
+    latest.recovery!.sessionId = "child-latest";
+    expect(activationRecovery([source, latest], undefined, source.idempotencyKey!, source.readRefs!)).toMatchObject({ sessionId: "child-latest" });
   });
 });

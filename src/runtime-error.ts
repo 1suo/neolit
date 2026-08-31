@@ -1,4 +1,4 @@
-import type { AgentRetryTrace, AgentToolTrace, AgentUsage } from "./types.js";
+import type { ActivationContextTelemetry, AgentPromptAttemptTrace, AgentRetryTrace, AgentToolTrace, AgentUsage } from "./types.js";
 
 export type OpenCodeRuntimeFailureKind = "startup" | "transport" | "inactivity" | "schema" | "semantic";
 
@@ -20,6 +20,10 @@ export class OpenCodeRuntimeError extends Error {
       tools?: AgentToolTrace[];
       progressText?: string;
       retryTrace?: AgentRetryTrace[];
+      contextTelemetry?: ActivationContextTelemetry;
+      promptAttempts?: AgentPromptAttemptTrace[];
+      schemaRetries?: number;
+      schemaRepairs?: number;
       retryable: boolean;
     },
     options?: { cause?: unknown },
@@ -32,5 +36,9 @@ export class OpenCodeRuntimeError extends Error {
   get tools(): AgentToolTrace[] | undefined { return this.diagnostics.tools; }
   get progressText(): string | undefined { return this.diagnostics.progressText; }
   get retryTrace(): AgentRetryTrace[] | undefined { return this.diagnostics.retryTrace; }
+  get contextTelemetry(): ActivationContextTelemetry | undefined { return this.diagnostics.contextTelemetry; }
+  get promptAttempts(): AgentPromptAttemptTrace[] | undefined { return this.diagnostics.promptAttempts; }
+  get schemaRetries(): number | undefined { return this.diagnostics.schemaRetries; }
+  get schemaRepairs(): number | undefined { return this.diagnostics.schemaRepairs; }
   get retryable(): boolean { return this.diagnostics.retryable; }
 }

@@ -7,4 +7,5 @@ export * from "./types.js";
 export * from "./validate.js";
 export * from "./error-message.js";
 export * from "./runtime-error.js";
+export * from "./repository-service.js";
 export * from "./verify.js";

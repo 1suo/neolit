@@ -15,13 +15,15 @@
     "dist/",
     "LICENSE",
     "README.md",
-    "SOLUTION-GRAPH-CORE-IDEAS.md",
-    "ARCHITECTURE.md"
+    "src/solution-lod/README.md",
+    "src/solution-lod/SPEC.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "check": "tsc -p tsconfig.json --noEmit && vitest run",
+    "graph:write": "tsx scripts/render-solution-role-graph.ts",
+    "graph:check": "tsx scripts/render-solution-role-graph.ts --check",
+    "check": "tsc -p tsconfig.json --noEmit && vitest run && npm run graph:check",
     "prepack": "npm run check && npm run build"
   },
   "keywords": [

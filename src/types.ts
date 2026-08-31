@@ -35,6 +35,17 @@ export interface AgentUsage {
   cost: number;
 }
 
+export interface ActivationContextTelemetry {
+  repositoryReadChars: number;
+  repositoryOutputChars?: number;
+  otherToolOutputChars: number;
+  bashOutputChars: number;
+  duplicateReadCharsAvoided: number;
+  accumulatedSessionInput: number;
+  cacheReadInput: number;
+  structuredRepairAttempts: number;
+}
+
 export interface UsageStreamingEstimate {
   inputEstimated: number;
   outputEstimated: number;
@@ -73,9 +84,17 @@ export interface GraphDisplayNode {
   agent?: string;
 }
 
-export interface ConnectorGraph<State extends Record<string, unknown> = Record<string, unknown>> {
+export interface DefaultConnectorInitialInput {
+  task: string;
+  conversationContext?: string;
+  directory: string;
+  worktree: string;
+  runId: string;
+}
+
+export interface ConnectorGraph<State extends Record<string, unknown> = Record<string, unknown>, InitialInput = DefaultConnectorInitialInput> {
   graph: CompiledStateGraph<any, any, any, any, any, any, any, any, any>;
-  initial(input: { task: string; conversationContext?: string; directory: string; worktree: string; runId: string }): State;
+  initial(input: InitialInput): State;
   result?(state: State): string;
   progress?(state: State): GraphProgressSnapshot | undefined;
   display?: Record<string, GraphDisplayNode>;
@@ -85,7 +104,7 @@ export interface ConnectorDefinition {
   version: 1;
   models: Record<string, ModelDefinition>;
   agents: Record<string, AgentDefinition>;
-  graphs: Record<string, ConnectorGraph>;
+  graphs: Record<string, ConnectorGraph<any, any>>;
   defaultGraph: string;
 }
 
@@ -96,6 +115,8 @@ export interface ConnectorPresetConfig {
 }
 
 export type SolutionPresetRole = "inspect" | "synthesize" | "refine" | "implement" | "verify" | "present";
+export const SOLUTION_EXECUTION_CAPABILITIES = ["repository-observe", "external-worktree-observe", "evidence-reason", "workspace-mutate", "check-execute", "result-present"] as const;
+export type SolutionExecutionCapability = typeof SOLUTION_EXECUTION_CAPABILITIES[number];
 export type SolutionPresetModel = OpenCodeModel["model"] | ModelDefinition;
 export type SolutionRoleModelAssignments = Partial<Record<SolutionPresetRole, ModelDefinition>>;
 export interface AgentRuntimeTimeouts {
@@ -108,6 +129,7 @@ export interface SolutionLodPresetOptions {
   roleTimeouts?: Partial<Record<SolutionPresetRole, AgentRuntimeTimeouts>>;
   maxParallelActivations?: number;
   maxActivations?: number;
+  maxInspectionsPerRegion?: number;
 }
 
 export type ConnectorConfig = ConnectorDefinition | ConnectorPresetConfig;
@@ -119,12 +141,18 @@ export interface AgentCall {
   state: Record<string, unknown>;
   schema?: Record<string, unknown>;
   schemaName?: string;
-  retryCount?: number;
-  validateStructured?: (value: unknown) => unknown;
+  physicalActivationId?: string;
+  logicalActivationId?: string;
+  attemptOrdinal?: number;
+  maxAttempts?: number;
+  schemaRepair?: boolean;
+  validateStructured?: (value: unknown, diagnostics: { tools: AgentToolTrace[] }) => unknown;
   session?: AgentSessionDirective;
   limits?: AgentCallLimits;
   directory?: string;
   worktree?: string;
+  requiredCapabilities?: SolutionExecutionCapability[];
+  requiredTools?: string[];
 }
 
 export interface AgentCallResult {
@@ -135,6 +163,20 @@ export interface AgentCallResult {
   usage?: AgentUsage;
   budgetStop?: AgentBudgetStop;
   retryTrace?: AgentRetryTrace[];
+  contextTelemetry?: ActivationContextTelemetry;
+  promptAttempts?: AgentPromptAttemptTrace[];
+  schemaRetries?: number;
+  schemaRepairs?: number;
+}
+
+export interface AgentPromptAttemptTrace {
+  physicalActivationId?: string;
+  logicalActivationId?: string;
+  attemptOrdinal: number;
+  sessionId?: string;
+  kind: "initial" | "schema-repair";
+  outcome: "submitted" | "valid" | "invalid" | "interrupted";
+  validationError?: string;
 }
 
 export interface AgentRetryTrace {
@@ -171,6 +213,11 @@ export interface GraphProgressNode {
   operation?: string;
   domainPhase?: string;
   domainFingerprint?: string | null;
+  boundaryFingerprint?: string | null;
+  enumerationFingerprint?: string | null;
+  boundDomainFingerprint?: string | null;
+  boundaryVariables?: number;
+  permittedPairs?: number;
   acceptedFingerprint?: string | null;
   cegarRound?: number;
   challengeVerdict?: string | null;
@@ -182,12 +229,17 @@ export interface GraphProgressNode {
 export interface SolutionSemanticSnapshot {
   kind: "solution-lod-v2";
   revision: number;
-  regions: Array<{ id: string; key: string; parentId?: string; edge: "root" | "refines" | "partOf"; lod: number; objective: string; status: string; viable: number; total: number; selectedCandidateIds: string[]; candidateIds: string[]; constraintIds: string[]; evidenceIds: string[]; activationIds: string[]; artifactIds: string[]; scopeId?: string; domainPhase?: string; domainFingerprint?: string | null; acceptedFingerprint?: string | null; cegarRound?: number; challengeVerdict?: string | null; blockedReason?: string }>;
+  regions: Array<{ id: string; key: string; parentId?: string; edge: "root" | "refines" | "partOf"; lod: number; objective: string; status: string; viable: number; total: number; selectedCandidateIds: string[]; candidateIds: string[]; constraintIds: string[]; evidenceIds: string[]; activationIds: string[]; artifactIds: string[]; requirementIds: string[]; scopeId?: string; domainPhase?: string; boundaryFingerprint?: string | null; enumerationFingerprint?: string | null; boundDomainFingerprint?: string | null; domainFingerprint?: string | null; acceptedFingerprint?: string | null; cegarRound?: number; progress?: import("./solution-lod/types.js").RegionProgressLedger; challengeVerdict?: string | null; blockedReason?: string; decisionBoundary?: import("./solution-lod/types.js").DecisionBoundary }>;
+  requirements: Array<{ id: string; key: string; text: string; scopeId: string; criterionId: string; evidenceRefs: string[] }>;
   candidates: Array<{ id: string; regionId: string; proposition: string; status: string; eliminationReasons: string[]; evidenceIds: string[]; stances?: Array<{ variableId: string; relation: string; valueLabel: string }> }>;
   constraints: Array<{ id: string; kind: string; subject: string; target: string; reason: string; sourceKind?: string; evidenceRefs?: string[] }>;
-  evidence: Array<{ id: string; text: string; source: string; kind: string; status?: string; validationEvidenceRefs?: string[]; validationReason?: string }>;
+  evidence: Array<{ id: string; text: string; source: string; kind: string; assertion?: string; status?: string; validationEvidenceRefs?: string[]; validationReason?: string; location?: import("./solution-lod/types.js").RepositoryEvidenceLocation; lineageKey?: string; supersedesEvidenceId?: string; statusTimeline?: import("./solution-lod/types.js").SolutionEvidence["statusTimeline"] }>;
   activations: Array<{ id: string; capability: string; regionId: string; request: string; expectedDelta: string; senderActivationId?: string; status: string; error?: string; operation?: string; domainFingerprint?: string | null }>;
-  artifacts: Array<{ id: string; regionId: string; kind: string; path?: string; summary: string; passed?: boolean; activationId: string }>;
+  artifacts: Array<{ id: string; regionId: string; kind: string; path?: string; summary: string; passed?: boolean; activationId: string; fingerprint: string; checkKind?: string; checkDisposition?: string }>;
+  findings: Array<{ id: string; regionId: string; criterionId: string; severity: string; target: import("./solution-lod/types.js").FindingTarget; route: import("./solution-lod/types.js").FindingRoute; status: string; sourceActivationId: string; repairActivationIds: string[] }>;
+  certificates: Array<{ id: string; regionId: string; requirementIds: string[]; fingerprint: string; dependencyFingerprint: string; verificationActivationId: string; createdRevision: number }>;
+  contextTelemetry?: ActivationContextTelemetry;
+  activationTelemetryRecords?: import("./solution-lod/types.js").ActivationTelemetryRecord[];
 }
 
 export interface GraphProgressSnapshot {
@@ -200,6 +252,7 @@ export interface GraphProgressSnapshot {
   summary?: string;
   usage?: AgentUsage;
   telemetry?: import("./solution-lod/types.js").SolutionTelemetry;
+  contextTelemetry?: ActivationContextTelemetry;
   semantic?: SolutionSemanticSnapshot;
   nodes: GraphProgressNode[];
 }

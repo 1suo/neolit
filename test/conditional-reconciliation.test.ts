@@ -3,7 +3,7 @@ import { initialNetwork, mergeRefinementOutput, mergeSolutionDelta, propagateNet
 import type { Activation, RefinementOutput, SolutionLodState, SolutionNetwork } from "../src/solution-lod/types.js";
 
 const child = (key: string, objective = key): RefinementOutput["children"][number] => ({ key, objective, edge: "partOf", delivery: "change", allowedVariables: ["mode"], acceptanceCriteria: [`${key} done`], coveredCriteria: [0], requirementIds: ["requirement:one"], dependencyScopeIds: ["scope:dependency"], mutationResources: [`src/${key}.ts`] });
-const state = (network: SolutionNetwork): SolutionLodState => ({ stateVersion: 8, runId: "refine", originalTask: "change", conversationContext: "", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage: { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, callsUsed: 0, startedAt: 0, result: "" });
+const state = (network: SolutionNetwork): SolutionLodState => ({ stateVersion: 10, runId: "refine", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage: { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, callsUsed: 0, startedAt: 0, result: "" });
 
 function refined(definitions: RefinementOutput["children"]): SolutionNetwork {
   const network = initialNetwork("change");
@@ -11,7 +11,7 @@ function refined(definitions: RefinementOutput["children"]): SolutionNetwork {
   root.status = "unrefined"; root.domainPhase = "selected"; root.acceptanceCriteria = ["done"]; root.criterionIds = ["criterion:scope:r1:0"];
   network.activations.push({ id: "a2", capability: "refine", regionId: "r1", request: "split", expectedDelta: "split", contextRefs: ["r1"], status: "running", basisRevision: 0 });
   root.activationIds.push("a2");
-  return mergeRefinementOutput(network, "a2", { evidence: [], children: definitions, activations: [] });
+  return mergeRefinementOutput(network, "a2", { outcome: "children", evidence: [], children: definitions });
 }
 
 function populate(network: SolutionNetwork, regionId: string): void {
@@ -23,13 +23,13 @@ function populate(network: SolutionNetwork, regionId: string): void {
   network.constraints.push({ id: "c-old", kind: "requires", subject: `${regionId}:choice`, target: "v-old:yes", reason: "old", sourceActivationId: "a-old", sourceKind: "model-inference", evidenceRefs: [] });
   const activation: Activation = { id: "a-old", capability: "inspect", regionId, request: "old", expectedDelta: "old", contextRefs: [regionId, `${regionId}:choice`, "v-old:yes"], status: "queued", basisRevision: 0 };
   network.activations.push(activation);
-  network.artifacts.push({ id: "x-old", regionId, kind: "file", path: "src/old.ts", summary: "old output", activationId: "a-old" });
+  network.artifacts.push({ id: "x-old", regionId, kind: "file", path: "src/old.ts", summary: "old output", activationId: "a-old", fingerprint: "old" });
 }
 
 function reconcile(network: SolutionNetwork, definitions: RefinementOutput["children"]): SolutionNetwork {
   network.activations.push({ id: "a3", capability: "refine", regionId: "r1", request: "reconcile", expectedDelta: "reconcile", contextRefs: ["r1"], status: "running", basisRevision: network.revision });
   network.regions[0]!.activationIds.push("a3");
-  return mergeRefinementOutput(network, "a3", { evidence: [], children: definitions, activations: [] });
+  return mergeRefinementOutput(network, "a3", { outcome: "children", evidence: [], children: definitions });
 }
 
 describe("conditional subtree reconciliation", () => {
@@ -64,7 +64,7 @@ describe("conditional subtree reconciliation", () => {
       { id: "r2:old", regionId: "r2", key: "old", proposition: "Retired prerequisite", status: "possible", declaredStatus: "possible", evidenceIds: [], eliminationReasons: [], stances: [] },
       { id: "r3:live", regionId: "r3", key: "live", proposition: "Current solution", status: "possible", declaredStatus: "possible", evidenceIds: [], eliminationReasons: [], stances: [] },
     );
-    network.evidence.push({ id: "e1", text: "The retired prerequisite is unavailable", source: "repo:1", kind: "repository", status: "confirmed", fingerprint: "e1" });
+    network.evidence.push({ id: "e1", text: "The retired prerequisite is unavailable", source: "inspection", kind: "tool", status: "confirmed", fingerprint: "e1" });
     network.constraints.push(
       { id: "c1", kind: "refutes", subject: "e1", target: "r2:old", reason: "unavailable", sourceActivationId: "a1", sourceKind: "repo-evidence", evidenceRefs: ["e1"] },
       { id: "c2", kind: "requires", subject: "r3:live", target: "r2:old", reason: "requires retired candidate", sourceActivationId: "a1", sourceKind: "model-inference", evidenceRefs: [] },
@@ -101,16 +101,25 @@ describe("conditional subtree reconciliation", () => {
     const network = initialNetwork("choose mode");
     const root = network.regions[0]!;
     root.status = "unrefined"; root.domainPhase = "selected"; root.allowedVariables = ["mode"]; root.acceptanceCriteria = ["mode works"]; root.criterionIds = ["criterion:scope:r1:0"];
-    expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children: [{ key: "same", objective: "choose mode", edge: "partOf", allowedVariables: ["mode"], acceptanceCriteria: ["mode works"], coveredCriteria: [0] }], activations: [] })).toThrow(/repeats ancestor boundary|lone partOf child/);
-    expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children: [{ key: "protocol", objective: "choose protocol", edge: "refines", unresolvedVariable: "mode", allowedVariables: ["mode"], acceptanceCriteria: ["protocol selected"], coveredCriteria: [0] }], activations: [] })).not.toThrow();
+    expect(() => validateRefinementOutput(state(network), "r1", { outcome: "children", evidence: [], children: [{ key: "same", objective: "choose mode", edge: "partOf", allowedVariables: ["mode"], acceptanceCriteria: ["mode works"], coveredCriteria: [0] }] })).toThrow(/repeats ancestor boundary|lone partOf child/);
+    expect(() => validateRefinementOutput(state(network), "r1", { outcome: "children", evidence: [], children: [{ key: "protocol", objective: "choose protocol", edge: "refines", unresolvedVariable: "mode", allowedVariables: [], acceptanceCriteria: ["protocol selected"], coveredCriteria: [0] }] })).not.toThrow();
+  });
+
+  it("ignores newly bounded resources when an inherited refinement dimension decreases", () => {
+    const network = initialNetwork("choose mode");
+    const root = network.regions[0]!;
+    root.allowedVariables = ["mode"];
+    root.acceptanceCriteria = ["mode works"];
+    root.criterionIds = ["criterion:scope:r1:0"];
+    expect(() => validateRefinementOutput(state(network), "r1", { outcome: "children", evidence: [], children: [{ key: "protocol", objective: "apply protocol", edge: "refines", unresolvedVariable: "mode", allowedVariables: [], acceptanceCriteria: ["protocol works"], coveredCriteria: [0], mutationResources: ["src/protocol.ts"] }] })).not.toThrow();
   });
 
   it("requires exact criterion and executable check witnesses for a leaf", () => {
     const network = initialNetwork("change");
     const root = network.regions[0]!;
     root.status = "unrefined"; root.domainPhase = "selected"; root.acceptanceCriteria = ["works"]; root.criterionIds = ["criterion:scope:r1:0"];
-    expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children: [], certifiedLeaf: { implementationScope: "edit source", criterionIds: ["criterion:wrong"], evidenceRefs: [], mutationResources: ["src/a.ts"], checks: [{ criterionId: "criterion:wrong", commandOrObservation: "run test" }] }, activations: [] })).toThrow(/every exact current criterion ID/);
-    expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children: [], certifiedLeaf: { implementationScope: "edit source", criterionIds: [...root.criterionIds], evidenceRefs: [], mutationResources: ["src/a.ts"], checks: root.criterionIds.map((criterionId) => ({ criterionId, commandOrObservation: "run test" })) }, activations: [] })).not.toThrow();
+    expect(() => validateRefinementOutput(state(network), "r1", { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "edit source", criterionIds: ["criterion:wrong"], requirementIds: [...(root.requirementIds ?? [])], evidenceRefs: [], mutationResources: ["src/a.ts"], checks: [{ criterionId: "criterion:wrong", commandOrObservation: "run test" }] }, atomicityWitness: { outcome: "edit source", criterionIds: ["criterion:wrong"], requirementIds: [...(root.requirementIds ?? [])], mutationResources: ["src/a.ts"], whySplittingFails: "The source edit and its check are one change." } })).toThrow(/every exact current criterion ID/);
+    expect(() => validateRefinementOutput(state(network), "r1", { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "edit source", criterionIds: [...root.criterionIds], requirementIds: [...(root.requirementIds ?? [])], evidenceRefs: [], mutationResources: ["src/a.ts"], checks: root.criterionIds.map((criterionId) => ({ criterionId, commandOrObservation: "run test" })) }, atomicityWitness: { outcome: "edit source", criterionIds: [...root.criterionIds], requirementIds: [...(root.requirementIds ?? [])], mutationResources: ["src/a.ts"], whySplittingFails: "The source edit and its check are one change." } })).not.toThrow();
   });
 
   it("rejects cyclic refinement dependencies", () => {
@@ -122,7 +131,7 @@ describe("conditional subtree reconciliation", () => {
       { key: "one", objective: "one", edge: "partOf" as const, allowedVariables: [], acceptanceCriteria: ["one"], coveredCriteria: [0], dependencyScopeIds: ["scope:r1:two"] },
       { key: "two", objective: "two", edge: "partOf" as const, allowedVariables: [], acceptanceCriteria: ["two"], coveredCriteria: [1], dependencyScopeIds: ["scope:r1:one"] },
     ];
-    expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children, activations: [] })).toThrow(/cycle/);
+    expect(() => validateRefinementOutput(state(network), "r1", { outcome: "children", evidence: [], children })).toThrow(/cycle/);
   });
 
   it("rejects refinement dependencies on an ancestor scope", () => {
@@ -131,6 +140,6 @@ describe("conditional subtree reconciliation", () => {
     root.acceptanceCriteria = ["done"];
     root.criterionIds = ["criterion:scope:r1:0"];
     const children = [{ key: "child", objective: "child", edge: "refines" as const, unresolvedVariable: "solution family", allowedVariables: ["solution family"], acceptanceCriteria: ["done"], coveredCriteria: [0], dependencyScopeIds: ["scope:r1"] }];
-    expect(() => validateRefinementOutput(state(network), "r1", { evidence: [], children, activations: [] })).toThrow(/cannot depend on ancestor scope/);
+    expect(() => validateRefinementOutput(state(network), "r1", { outcome: "children", evidence: [], children })).toThrow(/cannot depend on ancestor scope/);
   });
 });

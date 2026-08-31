@@ -83,8 +83,8 @@ techniques such as singleton collapse and minimum-remaining-values scheduling.
   checks, and TODO disposition where applicable; prose-only inventories fail.
 - [x] Make completion evidence explicitly cover implementation, direct testing,
   correctness review, and release gating before checkbox completion.
-- [x] Store typed review findings with severity, files, regression criterion, and
-  evidence; high findings block completion and therefore commit/release.
+- [x] Store durable typed findings with lifecycle, target, route, owner/evidence
+  for external blocks, and exact repair activation provenance.
 
 ## 5. Context and scheduling
 

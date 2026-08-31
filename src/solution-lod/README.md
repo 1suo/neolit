@@ -1,22 +1,28 @@
-# GRAPH.md — The `solution-lod` Graph
+# The `solution-lod` graph
 
-This document is a detailed technical description of the built-in `solution-lod` LangGraph workflow shipped with `opencode-langgraph`. The normative behavioral contract lives in [SPEC-graph.md](SPEC-graph.md); this file describes how that contract is realized in code: topology, state, nodes, edges, scheduling, and failure semantics.
+This README describes the currently shipped `solution-lod` LangGraph workflow.
+The desired normative behavior lives in [`SPEC.md`](./SPEC.md); this document
+records how the current
+implementation realizes that contract through topology, state, nodes, edges,
+scheduling, and failure semantics.
 
 Source of truth:
 
 | Concern | File |
 |---|---|
-| Graph builder, nodes, edges, context projection | `src/core/solution-lod/graph.ts` |
-| Solution network state machines (scheduling, propagation, merges) | `src/core/solution-lod/reducer.ts` |
-| State and delta types, Zod schemas, role limits | `src/core/solution-lod/types.ts` |
-| Role contracts (agents, prompts, tools, models) | `src/core/solution-lod/roles.ts` |
-| Durable file checkpointer | `src/core/durable-checkpointer.ts` |
+| Graph builder, nodes, edges, context projection | `graph.ts` |
+| Solution network state machines (scheduling, propagation, merges) | `reducer.ts` |
+| State and delta types, Zod schemas, role limits | `types.ts` |
+| Executable role graph and role contracts | `roles.ts` |
 
 ---
 
 ## 1. Purpose
 
-The graph turns one OpenCode root message into a repository-grounded **answer** or a **verified mutation** by progressively resolving the solution at the level of detail (LOD — level of detail) actually required by the task:
+The graph turns one authoritative task supplied by its host into a
+repository-grounded **answer** or a **verified mutation** by progressively
+resolving the solution at the level of detail (LOD) actually required by the
+task:
 
 - Small questions collapse quickly to an answer.
 - Large changes decompose into a tree of regions, each resolved only as finely as needed. Refinement returns either covering child regions or a certified leaf contract; implementation requires that contract, one selected candidate, and acceptance of the exact current domain fingerprint.
@@ -55,7 +61,7 @@ Node and edge inventory (from `solutionLodGraph()` in `graph.ts`):
 |---|---|---|---|
 | `schedule` | pure controller | never | Propagate the network, create any missing controller-initiated work, pick the next activation batch, or terminate/blocked |
 | `acquire` | controller side effect | never | Take the worktree lease before a mutating batch (`langgraphAcquireWorktree` from config) |
-| `activate` | agent boundary | **yes — the only one** | Run one activation in an isolated OpenCode child session; produce one `ActivationTaskResult` |
+| `activate` | agent boundary | **yes — the only one** | Call the host runtime once for one activation; produce one `ActivationTaskResult` |
 | `merge` | pure controller | never | Deterministically apply the finished batch's records to the network (propagation, supersession, usage accounting) |
 | `finish` | pure controller | never | Derive the final result string |
 
@@ -72,18 +78,81 @@ finish                       → END
 
 The loop `schedule → activate → merge → schedule` repeats until `schedule` sets a terminal `result` (phase `completed` or `blocked`), at which point the next routing goes to `finish`.
 
+### 2.1 Role relationship graph
+
+This is not a fixed pipeline. Each arrow is a controller-observable outcome from the executable `SOLUTION_ROLE_GRAPH` in `src/solution-lod/roles.ts`.
+
+<!-- BEGIN GENERATED SOLUTION ROLE GRAPH -->
+```mermaid
+flowchart LR
+  I[inspect]
+  G[generate-domain]
+  C[challenge-domain]
+  S[select-candidate]
+  R[refine]
+  M[implement]
+  P[present]
+  V[verify]
+  Done((completed))
+  Block((blocked))
+
+  I -->|facts| I
+  I -->|facts| C
+  I -->|facts| R
+  I -->|boundary| G
+  I -->|need-fact| I
+  I -->|need-fact| Block
+  I -->|decompose| I
+  I -->|certified| M
+  I -->|already-satisfied| V
+  I -->|answer| V
+  G -->|candidates| C
+  C -->|accept| S
+  C -->|counterexample| C
+  C -->|counterexample| Block
+  C -->|boundary-counterexample| I
+  C -->|boundary-counterexample| Block
+  C -->|needs-fact| I
+  S -->|selected| R
+  S -->|hard-constraint| C
+  S -->|needs-fact| I
+  S -->|needs-fact| Block
+  R -->|boundary| G
+  R -->|need-fact| I
+  R -->|leaf| M
+  R -->|leaf| P
+  R -->|children| I
+  M -->|completed| V
+  M -->|already-satisfied| V
+  M -->|blocked| C
+  M -->|blocked| Block
+  P -->|answer| V
+  V -->|pass| Done
+  V -->|repair| M
+  V -->|repair| P
+  V -->|repair| Block
+  V -->|reopen| I
+  V -->|reopen| C
+  V -->|reopen| Block
+  V -->|fail| Block
+```
+<!-- END GENERATED SOLUTION ROLE GRAPH -->
+
+The diagram is topology, not a generic interpreter. Reducer branches choose among an outcome's legal targets from delivery type, evidence state, and bounded-loop state. CEGAR, no-progress, reopen, retry, and semantic-cycle limits can select a declared `blocked` target; those state-dependent explanations remain here rather than becoming extra graph outcomes.
+
+Executable coverage for the declared outcomes and role permissions lives in `test/role-relationship-graph.test.ts`.
+
 ---
 
 ## 3. State
 
-### 3.1 `SolutionLodState` (graph state, `stateVersion: 8`)
+### 3.1 `SolutionLodState` (graph state, `stateVersion: 11`)
 
 | Field | Type / reducer | Meaning |
 |---|---|---|
-| `stateVersion` | literal `8` | Checkpoint schema version; runs recorded under older schemas are rejected with a start-fresh message |
+| `stateVersion` | literal `11` | Checkpoint schema version; runs recorded under older schemas are rejected with a start-fresh message |
 | `runId` | string | Run identifier |
-| `originalTask` | string | The immutable original user message |
-| `conversationContext` | string | Compact frame of the preceding root conversation |
+| `network.authority` | `SolutionAuthorityFrame` | Exact task and admitted authoritative messages; diagnostic context remains untrusted |
 | `directory` / `worktree` | string | Project directory and (leased) worktree path |
 | `phase` | string | Human/UI phase label, e.g. `inspect:r3`, `batch:3`, `propagating`, `activation-deferred`, `completed`, `blocked` |
 | `activeActivationId` | string \| undefined | Set only when the dispatched batch is a singleton **implement** (used to gate `acquire`) |
@@ -103,23 +172,33 @@ A single append-mostly document holding both orthogonal structures plus bookkeep
 {
   revision,                       // monotonic; bumped on every semantic change
   nextRegionId, nextEvidenceId, nextConstraintId,
-  nextActivationId, nextArtifactId,
+  nextActivationId, nextArtifactId, nextFindingId, nextCertificateId,
   regions:     SolutionRegion[],
   candidates:  SolutionCandidate[],
   constraints: SolutionConstraint[],
   evidence:    SolutionEvidence[],
   activations: Activation[],
   artifacts:   SolutionArtifact[],
+  findings:    SolutionFinding[],
+  certificates: CompletionCertificate[],
 }
 ```
 
-- **Region** (`r1`, `r2`, …): `{key, parentId?, parentCandidateId?, edge: root|refines|partOf, lod, objective, delivery: answer|change, allowedVariables, acceptanceCriteria, status, candidateIds, selectedCandidateIds, constraintIds, evidenceIds, activationIds, artifactIds, domainPhase, domainFingerprint, acceptedFingerprint, cegarRound, challengeVerdict, answer?, contradiction?, coveredCriteria?}`. A normal task starts as root region `r1`; an independently verifiable bundle starts as an AND-container with one controller-scoped `partOf` child per material task. The current synthesis `operation` and its basis fingerprint belong to the activation, not the region.
+- **Region** (`r1`, `r2`, …): owns its objective, delivery mode,
+  criteria, scope, local decision boundary, domain fingerprints, selected
+  candidates, resources, lifecycle status, and separate progress ledgers. A
+  normal task starts as root region `r1`; an independently verifiable bundle
+  starts as an AND-container with one controller-scoped `partOf` child per
+  material task. The current synthesis operation and its basis fingerprint
+  belong to the activation, not the region.
 - **Candidate** (`r3:switch-parser` style ids): one mutually exclusive solution family within a region; status `possible | eliminated | selected` (interchangeability is derived from `equivalent` constraints, never authored), with elimination reasons, evidence references, and `stances: [{variableId, relation: requires|excludes|prefers, valueLabel}]` positioning the move on shared choices.
 - **Shared choice** (`v1`, … / DecisionVariable): `{id, name (globally unique slug), ownerRegionId, seedLabels[]}` — visible only in the owner's subtree; values exist as normalized labels inside stances/bindings, no registry. The primal variable graph (edges from co-occurrence within one move's stances or one constraint) must stay an acyclic forest — enforced at merge via union-find.
 - **Constraint**: hard relationship `requires | excludes | equivalent` between candidate endpoints, evidence relationship `supports | refutes` with kind-checked endpoints (`refutes`/`excludes` may also target coordinates `choiceName:option` when backed by ≥1 cited confirmed fact), plus provenance `sourceKind: user-task|repo-evidence|model-inference` and resolved `evidenceRefs`. Model deltas may not claim `user-task`; that source is reserved for trusted controller-authored state. Acceptance criteria and permissions are region policy, not constraint edges.
-- **Evidence**: normalized facts deduplicated by a sha256 fingerprint of `(text, source)`; kind `repository | tool | inference | user`. Stored once, passed around by id.
-- **Activation** (`a1`, `a2`, …): `{capability, regionId, request, expectedDelta, contextRefs, senderActivationId?, status: queued|running|completed|failed|superseded, basisRevision, sessionId?, error?}`.
-- **Artifact** (`x1`, …): observed outputs — `file` (with path), `check` (with pass/fail), `answer`.
+- **Evidence**: normalized facts deduplicated by a sha256 fingerprint of kind, proposition, source, assertion, and repository location; kind `repository | tool | inference | user`. Repository chunk IDs are activation-local citations mapped directly to controller-issued evidence IDs, while durable semantic references use those evidence IDs. Stored once, passed around by id.
+- **Activation** (`a1`, `a2`, …): `{capability, regionId, request, expectedDelta, contextRefs, findingIds?, senderActivationId?, status: queued|running|completed|failed|superseded, basisRevision, sessionId?, error?}`. Repair activations cite exact durable finding IDs.
+- **Artifact** (`x1`, …): fingerprinted observed outputs — `file` (with measured content fingerprint), typed `check` (`focused | release | verification`), `answer`, or non-authoritative review detail.
+- **Finding** (`f1`, …): criterion-linked defect with `open | repairing | resolved | superseded` lifecycle, a typed `files | answer | environment | external` target, and a controller-derived `local-repair | answer-repair | reopen-decision | blocked-external` route.
+- **Completion certificate** (`k1`, …): controller-derived leaf proof containing exact selected-family/equivalence proof, premise, dependency-certificate, artifact, check, resolved-finding, and verifier references plus deterministic dependency and certificate fingerprints.
 
 ### 3.3 Initial state
 
@@ -138,7 +217,7 @@ r1 (root, lod 0, unformed, delivery: change)
 ### 4.1 `schedule` — the controller's decision point
 
 1. **Propagate and create work.** Calls `ensureRunnableWork(network, width)` which first runs constraint propagation to a fixed point, then — if nothing is queued — creates the next controller-initiated activation by region lifecycle (see §6): `implement`/`present` for `actionable`, `verify` for `implemented`, `refine` for `unrefined`, `synthesize` for `contradiction`, and for the unresolved frontier (`unformed`/`superposed`) it queues up to `width` `inspect`/`synthesize` activations so read-only work can fan out across siblings.
-2. **Terminal outcomes.** If all live regions are `verified` (or `collapsed` with children) → `phase: "completed"` with `finalResult(state)`. If no novel delta is possible → `phase: "blocked"` with a precise reason string. Both set `result`, which routes the conditional edge to `finish`.
+2. **Terminal outcomes.** If every required leaf has a currently valid completion certificate (with collapsed parents covered by those leaves) → `phase: "completed"` with `finalResult(state)`. If no novel delta is possible → `phase: "blocked"` with a precise reason string. Both set `result`, which routes the conditional edge to `finish`.
 3. **Select the batch.** `selectActivationBatch(network, width)` orders queued activations by `(basisRevision, numeric id)`:
    - if the head is a **mutating** capability (`implement`, `verify`) → a singleton batch (mutations never run in parallel);
    - otherwise → up to `width` read-only activations (`inspect`, `synthesize`, `refine`, `present`) on **pairwise distinct regions** (`width = 1` reproduces sequential execution; default `width = 3`).
@@ -167,15 +246,15 @@ Given one activation task:
 3. Selects the output schema by capability and operation:
    | Capability | Zod schema |
    |---|---|
-| `inspect` | `SolutionDeltaSchema` |
-| `synthesize:generate-domain` | generation schema: one to seven distinct candidates (one only when no materially different alternative exists); no selection or elimination |
-| `synthesize:challenge-domain` | challenge schema: exact-fingerprint `accept`, one `counterexample`, or one `needs-fact` |
+| `inspect` | `InspectionOutputSchema` |
+| `synthesize:generate-domain` | generation schema: every distinct candidate (one only when no materially different alternative exists); no selection or elimination |
+| `synthesize:challenge-domain` | challenge schema: exact-fingerprint `accept`, one `counterexample`, one `boundary-counterexample`, or one `needs-fact` |
 | `synthesize:select-candidate` | selection schema: compare every viable candidate against the accepted fingerprint |
    | `refine` | `RefinementOutputSchema` |
    | `implement` | `ImplementationOutputSchema` |
    | `verify` | `VerificationOutputSchema` |
    | `present` | `PresentationOutputSchema` |
-4. Calls `runtime.call({agent, node: "capability:regionId", state, limits, schema, validateStructured, prompt})` — one isolated OpenCode child session per activation, with the capability's role limits as the scheduling quantum and `projectActivationContext` (§7) as the prompt. `validateStructured` additionally runs controller-side semantic validation (`validateSolutionDelta`, `validateRefinementOutput`) before the output is accepted.
+4. Calls `runtime.call({agent, node: "capability:regionId", state, limits, schema, validateStructured, prompt})` once for the activation, with the capability's role limits as the scheduling quantum and the dependency-projected context (§7) as the prompt. The host decides how to isolate or resume its execution session. `validateStructured` additionally runs controller-side semantic validation before output is accepted.
 5. Produces exactly one `ActivationTaskResult`:
    - structured success → `outcome: "applied"` with a `networkDelta` of kind `delta | refinement | implementation | verification | presentation` (implement also records the diff of actually changed files between the two workspace snapshots);
    - scheduling-quantum stop (`budgetStop`) → `outcome: "deferred"`; the region stays actionable and the activation can be rescheduled on a new revision;
@@ -196,24 +275,28 @@ Then the unconditional edge returns to `schedule`.
 
 ### 4.6 `finish`
 
-Returns `{result}` — `state.result` if already set, otherwise `finalResult(state)`: the joined verified answers for answer regions, or a summary of verified change regions with their changed files. → `END`.
+Returns `{result}` — `state.result` if already set, otherwise `finalResult(state)`: answers and changed files are read only from currently valid certificate-backed artifacts, never historical region artifacts. → `END`.
 
 ---
 
 ## 5. Capabilities and role contracts
 
-All role contracts (OpenCode agent, system prompt, tool policy, model default, max steps) live in `roles.ts`; per-run limits default from `DEFAULT_SOLUTION_ROLE_LIMITS`:
+All shipped role contracts—default host-facing agent name, system prompt, tool
+policy, inherited-model marker, and maximum steps—live in `roles.ts`. A host may
+map these bindings to its own runtime. Per-run limits default from
+`DEFAULT_SOLUTION_ROLE_LIMITS`:
 
-| Capability | OpenCode agent | Tools | Default quantum (turns / context) | Produces |
+| Capability | Default agent binding | Tools | Default quantum (turns / context) | Produces |
 |---|---|---|---|---|
-| `inspect` | `langgraph-inspector` | read/grep/glob/codesearch (no shell, no edit) | 32 / 160k | Facts; promotes `unformed → superposed` |
+| `inspect` | `langgraph-inspector` | scoped `graph_discover`/`graph_request_scope`/`graph_search`/`graph_read` only | 32 / 160k | Facts; promotes `unformed → superposed` |
 | `synthesize` | `langgraph-synthesizer` | none | 8 / 96k | One bounded operation: generate a domain, challenge it, or select from an accepted domain |
 | `refine` | `langgraph-refiner` | none | 8 / 96k | Either exclusively owned covering children or one certified bounded leaf contract |
-| `implement` | `build` | edit tools (no question/task) | 32 / 160k | One computed-implementable change region |
-| `verify` | `langgraph-verifier` | read tools + bash (no edit) | 16 / 96k | `pass | repair | reopen | fail` verdict with findings mapped to regions |
+| `implement` | `langgraph-implementer` | scoped graph reads + edit/write/apply_patch + bash | 32 / 160k | One computed-implementable change region |
+| `verify` | `langgraph-verifier` | scoped graph reads + bash (no edit/write/apply_patch) | 16 / 96k | `pass | repair | reopen | fail` verdict with findings mapped to regions |
 | `present` | `plan` | none | 4 / 48k | The rendered answer for a read-only region |
 
-Models default to `"inherit"` (the parent OpenCode message's model) and are per-session assignable via `/graph-models` or `.opencode/langgraph.ts`.
+Models use the host-resolved `"inherit"` marker by default. Concrete model
+selection and per-session overrides are host responsibilities.
 
 ---
 
@@ -234,7 +317,9 @@ Models default to `"inherit"` (the parent OpenCode message's model) and are per-
                                                                                    verified
 ```
 
-Controller scheduling in `ensureRunnableWork` follows this lifecycle with priority: queued work first, then — in order — an `actionable` region gets `implement`/`present`, an `implemented` region gets `verify`, an `unrefined` region gets `refine`, and the unresolved frontier gets inspection or exactly one synthesis operation. A decision region proceeds `generate-domain → challenge-domain → select-candidate`; acceptance must cite its exact current fingerprint and every viable candidate. A counterexample adds at most one candidate and re-challenges, with two repair rounds and seven candidates as hard bounds. Admission guards prevent selection, singleton collapse, refinement, or implementation until `acceptedFingerprint === domainFingerprint`.
+Controller scheduling in `ensureRunnableWork` follows this lifecycle with priority: queued work first, then — in order — an `actionable` region gets `implement`/`present`, an `implemented` region gets `verify`, an `unrefined` region gets `refine`, and the unresolved frontier gets inspection or exactly one synthesis operation. Repair work receives exact open finding IDs; successful work moves those findings to `repairing`, and only the subsequent cited verification pass resolves them and creates the leaf certificate. Dependency readiness and terminal audit use certificate validity rather than the `verified` label. Invalid certificates reconcile only their owning region to the smallest safe frontier. A decision region proceeds `generate-domain → challenge-domain → select-candidate`; acceptance must cite its exact current fingerprint and every viable candidate.
+
+Inspection convergence uses `region.inspectionObligationIds`, initialized from stable criterion IDs, and at most two physical passes. The breadth pass covers every open obligation; the gap pass covers only unresolved criteria and contradictions. `criterionEvidence` closes only named obligations with task or confirmed repository evidence, and fact-only output that closes nothing is rejected. When no obligations remain, inspection performs one contradiction check and returns the boundary. A challenge or selection fact request must name one criterion ID and reopens only that obligation, while a boundary counterexample reopens all criterion obligations before rebuilding the domain.
 
 ---
 
@@ -272,9 +357,9 @@ Durable facts are stored once in `evidence` and passed by id. Only explicit `con
 
 ## 9. Terminality, refinement, and reopening
 
-Refinement must return exactly one of two forms. Covering children have unique names, exclusive criterion ownership, and collectively cover every parent criterion; they start `unformed` with no copied evidence and carry `edge: refines` (a later choice) or `partOf` (an independent deliverable). A certified leaf instead records every stable criterion ID, a bounded implementation scope that is not an estimate or deferred follow-up, and only confirmed evidence references. The controller marks the region actionable only when that leaf contract exists, the exact current domain is accepted, and exactly one candidate is selected.
+Refinement must return exactly one of two forms. Covering children have unique names and collectively cover every parent criterion; multiple children may contribute to one cross-cutting criterion. They start `unformed` with no copied evidence and carry `edge: refines` (a later choice) or `partOf` (an independent deliverable). Before returning a certified leaf, refinement attempts a two-way partition. A leaf records every stable criterion and material requirement ID, bounded mutation resources, executable checks, only confirmed evidence references, and an exact atomicity witness explaining why splitting would overlap ownership, require unresolved coordination, or merely wrap the same change. The controller marks the region actionable only when that leaf contract exists, the exact current domain is accepted, and exactly one candidate is selected.
 
-For a multi-task request, the root is an AND-container rather than an OR-domain. Every material root requirement and criterion belongs to exactly one stable child scope. Each child currently follows the normal inspection and, when it contains a decision, bounded generation/challenge/selection lifecycle before refinement, implementation, and verification. Completion audits scope coverage, dependencies, mutation conflicts, and verification of every live child; blocked children are reported without removing completed siblings. A shorter fixed-correction lifecycle remains future work.
+For a multi-task request, the root is an AND-container rather than an OR-domain. Every material root requirement and criterion belongs to exactly one stable child scope. Each child follows normal inspection and, when it contains a decision, the bounded generation/challenge/selection lifecycle before refinement, implementation, and verification. Completion audits scope coverage, dependencies, mutation conflicts, and verification of every live child; blocked children are reported without removing completed siblings. Repository-certified corrections can take the focused inspect → implement → verify path, and already-satisfied work can proceed directly from inspection to verification.
 
 Invalidation is surgical: a new synthesis selection drops the previous refinement subtree; a verifier `reopen` does the same for the targeted region and resets its candidates. A verifier `fail` blocks rather than reopening. Unrelated collapsed regions, global evidence, and observed artifacts survive.
 
@@ -294,31 +379,50 @@ Invalidation is surgical: a new synthesis selection drops the previous refinemen
 
 ---
 
-## 11. Checkpointing, inspect/prune/resume
+## 11. Checkpointing and host-managed recovery
 
-- The graph compiles with `DurableFileSaver` (dependency-free, atomic per-thread file checkpoints under `$OPENCODE_LANGGRAPH_STATE_HOME` or `~/.local/state/opencode-langgraph/checkpoints`), so the run survives process restarts. Every intermediate `{network, phase, …}` write is a checkpoint.
-- `langgraph_inspect` reads status/phase/network without mutation; a queued run before its first checkpoint reports `no-checkpoint-yet`.
-- `langgraph_prune <regionId>` (with optional `objective`/`allowedVariables`/`acceptanceCriteria` overrides) reopens a region, drops its subtree, clears stale activations/retry counters, and writes the repaired network back as node `__start__`.
-- `langgraph_resume` continues from the checkpoint (`Command.resume(answer)` for `interrupted`, `invoke(null)` for `pruned`), emitting fresh events.
+- The graph accepts any LangGraph `BaseCheckpointSaver`; the default
+  `DurableFileSaver` writes atomic per-thread checkpoints under
+  `$OPENCODE_LANGGRAPH_STATE_HOME` or
+  `~/.local/state/opencode-langgraph/checkpoints`.
+- Every state-bearing controller transition is checkpointable. Compatible
+  state can therefore resume after process restart through the host's normal
+  LangGraph invocation flow.
+- The reducer exports targeted reopening and subtree invalidation operations.
+  A host may expose inspect, prune, pause, or resume controls around those
+  primitives, but Neolit does not define that host API, run registry, or UI.
 
 ---
 
 ## 12. Progress, display, and configuration
 
-- `progress(state)` produces the F8 semantic snapshot (`solution-lod-v2`): regions with LOD/viable-domain counts and optional v8 operation/domain/CEGAR diagnostics, candidates with statuses, constraints, evidence, activations, artifacts, usage, and phase. The TUI tolerates absent v8 diagnostics while reading an early or custom snapshot.
-- `display` maps nodes to phases for the TUI: `schedule → collapse`, `acquire → lease`, `activate → activate`, `merge → propagate`, `finish → result`.
-- Options (`SolutionLodOptions`): `agents` (model per capability), `roleLimits` (per-capability scheduling quantum), `maxParallelActivations` (default `3`), `checkpointer`. Example:
+- `progress(state)` produces the semantic snapshot (`solution-lod-v2`): regions
+  with LOD, boundary, viable-domain, progress-ledger, finding, certificate, and
+  CEGAR diagnostics plus candidates, constraints, evidence, activations,
+  artifacts, telemetry, usage, and phase.
+- `display` maps graph nodes to host-neutral phase labels: `schedule → collapse`,
+  `acquire → lease`, `activate → activate`, `merge → propagate`, and
+  `finish → result`.
+- `SolutionLodOptions` includes role-to-agent assignments, role limits,
+  `maxParallelActivations` (default `3`), optional `maxActivations`, optional
+  `maxInspectionsPerRegion` (which may lower the controller's hard two-pass cap),
+  run limits, and a checkpointer. Example:
 
 ```ts
-export default defineOpenCodeLangGraph({
-  version: 1,
-  preset: "solution-lod",
-  options: {
-    models: { inspect: "deepseek/deepseek-v4-flash", implement: "inherit" },
-    roleLimits: { inspect: { maxTurns: 32, maxContextTokens: 160_000 } },
-    maxParallelActivations: 3,
+const configured = solutionLodGraph({
+  agents: {
+    inspect: "inspector",
+    synthesize: "synthesizer",
+    refine: "refiner",
+    implement: "implementer",
+    verify: "verifier",
+    present: "presenter",
   },
-})
+  maxParallelActivations: 3,
+  maxActivations: 256,
+  maxInspectionsPerRegion: 2,
+  checkpointer,
+});
 ```
 
 ---
