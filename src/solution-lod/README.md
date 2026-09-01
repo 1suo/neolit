@@ -342,7 +342,7 @@ Inspection convergence uses `region.inspectionObligationIds`, initialized from s
 | `verify` | `chosenApproach`, `changeToCheck` |
 | `present` | `answerToWrite` |
 
-Durable facts are stored once in `evidence` and passed by id. Only explicit `contextRefs`, the current candidate slice, visible ancestor-owned variables, and stable selected lineage are projected; unrelated evidence/artifacts and cousin-private variables do not grow the prompt. Inference enters as `hypothesis`. Only an inspector validation backed by independent confirmed repository/tool/user evidence may make it `confirmed` or `rejected`; model-authored status fields have no authority.
+Durable facts are stored once in `evidence` and passed by id. Only explicit `contextRefs`, the current candidate slice, visible ancestor-owned variables, and stable selected lineage are projected; unrelated evidence/artifacts and cousin-private variables do not grow the prompt. Inference enters as `hypothesis`. Only an inspector validation backed by independent confirmed repository/tool/user evidence may make it `confirmed` or `rejected`; activation-local repository chunk citations are resolved to their controller-issued evidence IDs during that validation, and model-authored status fields have no authority.
 
 ---
 

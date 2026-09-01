@@ -1381,14 +1381,15 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
   if (delta.evidence.some((item) => item.kind === "user")) throw new Error("Model output cannot create user evidence. User authority is the immutable task reference, cited as evidenceRefs: [\"task\"].");
   if (capability !== "inspect" && delta.evidence.some((item) => item.kind !== "inference")) throw new Error("This tool-free role cannot create confirmed repository/tool evidence. Reuse supplied evidence IDs, return a new inference hypothesis, or request one specific inspection.");
   const evidenceRefs = new Set(["task", ...state.network.evidence.map((item) => item.id), ...delta.evidence.map((item) => item.source)]);
+  const suppliedEvidence = (ref: string) => delta.evidence.find((item) => item.source === ref || reads.some((read) => read.chunkId === ref && item.location && JSON.stringify(read.location) === JSON.stringify(item.location)));
   const confirmedRef = (ref: string) => {
     if (ref === "task") return true;
     const existing = state.network.evidence.find((item) => item.id === ref);
     if (existing) return isConfirmedEvidence(state.network, ref);
-    const supplied = delta.evidence.find((item) => item.source === ref);
+    const supplied = suppliedEvidence(ref);
     return Boolean(supplied && supplied.kind !== "inference" && supplied.kind !== "user");
   };
-  const groundingKind = (ref: string) => ref === "task" ? "user" : state.network.evidence.find((item) => item.id === ref)?.kind ?? delta.evidence.find((item) => item.source === ref)?.kind;
+  const groundingKind = (ref: string) => ref === "task" ? "user" : state.network.evidence.find((item) => item.id === ref)?.kind ?? suppliedEvidence(ref)?.kind;
   if (capability !== "inspect" && (delta.validations?.length ?? 0) > 0) throw new Error("Only inspection may validate an unresolved claim.");
   for (const validation of delta.validations ?? []) {
     const claim = state.network.evidence.find((item) => item.id === validation.claimRef);

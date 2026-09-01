@@ -122,6 +122,24 @@ describe("v9 admitted decision boundaries", () => {
     expect(() => inspectionOutputToDelta(output, [{ ...tools[0], metadata: { repositoryDescriptor: { chunkId: "other", ...location } } }])).toThrow(/does not match a successful repository observation/);
   });
 
+  it("validates a hypothesis through a repository chunk authored in the same inspection", () => {
+    const network = initialNetwork("inspect"); network.activations[0]!.status = "running";
+    network.evidence.push({ id: "e1", text: "The ledger may be complete", source: "model", kind: "inference", status: "hypothesis", fingerprint: "claim" });
+    network.nextEvidenceId = 2;
+    network.regions[0]!.evidenceIds.push("e1");
+    const location = { canonicalPath: "TODO.md", range: [1, 4] as [number, number], fileDigest: "todo", snapshotEpoch: 2 };
+    const tools = [{ tool: "graph_read", status: "completed" as const, metadata: { repositoryDescriptor: { chunkId: "chunk-proof", ...location } } }];
+    const output = InspectionOutputSchema.parse({
+      outcome: "facts",
+      evidence: [{ text: "The ledger is complete", source: "TODO.md:1-4", kind: "repository", chunkId: "chunk-proof" }],
+      validations: [{ claimRef: "e1", verdict: "confirmed", evidenceRefs: ["chunk-proof"], reason: "observed in the ledger" }],
+    });
+    const delta = inspectionOutputToDelta(output, tools);
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", delta, tools)).not.toThrow();
+    const landed = applyActivationOutput(state(network), network.activations[0]!, delta, [], tools);
+    expect(landed.evidence.find((item) => item.id === "e1")).toMatchObject({ status: "confirmed", validationEvidenceRefs: ["e2"] });
+  });
+
   it("requires an authored observation for a repository chunk cited by criterion evidence", () => {
     const location = { canonicalPath: "TODO.md", range: [4, 8] as [number, number], fileDigest: "todo", snapshotEpoch: 1 };
     const tools = [{ tool: "graph_read", status: "completed" as const, metadata: { repositoryDescriptor: { chunkId: "todo-chunk", ...location } } }];
