@@ -134,6 +134,25 @@ export function inspectLinkedWorktrees(rootInput: string): RepositoryToolRespons
   const worktrees = records.map((record) => {
     const fields = Object.fromEntries(record.split("\n").map((line) => { const separator = line.indexOf(" "); return separator < 0 ? [line, true] : [line.slice(0, separator), line.slice(separator + 1)]; }));
     if (typeof fields.worktree !== "string") throw new Error("Git returned a worktree record without a path.");
+    if (!fs.existsSync(fields.worktree)) {
+      const worktree = path.resolve(fields.worktree);
+      return {
+        id: digest(`${commonDirectory}\0${worktree}`).slice(0, 24),
+        path: worktree,
+        current: false,
+        head: typeof fields.HEAD === "string" ? fields.HEAD : null,
+        branch: typeof fields.branch === "string" ? fields.branch : fields.detached ? "detached" : null,
+        available: false,
+        unavailableReason: "registered worktree path does not exist",
+        status: "",
+        changedPaths: [],
+        commitsRelativeToCurrent: "",
+        diffStat: "",
+        changeFingerprint: digest(`${commonDirectory}\0${worktree}\0unavailable`),
+        diffChunks: [],
+        truncated: false,
+      };
+    }
     const worktree = fs.realpathSync(fields.worktree);
     const candidateCommon = fs.realpathSync(git(worktree, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).trim());
     if (candidateCommon !== commonDirectory) throw new Error(`Git worktree escaped the current repository: ${worktree}`);
@@ -151,7 +170,7 @@ export function inspectLinkedWorktrees(rootInput: string): RepositoryToolRespons
     const untrackedDigests = untracked.slice(0, 500).map((changedPath) => `${changedPath}\0${git(worktree, ["hash-object", "--", changedPath]).trim()}`);
     const changeFingerprint = digest(`${rawDiff}\0${untrackedDigests.join("\n")}`);
     repositoryReadChars += status.text.length + diffStat.text.length + commits.text.length;
-    return { id: worktreeId, path: worktree, current: worktree === root, head: typeof fields.HEAD === "string" ? fields.HEAD : null, branch: typeof fields.branch === "string" ? fields.branch : fields.detached ? "detached" : null, status: status.text, changedPaths, commitsRelativeToCurrent: commits.text, diffStat: diffStat.text, changeFingerprint, diffChunks: changedPaths.map((changedPath) => ({ path: changedPath, chunkId: digest(`${worktreeId}\0${changedPath}\0${changeFingerprint}`).slice(0, 24) })), truncated: status.truncated || diffStat.truncated || commits.truncated || changedPaths.length === 500 };
+    return { id: worktreeId, path: worktree, current: worktree === root, head: typeof fields.HEAD === "string" ? fields.HEAD : null, branch: typeof fields.branch === "string" ? fields.branch : fields.detached ? "detached" : null, available: true, unavailableReason: null, status: status.text, changedPaths, commitsRelativeToCurrent: commits.text, diffStat: diffStat.text, changeFingerprint, diffChunks: changedPaths.map((changedPath) => ({ path: changedPath, chunkId: digest(`${worktreeId}\0${changedPath}\0${changeFingerprint}`).slice(0, 24) })), truncated: status.truncated || diffStat.truncated || commits.truncated || changedPaths.length === 500 };
   });
   const value = { currentHead, observationDigest: digest(JSON.stringify(worktrees)), worktrees };
   return { value, repositoryReadChars, duplicateReadCharsAvoided: 0 };

@@ -330,6 +330,10 @@ leases, permissions, completion, or verification acceptance to learned control.
 - [ ] Add per-region presentation, repair, verification, and reopen-cycle limits
   keyed by semantic input/output fingerprints; block on repeated no-progress
   cycles well before the 256-activation run ceiling.
+- [ ] Preserve useful typed partial evidence when a host scheduling quantum
+  expires. Resume from an explicit continuation cursor when available, and
+  block repeated unchanged fingerprints instead of rerunning the whole
+  activation without semantic progress.
 - [ ] Prevent an answer-region `repair` from producing unbounded
   `present -> verify -> repair` cycles without changed evidence or output.
 - [ ] Record the repeated fingerprints and exact unresolved criteria in the

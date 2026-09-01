@@ -79,4 +79,22 @@ describe("exported scoped repository service", () => {
     const inventory = new ScopedRepositoryService(root).inspectWorktrees().value as { worktrees: Array<{ changedPaths: string[]; diffChunks: Array<{ path: string }> }> };
     expect(inventory.worktrees[0]).toMatchObject({ changedPaths: ["README.md"], diffChunks: [{ path: "README.md" }] });
   });
+
+  it("keeps valid worktrees inspectable when a registered worktree path is missing", () => {
+    const root = repository();
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "base"], { cwd: root });
+    const stale = `${root}-stale`;
+    roots.push(stale);
+    execFileSync("git", ["worktree", "add", "--detach", "-q", stale], { cwd: root });
+    fs.rmSync(stale, { recursive: true, force: true });
+    fs.writeFileSync(path.join(root, "README.md"), "changed docs\n");
+
+    const inventory = new ScopedRepositoryService(root).inspectWorktrees().value as { worktreeCount: number; worktrees: Array<{ path: string; available: boolean; unavailableReason: string | null; changedPaths: string[] }> };
+
+    expect(inventory.worktreeCount).toBe(2);
+    expect(inventory.worktrees.find((worktree) => worktree.path === root)).toMatchObject({ available: true, changedPaths: ["README.md"] });
+    expect(inventory.worktrees.find((worktree) => worktree.path === stale)).toMatchObject({ available: false, unavailableReason: "registered worktree path does not exist", changedPaths: [] });
+  });
 });

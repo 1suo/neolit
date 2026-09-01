@@ -223,6 +223,10 @@ The reference host is [`opencode-langgraph`](https://github.com/1suo/opencode-la
 an OpenCode plugin that wraps this package with child sessions, permissions,
 a TUI, and run storage.
 
+Repository worktree inspection reports every registration returned by Git.
+Registrations whose paths no longer exist are marked unavailable and carry no
+diff chunks; they do not prevent valid linked worktrees from being inspected.
+
 Inspection outputs keep controller identities distinct: `factIds` reuses only
 reference IDs supplied in the prompt, while new repository observations cite
 their controller-issued chunk IDs through `evidence`; same-result references
