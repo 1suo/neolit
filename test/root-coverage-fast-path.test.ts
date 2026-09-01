@@ -321,6 +321,24 @@ describe("root coverage and certified fast path", () => {
     expect(rescheduled.network.activations.filter((item) => item.regionId === "r3" && item.status === "queued")).toHaveLength(1);
   });
 
+  it("regenerates an invalidated empty domain instead of selecting from it", () => {
+    const network = initialNetwork("choose an implementation");
+    const region = network.regions[0]!;
+    network.activations[0]!.status = "completed";
+    region.status = "superposed";
+    region.domainPhase = "selecting";
+    region.decisionBoundary = { fingerprint: "boundary", variables: [], permittedPairs: [] };
+    region.candidateIds = ["r1:retired"];
+    region.selectedCandidateIds = ["r1:retired"];
+    region.acceptedFingerprint = "retired-domain";
+
+    const scheduled = ensureRunnableWork(network);
+
+    expect(scheduled.blocked).toBeUndefined();
+    expect(scheduled.network.regions[0]).toMatchObject({ domainPhase: "ungenerated", candidateIds: [], selectedCandidateIds: [], acceptedFingerprint: null });
+    expect(selectActivationBatch(scheduled.network, 1)[0]).toMatchObject({ capability: "synthesize", operation: "generate-domain", regionId: "r1" });
+  });
+
   it("accepts a collapsed dependency after all of its descendants verify", () => {
     let network = initialNetwork("dependent changes");
     network.activations = [];

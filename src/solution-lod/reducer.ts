@@ -181,6 +181,19 @@ function transitionRegion(region: SolutionRegion, phase: SolutionRegion["domainP
 function refreshDomainControls(network: SolutionNetwork): boolean {
   let changed = false;
   for (const region of network.regions) {
+    const liveCandidateIds = region.candidateIds.filter((id) => network.candidates.some((item) => item.id === id && !item.historical));
+    if (!exactSet(liveCandidateIds, region.candidateIds)) {
+      region.candidateIds = liveCandidateIds;
+      region.selectedCandidateIds = region.selectedCandidateIds.filter((id) => liveCandidateIds.includes(id));
+      changed = true;
+    }
+    if (!region.candidateIds.length && (region.domainPhase === "challenging" || region.domainPhase === "selecting")) {
+      region.acceptedFingerprint = null;
+      region.challengeVerdict = null;
+      region.selectedCandidateIds = [];
+      transitionRegion(region, region.decisionBoundary ? "ungenerated" : "inspecting");
+      changed = true;
+    }
     const enumeration = enumerationFingerprint(network, region.id);
     const fingerprint = boundDomainFingerprint(network, region.id);
     if (region.enumerationFingerprint !== enumeration || region.boundDomainFingerprint !== fingerprint || region.domainFingerprint !== fingerprint) { region.enumerationFingerprint = enumeration; region.boundDomainFingerprint = fingerprint; region.domainFingerprint = fingerprint; changed = true; }
@@ -2562,7 +2575,7 @@ export function activationAdmitted(network: SolutionNetwork, activation: Activat
     if ((activation.boundDomainFingerprint ?? activation.domainFingerprint) !== region.boundDomainFingerprint) return false;
     return activation.operation === "generate-domain" ? region.domainPhase === "ungenerated" && Boolean(region.decisionBoundary) && region.candidateIds.length === 0
       : activation.operation === "challenge-domain" ? region.domainPhase === "challenging"
-      : activation.operation === "select-candidate" && region.domainPhase === "selecting";
+      : activation.operation === "select-candidate" && region.domainPhase === "selecting" && Boolean(region.boundDomainFingerprint) && region.candidateIds.length > 0;
   }
   if (activation.capability === "refine") return region.status === "unrefined";
   if (activation.capability === "implement") return region.status === "actionable" && region.delivery === "change";

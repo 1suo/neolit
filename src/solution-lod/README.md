@@ -271,6 +271,12 @@ Given one activation task:
 5. Runs `propagateNetwork` after every attempted record, including failed and rolled-back records, then one final idempotent pass. Derived contradictions and locks therefore cannot remain stale merely because an activation produced no accepted delta.
 6. Accumulates `usage`, increments `callsUsed` by the record count, clears `results` and `activeBatch`, and sets `phase` to `activation-failed` / `activation-deferred` / `propagating`.
 
+Domain propagation also removes dangling references to historical candidates. If
+invalidation leaves a challenging or selecting region with no live candidates,
+the controller clears stale acceptance and returns to domain generation (or to
+inspection when its decision boundary is gone); it never schedules selection
+against a null domain fingerprint.
+
 Then the unconditional edge returns to `schedule`.
 
 ### 4.6 `finish`
