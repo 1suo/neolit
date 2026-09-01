@@ -107,6 +107,8 @@ describe("prompt contracts", () => {
     expect(prompt).toContain("VALIDATION TARGETS");
     expect(prompt).toContain("when that list is empty, return validations: []");
     expect(prompt).toContain("A contradiction check compares recorded criterion verdicts and is not a hypothesis or a valid claimRef");
+    expect(prompt).toContain("Confirmed evidence that required behavior is absent, incomplete, unchecked, or contradicted means unsatisfied");
+    expect(prompt).toContain("use unknown only when the available evidence is insufficient or conflicting");
     expect(prompt).toContain("Do not choose or rank a solution");
   });
 
