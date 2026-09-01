@@ -362,6 +362,22 @@ function changedBetween(before: Map<string, string>, after: Map<string, string>)
   return [...new Set([...before.keys(), ...after.keys()])].filter((file) => before.get(file) !== after.get(file)).sort();
 }
 
+function workspaceBlock(directory: string, worktree: string): string | undefined {
+  let projectRoot: string;
+  let worktreeRoot: string;
+  try { projectRoot = fs.realpathSync(directory); }
+  catch { return undefined; }
+  try { worktreeRoot = fs.realpathSync(worktree); }
+  catch { return `Execution worktree is unavailable: ${worktree}`; }
+  if (!fs.statSync(projectRoot).isDirectory() || !fs.statSync(worktreeRoot).isDirectory()) return `Execution worktree is not a directory: ${worktree}`;
+  if (projectRoot === worktreeRoot) return undefined;
+  try {
+    const common = (root: string) => fs.realpathSync(execFileSync("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+    if (common(projectRoot) === common(worktreeRoot)) return undefined;
+  } catch { /* Distinct non-Git directories cannot establish repository identity. */ }
+  return `Execution worktree does not belong to the project repository: ${worktree}`;
+}
+
 export function repositoryEvidenceDigests(worktree: string, network: SolutionNetwork): Record<string, string> {
   const digests: Record<string, string> = {};
   if (!network.evidence.some((item) => item.kind === "repository" && item.status !== "stale" && item.location)) return digests;
@@ -471,6 +487,8 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
     .addNode("schedule", (state: SolutionLodState) => {
       const stateVersion = (state as { stateVersion?: number }).stateVersion;
       if (stateVersion !== 11) return { activeActivationId: undefined, activeBatch: [] as ActiveBatchEntry[], phase: "incompatible-checkpoint", result: `Solution LOD checkpoint stateVersion ${stateVersion ?? "missing"} is incompatible with stateVersion 11; start a fresh run.` };
+      const workspaceFailure = workspaceBlock(state.directory, state.worktree);
+      if (workspaceFailure) return { activeActivationId: undefined, activeBatch: [] as ActiveBatchEntry[], phase: "blocked", result: `The solution network is blocked: ${workspaceFailure}. Restore or remap it before resuming.` };
       const reconciled = invalidateEvidenceDigestMismatches(state.network, repositoryEvidenceDigests(state.worktree, state.network));
       const limit = blockedLimit({ ...state, network: reconciled });
       if (limit) return { network: reconciled, activeActivationId: undefined, activeBatch: [] as ActiveBatchEntry[], phase: "blocked", result: limit };

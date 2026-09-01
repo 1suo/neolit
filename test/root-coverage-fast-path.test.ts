@@ -261,6 +261,45 @@ describe("root coverage and certified fast path", () => {
     expect(applied.network.regions.find((item) => item.id === "r3")!.inspectionAttempts).toBe(1);
   });
 
+  it("caps queued inspector follow-ups before selecting another batch", () => {
+    const network = initialNetwork("inspect once more");
+    const region = network.regions[0]!;
+    network.activations[0]!.status = "completed";
+    region.status = "superposed";
+    region.domainPhase = "inspecting";
+    region.acceptanceCriteria = ["repository is observable"];
+    region.criterionIds = ["criterion:scope:r1:0"];
+    region.inspectionObligationIds = [...region.criterionIds];
+    region.inspectionAttempts = 2;
+    network.activations.push({ id: "a2", capability: "inspect", requiredCapabilities: ["repository-observe"], regionId: "r1", request: "restore the worktree", expectedDelta: "restore-worktree", contextRefs: [...region.criterionIds], status: "queued", basisRevision: network.revision });
+    region.activationIds.push("a2");
+
+    const scheduled = ensureRunnableWork(network, 1, 2);
+
+    expect(selectActivationBatch(scheduled.network, 1)).toEqual([]);
+    expect(scheduled.network.activations.find((item) => item.id === "a2")?.status).toBe("superseded");
+    expect(scheduled.network.regions[0]).toMatchObject({ status: "blocked", blockedDetails: { kind: "inspection-pass-limit" } });
+  });
+
+  it("recovers an inspection cap only when a higher configured limit permits another pass", () => {
+    const network = initialNetwork("inspect with a raised limit");
+    const region = network.regions[0]!;
+    network.activations[0]!.status = "completed";
+    region.status = "blocked";
+    region.domainPhase = "blocked";
+    region.acceptanceCriteria = ["repository is observable"];
+    region.criterionIds = ["criterion:scope:r1:0"];
+    region.inspectionObligationIds = [...region.criterionIds];
+    region.inspectionAttempts = 1;
+    region.blockedReason = "Inspection pass limit reached";
+    region.blockedDetails = { kind: "inspection-pass-limit", unresolvedCriterionIds: [...region.criterionIds] };
+
+    const scheduled = ensureRunnableWork(network, 1, 2);
+
+    expect(scheduled.blocked).toBeUndefined();
+    expect(selectActivationBatch(scheduled.network, 1)[0]).toMatchObject({ capability: "inspect", regionId: "r1" });
+  });
+
   it("queues runnable prerequisites when a dependent activation is already blocked", () => {
     const network = initialNetwork("two dependent changes");
     network.activations = [];
