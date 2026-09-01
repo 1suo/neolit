@@ -104,7 +104,9 @@ describe("prompt contracts", () => {
     expect(prompt).toContain("Non-gating unresolved claims do not prevent boundary formation");
     expect(prompt).toContain("A need-fact request must include exactly one unresolved criterionId");
     expect(prompt).toContain("Use facts only when criterionEvidence addresses at least one listed obligation");
-    expect(prompt).toContain("When no obligations remain, run one contradiction check and return boundary");
+    expect(prompt).toContain("VALIDATION TARGETS");
+    expect(prompt).toContain("when that list is empty, return validations: []");
+    expect(prompt).toContain("A contradiction check compares recorded criterion verdicts and is not a hypothesis or a valid claimRef");
     expect(prompt).toContain("Do not choose or rank a solution");
   });
 
@@ -347,6 +349,20 @@ describe("structured semantic contracts", () => {
 });
 
 describe("validation instrumentation", () => {
+  it("keeps valid inspection evidence when an optional validation targets a fabricated claim", async () => {
+    const configured = solutionLodGraph({ agents: Object.fromEntries(capabilities.map((item) => [item, item])) as Record<Capability, string>, checkpointer: new MemorySaver(), maxActivations: 1 });
+    const initial = configured.initial({ task: { id: "task-field-local", exactText: "inspect it" }, authoritativeMessages: [], directory: "/repo", worktree: "/repo", runId: "field-local" });
+    const runtime = { call: async ({ validateStructured }: { validateStructured?: (value: unknown) => unknown }) => {
+      const reported = { outcome: "boundary", region: { acceptanceCriteria: ["observed"] }, evidence: [], validations: [{ claimRef: "recorded-verdict-contradiction-check", verdict: "rejected", evidenceRefs: ["task"], reason: "comparison complete" }], criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["task"] }], decisionBoundary: { basisRevision: 0, variables: [], permittedPairs: [] } };
+      return { text: JSON.stringify(reported), structured: validateStructured?.(reported), usage };
+    } };
+    const result = await configured.graph.invoke(initial, { recursionLimit: 16, configurable: { thread_id: "field-local", langgraphOpenCodeRuntime: runtime } }) as SolutionLodState;
+    expect(result.network.regions[0]!.criterionVerdicts).toEqual([expect.objectContaining({ verdict: "satisfied", evidenceRefs: ["task"] })]);
+    expect(result.network.activations[0]!.status).toBe("completed");
+    expect(result.network.telemetry).toMatchObject({ validationFailures: 1 });
+    expect(result.network.telemetry!.regions.r1).toMatchObject({ validationFailures: 1, repairAttempts: 1 });
+  });
+
   it("records rejection and repair attempts exposed by activation telemetry", async () => {
     const configured = solutionLodGraph({ agents: Object.fromEntries(capabilities.map((item) => [item, item])) as Record<Capability, string>, checkpointer: new MemorySaver(), maxActivations: 1 });
     let network = initialNetwork("inspect it");

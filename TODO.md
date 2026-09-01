@@ -424,8 +424,12 @@ multiply model degeneration, latency, and cost.
 - [ ] Decide and document dirty-worktree policy before mutation. Continue
   preserving user changes, but warn early when a planned region overlaps an
   already dirty file instead of discovering merge friction after implementation.
-- [ ] Do not automatically commit or stash user work; offer only explicit,
-  recoverable operator actions.
+- [ ] Add a post-verification controller/host commit operation. Persist the
+  pre-mutation dirty-path set, stage exactly verified measured paths that were
+  clean at activation start, use a conventional task-scoped message, and
+  checkpoint the commit ID and tree fingerprint for idempotent crash recovery.
+  Never auto-stash, reset, discard, or include unrelated/pre-existing changes;
+  require an explicit recoverable operator action for overlapping dirty paths.
 - [ ] Prevent execution-mechanism changes from silently abandoning an active
   run. Require cancellation/confirmation and provide a handoff summary with the
   current choices, evidence, artifacts, and unfinished frontier when switching
