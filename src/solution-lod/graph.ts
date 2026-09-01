@@ -114,13 +114,15 @@ export function canonicalizeActivationOutput<Output>(state: SolutionLodState, ac
   return value as Output;
 }
 
-function sanitizeInspectionValidations(state: SolutionLodState, activation: Activation, output: InspectionOutput): { output: InspectionOutput; ignoredClaimRefs: string[] } {
+function sanitizeInspectionValidations(state: SolutionLodState, activation: Activation, output: InspectionOutput): { output: InspectionOutput; ignoredClaimRefs: string[]; clearedUnresolvedEvidenceClaimRefs: string[] } {
   const value = structuredClone(output);
-  if (!value.validations?.length) return { output: value, ignoredClaimRefs: [] };
+  if (!value.validations?.length) return { output: value, ignoredClaimRefs: [], clearedUnresolvedEvidenceClaimRefs: [] };
   const liveHypotheses = new Set(projectActivationContext(state, activation).unresolvedClaims.map((item) => item.referenceId));
   const ignoredClaimRefs = value.validations.filter((item) => !liveHypotheses.has(item.claimRef)).map((item) => item.claimRef);
   value.validations = value.validations.filter((item) => liveHypotheses.has(item.claimRef));
-  return { output: value, ignoredClaimRefs: [...new Set(ignoredClaimRefs)].sort() };
+  const clearedUnresolvedEvidenceClaimRefs = value.validations.filter((item) => item.verdict === "unresolved" && item.evidenceRefs.length > 0).map((item) => item.claimRef);
+  for (const validation of value.validations) if (validation.verdict === "unresolved") validation.evidenceRefs = [];
+  return { output: value, ignoredClaimRefs: [...new Set(ignoredClaimRefs)].sort(), clearedUnresolvedEvidenceClaimRefs: [...new Set(clearedUnresolvedEvidenceClaimRefs)].sort() };
 }
 
 function lineage(network: SolutionNetwork, regionId: string) {
@@ -538,6 +540,7 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
           const sanitized = sanitizeInspectionValidations(state, activation, canonical as InspectionOutput);
           canonical = sanitized.output as typeof canonical;
           if (sanitized.ignoredClaimRefs.length) validationFailures.push(`Ignored optional validations for non-live or unprojected claimRefs: ${sanitized.ignoredClaimRefs.join(", ")}.`);
+          if (sanitized.clearedUnresolvedEvidenceClaimRefs.length) validationFailures.push(`Cleared evidenceRefs from unresolved optional validations: ${sanitized.clearedUnresolvedEvidenceClaimRefs.join(", ")}.`);
         }
         const output = activation.capability === "inspect" ? inspectionOutputToDelta(canonical as InspectionOutput, diagnostics.tools) : canonical as ActivationOutput; applyActivationOutput(state, activation, output, changedFiles, diagnostics.tools); return canonical; } catch (error) { validationFailures.push(errorMessage(error)); throw error; } }, prompt: promptText });
         const base = { sessionId: result.sessionId, usage: result.usage ?? { ...EMPTY_USAGE }, tools: result.tools?.map((tool) => ({ ...tool })), contextTelemetry: result.contextTelemetry ? { ...result.contextTelemetry } : undefined, retries: result.retryTrace?.length ?? 0, retryTrace: result.retryTrace?.map((trace) => ({ ...trace })), promptAttempts: result.promptAttempts?.map((trace) => ({ ...trace })), schemaRetries: result.schemaRetries ?? 0, schemaRepairs: result.schemaRepairs ?? 0 };
@@ -575,6 +578,7 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
           const canonical = canonicalizeActivationOutput(state, activation, structured(result, schema as ZodType<InspectionOutput>));
           const sanitized = sanitizeInspectionValidations(state, activation, canonical);
           if (sanitized.ignoredClaimRefs.length) validationFailures.push(`Ignored optional validations for non-live or unprojected claimRefs: ${sanitized.ignoredClaimRefs.join(", ")}.`);
+          if (sanitized.clearedUnresolvedEvidenceClaimRefs.length) validationFailures.push(`Cleared evidenceRefs from unresolved optional validations: ${sanitized.clearedUnresolvedEvidenceClaimRefs.join(", ")}.`);
           const output = sanitized.output;
           const delta = inspectionOutputToDelta(output, result.tools);
           applyActivationOutput(state, activation, delta, [], result.tools);

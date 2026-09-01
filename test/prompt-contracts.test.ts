@@ -360,7 +360,24 @@ describe("validation instrumentation", () => {
     } };
     const result = await configured.graph.invoke(initial, { recursionLimit: 16, configurable: { thread_id: "field-local", langgraphOpenCodeRuntime: runtime } }) as SolutionLodState;
     expect(result.network.regions[0]!.criterionVerdicts).toEqual([expect.objectContaining({ verdict: "satisfied", evidenceRefs: ["task"] })]);
-    expect(result.network.activations[0]!.status).toBe("completed");
+    expect(result.network.activations).toContainEqual(expect.objectContaining({ capability: "inspect", status: "completed" }));
+    expect(result.network.telemetry).toMatchObject({ validationFailures: 1 });
+    expect(result.network.telemetry!.regions.r1).toMatchObject({ validationFailures: 1, repairAttempts: 1 });
+  });
+
+  it("keeps valid inspection evidence when an unresolved validation attaches evidence", async () => {
+    const configured = solutionLodGraph({ agents: Object.fromEntries(capabilities.map((item) => [item, item])) as Record<Capability, string>, checkpointer: new MemorySaver(), maxActivations: 1 });
+    const initial = configured.initial({ task: { id: "task-unresolved-evidence", exactText: "inspect it" }, authoritativeMessages: [], directory: "/repo", worktree: "/repo", runId: "unresolved-evidence" });
+    initial.network.evidence.push({ id: "e1", text: "A hypothesis", source: "model", kind: "inference", status: "hypothesis", fingerprint: "hypothesis-1" });
+    initial.network.regions[0]!.evidenceIds.push("e1");
+    const runtime = { call: async ({ validateStructured }: { validateStructured?: (value: unknown) => unknown }) => {
+      const reported = { outcome: "boundary", region: { acceptanceCriteria: ["observed"] }, evidence: [], validations: [{ claimRef: "e1", verdict: "unresolved", evidenceRefs: ["task"], reason: "not enough evidence" }], criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["task"] }], decisionBoundary: { basisRevision: 0, variables: [], permittedPairs: [] } };
+      return { text: JSON.stringify(reported), structured: validateStructured?.(reported), usage };
+    } };
+    const result = await configured.graph.invoke(initial, { recursionLimit: 16, configurable: { thread_id: "unresolved-evidence", langgraphOpenCodeRuntime: runtime } }) as SolutionLodState;
+    expect(result.network.regions[0]!.criterionVerdicts).toEqual([expect.objectContaining({ verdict: "satisfied", evidenceRefs: ["task"] })]);
+    expect(result.network.evidence.find((item) => item.id === "e1")!.status).toBe("hypothesis");
+    expect(result.network.activations).toContainEqual(expect.objectContaining({ capability: "inspect", status: "completed" }));
     expect(result.network.telemetry).toMatchObject({ validationFailures: 1 });
     expect(result.network.telemetry!.regions.r1).toMatchObject({ validationFailures: 1, repairAttempts: 1 });
   });
