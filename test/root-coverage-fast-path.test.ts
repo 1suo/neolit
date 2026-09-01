@@ -261,8 +261,8 @@ describe("root coverage and certified fast path", () => {
     expect(applied.network.regions.find((item) => item.id === "r3")!.inspectionAttempts).toBe(1);
   });
 
-  it("caps queued inspector follow-ups before selecting another batch", () => {
-    const network = initialNetwork("inspect once more");
+  it("runs a focused inspection queued by synthesis after the initial inspection passes", () => {
+    const network = initialNetwork("inspect a decision-relevant fact");
     const region = network.regions[0]!;
     network.activations[0]!.status = "completed";
     region.status = "superposed";
@@ -271,14 +271,17 @@ describe("root coverage and certified fast path", () => {
     region.criterionIds = ["criterion:scope:r1:0"];
     region.inspectionObligationIds = [...region.criterionIds];
     region.inspectionAttempts = 2;
-    network.activations.push({ id: "a2", capability: "inspect", requiredCapabilities: ["repository-observe"], regionId: "r1", request: "restore the worktree", expectedDelta: "restore-worktree", contextRefs: [...region.criterionIds], status: "queued", basisRevision: network.revision });
-    region.activationIds.push("a2");
+    network.activations.push(
+      { id: "a2", capability: "synthesize", operation: "challenge-domain", requiredCapabilities: ["reasoning"], regionId: "r1", request: "challenge", expectedDelta: "challenge", contextRefs: [], status: "completed", basisRevision: network.revision },
+      { id: "a3", capability: "inspect", requiredCapabilities: ["repository-observe"], regionId: "r1", request: "inspect the reopened criterion", expectedDelta: "focused-fact", contextRefs: [...region.criterionIds], senderActivationId: "a2", status: "queued", basisRevision: network.revision },
+    );
+    region.activationIds.push("a2", "a3");
 
     const scheduled = ensureRunnableWork(network, 1, 2);
 
-    expect(selectActivationBatch(scheduled.network, 1)).toEqual([]);
-    expect(scheduled.network.activations.find((item) => item.id === "a2")?.status).toBe("superseded");
-    expect(scheduled.network.regions[0]).toMatchObject({ status: "blocked", blockedDetails: { kind: "inspection-pass-limit" } });
+    expect(scheduled.blocked).toBeUndefined();
+    expect(selectActivationBatch(scheduled.network, 1)).toEqual([expect.objectContaining({ id: "a3", capability: "inspect" })]);
+    expect(scheduled.network.regions[0]).toMatchObject({ status: "superposed", domainPhase: "inspecting" });
   });
 
   it("recovers an inspection cap only when a higher configured limit permits another pass", () => {

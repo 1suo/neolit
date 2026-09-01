@@ -2848,27 +2848,15 @@ function currentContextRefs(network: SolutionNetwork, refs: string[]): string[] 
 export function ensureRunnableWork(input: SolutionNetwork, width = 1, maxInspectionsPerRegion = Number.POSITIVE_INFINITY): { network: SolutionNetwork; done: boolean; blocked?: string } {
   let network = reconcileCompletionState(propagateNetwork(input));
   const inspectionLimit = Math.min(2, maxInspectionsPerRegion);
-  let inspectionStateChanged = false;
+  let recoveredInspectionLimit = false;
   for (const region of network.regions) {
     if (region.status !== "blocked" || region.blockedDetails?.kind !== "inspection-pass-limit" || (region.inspectionAttempts ?? 0) >= inspectionLimit) continue;
     transitionRegion(region, "inspecting", undefined, region.evidenceIds.length ? "superposed" : "unformed");
     region.blockedDetails = undefined;
     region.contradiction = undefined;
-    inspectionStateChanged = true;
+    recoveredInspectionLimit = true;
   }
-  for (const region of network.regions) {
-    if (!(["unformed", "superposed"].includes(region.status) && region.domainPhase === "inspecting") || (region.inspectionAttempts ?? 0) < inspectionLimit) continue;
-    for (const activation of network.activations.filter((item) => item.regionId === region.id && item.capability === "inspect" && item.status === "queued")) {
-      activation.status = "superseded";
-      activation.error = `Superseded: inspection pass limit reached for ${region.id}.`;
-    }
-    const unresolvedCriterionIds = region.inspectionObligationIds ?? region.criterionIds;
-    const verdicts = (region.criterionVerdicts ?? []).filter((item) => unresolvedCriterionIds.includes(item.criterionId)).map((item) => `${item.criterionId}=${item.verdict}`).join(",") || "unreported";
-    transitionRegion(region, "blocked", `Inspection pass limit reached for ${region.id}: used=${region.inspectionAttempts ?? 0} limit=${inspectionLimit}; unresolvedCriterionIds=${unresolvedCriterionIds.join(",") || "none"}; verdicts=${verdicts}.`, "blocked");
-    region.blockedDetails = { kind: "inspection-pass-limit", unresolvedCriterionIds: [...unresolvedCriterionIds] };
-    inspectionStateChanged = true;
-  }
-  if (inspectionStateChanged) network.revision++;
+  if (recoveredInspectionLimit) network.revision++;
   if (selectActivationBatch(network, width).length) return { network, done: false };
   const required = network.regions;
   const terminal = required.length > 0 && required.every((region) => region.completionCertificateId && isCompletionCertificateValid(network, region.completionCertificateId) || region.status === "collapsed" && network.regions.some((child) => child.parentId === region.id));
