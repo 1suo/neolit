@@ -128,12 +128,17 @@ describe("prompt contracts", () => {
   it("renders selected lineage once for refinement and implementation", () => {
     const current = generated();
     current.network.regions[0]!.selectedCandidateIds = ["r1:native"];
+    current.network.regions[0]!.mutationResources = ["src", "test/runtime.test.ts"];
     const occurrences = (prompt: string) => prompt.match(/Use native transport/g)?.length ?? 0;
     for (const capability of ["refine", "implement"] as const) {
       const prompt = compileActivationPrompt(current, { ...current.network.activations[0]!, capability });
       expect(prompt).toContain("CHOSEN APPROACH");
       expect(prompt).not.toContain("FIXED DECISIONS");
       expect(occurrences(prompt)).toBe(1);
+      if (capability === "refine") {
+        expect(prompt).toContain("PARENT MUTATION RESOURCES (exact partition units)");
+        expect(prompt).toContain("do not replace a parent entry with narrower descendant paths");
+      }
     }
     const verify = compileActivationPrompt(current, { ...current.network.activations[0]!, capability: "verify" });
     expect(verify).toContain("FIXED DECISIONS");
