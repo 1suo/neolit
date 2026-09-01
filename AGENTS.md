@@ -1,7 +1,8 @@
 # AGENTS.md
 
-This repository treats its structure and documentation as part of the product.
-Keep code, tests, and the documents that explain their contracts in sync.
+This repository operates in strict documentation-first mode. Its structure and
+documentation are part of the product. Keep code, tests, and the documents that
+explain their contracts in sync.
 
 ## Start with the contract
 
@@ -30,6 +31,33 @@ When implementation and a README disagree, correct the README or code in the
 same change. When implementation differs from the SPEC, do not falsify either
 document to make them agree: record or update the gap in the appropriate TODO.
 Change the SPEC only when the desired contract itself changes.
+
+## Documentation topology (C4)
+
+C4 levels describe documentation scope, not runtime architecture. Use the
+smallest level that accurately owns a contract:
+
+- **System — always:** the root `README.md` explains the project purpose,
+  public seam, technology and repository conventions, major containers or
+  components, and critical project-wide flows.
+- **Container — optional:** add a README only for a separately deployable unit
+  that runs independently. Do not treat an ordinary source directory as a
+  container.
+- **Component — required for non-obvious functional units:** a nearby README
+  explains the component's responsibility, architecture, dependencies, data
+  flow, extension points, and validation.
+- **Code — optional:** document a subcomponent only when several files share a
+  complex local contract that is not clear from the component README and code.
+
+When creating or changing a README:
+
+1. Determine its C4 level and exact ownership boundary.
+2. Read the actual code and identify only the entry points, dependencies, data
+   structures, flows, patterns, and unusual decisions needed to maintain it.
+3. Write concise, current facts. Do not guess, add placeholders, reproduce
+   obvious file structure, or duplicate a canonical contract.
+4. Link the parent, related components, and project-wide flows where the
+   relationship matters.
 
 ## Keep the codebase legible while it grows
 
@@ -74,11 +102,59 @@ Change the SPEC only when the desired contract itself changes.
 - Add telemetry before adding optimization machinery, and require measured
   evidence that the machinery improves its target.
 
-Use an isolated Git worktree when parallel agents or overlapping tasks could
-otherwise interfere. A dedicated worktree is not required for a read-only
-review or a single-user change already taking place in an explicitly shared
-workspace. Commit or push only when the user asks or the surrounding workflow
-explicitly requires it.
+## Task workflow
+
+### Phase 0: verify documentation
+
+Before implementation, verify that the System README and the nearest relevant
+Component README exist and contain enough accurate architecture, contracts,
+flows, and links to proceed without guessing. Create or correct the owning
+documentation before, or together with, implementation.
+
+### Phase 1: assemble context
+
+Read the canonical README/SPEC/TODO documents and only the directly relevant
+code. Follow links far enough to understand every contract consumed or changed
+by the task. If code and documentation disagree, resolve the discrepancy rather
+than silently choosing one.
+
+### Phase 2: implement completely
+
+Implement the full requested outcome without placeholders or speculative scope.
+Handle the relevant edge cases, change only task-owned code, follow existing
+patterns, and continue until implementation, documentation, and validation are
+complete or a concrete blocker is reported.
+
+### Phase 3: synchronize documentation
+
+Update the owning README whenever implementation changes architecture, public
+contracts, data flow, extension points, or unusual behavior. Update the relevant
+TODO when a known SPEC gap is closed, changed, or newly discovered. Do not alter
+another agent's notes or claim unfinished work as complete.
+
+### Phase 4: commit safely
+
+Completed work must be committed unless the user explicitly asks for an
+uncommitted handoff. Before staging, inspect `git status --short`, preserve
+unrelated work, and stage only task-owned files.
+
+1. Commit implementation and tests first with an appropriate conventional
+   prefix such as `feat:`, `fix:`, `refactor:`, or `test:`.
+2. Documentation and task-ledger changes may accompany the implementation when
+   inseparable, or use a separate `docs:` commit when that keeps ownership
+   clearer.
+3. If the repository has a designated integration branch, use that branch and
+   its documented worktree/merge protocol; do not invent a replacement branch
+   convention.
+4. Use an isolated Git worktree when parallel agents or overlapping tasks could
+   interfere. A dedicated worktree is unnecessary for read-only review or an
+   explicitly shared single-user change.
+5. Do not amend, rewrite, revert, or otherwise alter existing history unless the
+   user explicitly requests it.
+
+At handoff, report commit hashes, validation performed, and remaining untracked
+or unstaged files. Push only when requested or required by the surrounding
+workflow.
 
 ## Tests
 
