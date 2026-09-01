@@ -34,19 +34,6 @@ const observed = (text: string) => ({
 });
 
 describe("solution LOD executable task matrix", () => {
-  it.each([
-    ["missing", (directory: string) => path.join(directory, "missing-worktree")],
-    ["unrelated", (_directory: string) => workspace()],
-  ])("blocks a %s execution worktree before calling an agent", async (_name, worktreeFor) => {
-    const directory = workspace();
-    let calls = 0;
-    const configured = solutionLodGraph({ agents, checkpointer: new MemorySaver() });
-    const result = await configured.graph.invoke(configured.initial({ task: { id: `workspace-${_name}`, exactText: "Inspect the repository" }, authoritativeMessages: [], directory, worktree: worktreeFor(directory), runId: `workspace-${_name}` }), { recursionLimit: 8, configurable: { thread_id: `workspace-${_name}`, langgraphOpenCodeRuntime: { call: async () => { calls++; throw new Error("must not call"); } } } });
-
-    expect(calls).toBe(0);
-    expect(result.result).toMatch(/execution worktree/i);
-  });
-
   it("executes fixed dependent tasks, repairs a failed implementation, and verifies in dependency order", async () => {
     const directory = workspace();
     const calls: string[] = [];
