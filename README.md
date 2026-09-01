@@ -212,6 +212,11 @@ harness-neutral error protocol: its kind distinguishes startup, transport,
 inactivity, schema, and semantic failures and preserves session, tool, usage,
 and progress evidence for bounded recovery.
 
+When the host project directory is locally reachable, the controller requires
+the execution worktree to exist. When the paths differ, their Git common
+directory must match; a missing or unrelated worktree blocks immediately
+without spending an agent call. Virtual runtimes may supply non-local paths.
+
 Hosts may supply `langgraphAcquireWorktree`,
 `langgraphPrepareVerifierWorkspace`, `langgraphReleaseVerifierWorkspace`, and
 `langgraphSnapshotWorkspace` through LangGraph's configurable state. The host
