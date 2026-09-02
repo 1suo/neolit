@@ -15,8 +15,9 @@ describe("inspection schema-failure recovery (regression: run 1cd79e7f)", () => 
   it("supplies the canonical non-decomposed root requirement binding", () => {
     const network = initialNetwork("check TODO-process-designer.md");
     const prompt = compileActivationPrompt(state(network), network.activations[0]!);
-    expect(prompt).toContain('bind every materialRequirement with scopeKey "r1" and criterionIndex');
-    expect(prompt).toContain("variable, criterion, requirement, and scope IDs are not valid scopeKey values");
+    expect(prompt).toContain("first define observable region.acceptanceCriteria");
+    expect(prompt).toContain('bind every materialRequirement with scopeKey "r1" and the zero-based criterionIndex');
+    expect(prompt).toContain("Do not omit criterionIndex");
   });
 
   it("keeps factIds durable-only and resolves same-result chunk references to evidence ids", () => {

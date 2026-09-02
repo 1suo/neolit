@@ -84,7 +84,8 @@ describe("prompt contracts", () => {
     const current = state();
     const rootPrompt = compileActivationPrompt(current, current.network.activations[0]!);
     expect(rootPrompt).toContain("For independent deliverables, use outcome=decompose with one taskScope per deliverable");
-    expect(rootPrompt).toContain('bind every materialRequirement with scopeKey "r1" and criterionIndex');
+    expect(rootPrompt).toContain("first define observable region.acceptanceCriteria");
+    expect(rootPrompt).toContain('bind every materialRequirement with scopeKey "r1" and the zero-based criterionIndex');
     expect(rootPrompt).toContain("Use dependencyScopeIds only for real execution ordering");
     current.network.regions.push({ ...structuredClone(current.network.regions[0]!), id: "r2", key: "child", parentId: "r1", edge: "partOf", scopeId: "scope:r2", activationIds: [] });
     const child: Activation = { ...current.network.activations[0]!, id: "a2", regionId: "r2", contextRefs: ["r2"] };

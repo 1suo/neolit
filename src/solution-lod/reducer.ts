@@ -1147,6 +1147,7 @@ function bindRequirement(
     const ownerIndex = scopes.findIndex((scope) => slug(scope.key) === slug(requirement.scopeKey ?? ""));
     if (ownerIndex < 0) throw new Error(`Material requirement ${requirement.key} cites unknown ${noun} "${requirement.scopeKey ?? ""}". Use scopeKey ${scopes.map((scope) => `"${scope.key}"`).join(" or ")} with criterionIndex.`);
     const criteria = scopes[ownerIndex]!.acceptanceCriteria;
+    if (!criteria.length) throw new Error(`Material requirement ${requirement.key} cannot bind because ${noun} "${scopes[ownerIndex]!.key}" has no acceptance criteria. In this same output, define observable region.acceptanceCriteria first, then bind every material requirement with scopeKey and its zero-based criterionIndex.`);
     const index = requirement.criterionIndex ?? -1;
     const criterion = criteria[index];
     if (criterion === undefined) throw new Error(`Material requirement ${requirement.key} cites criterion #${index} of ${noun} "${requirement.scopeKey ?? scopes[ownerIndex]!.key}", which has only ${criteria.length}.`);

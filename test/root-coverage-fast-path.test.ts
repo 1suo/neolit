@@ -183,6 +183,15 @@ describe("root coverage and certified fast path", () => {
     expect(merged.activations.some((item) => item.capability === "synthesize" || item.capability === "refine")).toBe(false);
   });
 
+  it("directs an initial boundary to define criteria before binding requirements", () => {
+    const network = initialNetwork("add behavior and prove it");
+    const delta = SolutionDeltaSchema.parse({
+      decisionBoundary: { basisRevision: 0, variables: [], permittedPairs: [] },
+      materialRequirements: [{ key: "behavior", text: "Add the behavior", scopeKey: "r1", criterionIndex: 0, evidenceRefs: ["task"] }],
+    });
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", delta)).toThrow(/define observable region\.acceptanceCriteria first/);
+  });
+
   it("takes inspect -> already satisfied -> verify without synthesis, refinement, or implementation", () => {
     const network = initialNetwork("verify existing behavior");
     network.activations[0]!.status = "running";
