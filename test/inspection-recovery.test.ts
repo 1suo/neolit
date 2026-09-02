@@ -81,6 +81,40 @@ describe("inspection schema-failure recovery (regression: run 1cd79e7f)", () => 
     expect(() => validateSolutionDelta(state(network), "r1", "inspect", delta, tools)).toThrow(/decision boundary requires evidence closure[\s\S]*criterionEvidence/);
   });
 
+  it("treats an empty optional criteria projection as no rewrite of an established child scope", () => {
+    const network = initialNetwork("deliver two independent changes");
+    const region = network.regions[0]!;
+    region.edge = "partOf";
+    region.scopeId = "scope:r1:child";
+    region.acceptanceCriteria = ["implementation exists", "test passes"];
+    region.criterionIds = ["criterion:scope:r1:child:0", "criterion:scope:r1:child:1"];
+    region.inspectionObligationIds = [...region.criterionIds];
+    network.activations[0]!.status = "running";
+    const output = InspectionOutputSchema.parse({
+      outcome: "boundary",
+      region: { acceptanceCriteria: [] },
+      evidence: [],
+      factIds: [],
+      criterionEvidence: [
+        { criterionIndex: 0, verdict: "unsatisfied", evidenceRefs: ["task"], reason: "missing" },
+        { criterionIndex: 1, verdict: "unsatisfied", evidenceRefs: ["task"], reason: "missing" },
+      ],
+      decisionBoundary: {
+        basisRevision: network.revision,
+        variables: [{ key: "approach", name: "approach", ownerRegionId: "r1", seedLabels: ["direct"], evidenceRefs: ["task"] }],
+        permittedPairs: [],
+      },
+    });
+    const delta = inspectionOutputToDelta(output, []);
+    expect(() => validateSolutionDelta(state(network), "r1", "inspect", delta)).not.toThrow();
+    const merged = mergeSolutionDelta(state(network), "a1", delta);
+    expect(merged.regions[0]).toMatchObject({
+      acceptanceCriteria: ["implementation exists", "test passes"],
+      criterionIds: ["criterion:scope:r1:child:0", "criterion:scope:r1:child:1"],
+      inspectionObligationIds: [],
+    });
+  });
+
   it("surfaces the exhausting failure when blocked and re-queues failure-aware inspection once context changes", () => {
     const network = initialNetwork("check TODO-process-designer.md");
     const a1 = network.activations[0]!;

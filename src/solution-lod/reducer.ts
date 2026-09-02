@@ -1217,9 +1217,10 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
     if (delta.evidence.some((item) => item.kind === "tool")) throw new Error("Inspection cannot author confirmed tool evidence. Use kind 'repository' with an exact repository observation descriptor, or return an inference hypothesis.");
     if (delta.candidates.length || delta.constraints.length || delta.select.length || delta.variables?.length)
       throw new Error("Inspection may report sourced facts or a complete answer, but may not propose, reject, constrain, select solution alternatives, or declare shared choices.");
-    const criteria = delta.region?.acceptanceCriteria ?? region.acceptanceCriteria;
-    const criterionIds = delta.region?.acceptanceCriteria ? criteria.map((_, index) => `criterion:${region.scopeId}:${index}` as CriterionId) : region.criterionIds;
-    const unresolved = new Set(delta.region?.acceptanceCriteria ? criterionIds : region.inspectionObligationIds ?? region.criterionIds);
+    const proposedCriteria = delta.region?.acceptanceCriteria?.length ? delta.region.acceptanceCriteria : undefined;
+    const criteria = proposedCriteria ?? region.acceptanceCriteria;
+    const criterionIds = proposedCriteria ? criteria.map((_, index) => `criterion:${region.scopeId}:${index}` as CriterionId) : region.criterionIds;
+    const unresolved = new Set(proposedCriteria ? criterionIds : region.inspectionObligationIds ?? region.criterionIds);
     const mapped = new Set<number>();
     const settled = new Set<number>();
     for (const item of delta.criterionEvidence) {
@@ -1227,7 +1228,7 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
       mapped.add(item.criterionIndex);
       const criterionId = criterionIds[item.criterionIndex];
       if (!criterionId) throw new Error(`Inspection cites unknown criterion #${item.criterionIndex}.`);
-      if (!unresolved.has(criterionId) && !delta.region?.acceptanceCriteria) throw new Error(`Inspection criterion ${criterionId} is already closed.`);
+      if (!unresolved.has(criterionId) && !proposedCriteria) throw new Error(`Inspection criterion ${criterionId} is already closed.`);
       if (!item.evidenceRefs.every((ref) => ref === "task" || isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error(`Inspection criterion ${criterionId} requires task or confirmed repository/tool evidence.`);
       const verdict = item.verdict ?? "satisfied";
       if (verdict !== "satisfied" && !item.reason) throw new Error(`Inspection criterion ${criterionId} requires a reason for verdict ${verdict}.`);
@@ -1256,7 +1257,7 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
         if (!requirement.evidenceRefs.every((ref) => ref === "task" || isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error(`Material requirement ${requirement.key} requires task or confirmed repository/tool evidence.`);
       }
       if (!delta.taskScopes?.length) {
-        const criteria = delta.region?.acceptanceCriteria ?? region.acceptanceCriteria;
+        const criteria = proposedCriteria ?? region.acceptanceCriteria;
         for (const requirement of delta.materialRequirements) bindRequirement(requirement, [{ key: region.id, acceptanceCriteria: criteria }], "root criterion");
       }
     }
@@ -1330,7 +1331,7 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
     }
     if (delta.alreadySatisfied) {
       if (region.delivery !== "change" || delta.candidates.length || delta.constraints.length || delta.taskScopes?.length || delta.certifiedVerdict) throw new Error("Already-satisfied inspection is valid only for one unchanged repository state without a competing domain or task split.");
-      const criteria = delta.region?.acceptanceCriteria ?? region.acceptanceCriteria;
+      const criteria = proposedCriteria ?? region.acceptanceCriteria;
       const indexes = delta.alreadySatisfied.criterionEvidence.map((item) => item.criterionIndex).sort((left, right) => left - right);
       if (!criteria.length || JSON.stringify(indexes) !== JSON.stringify(criteria.map((_, index) => index))) throw new Error("Already-satisfied inspection requires exactly one evidence mapping for every criterion position.");
       for (const item of delta.alreadySatisfied.criterionEvidence) if (!item.evidenceRefs.every((ref) => isConfirmedEvidence(state.network, ref) || suppliedSources.has(ref))) throw new Error(`Already-satisfied criterion #${item.criterionIndex} requires confirmed repository/tool evidence.`);
@@ -1689,7 +1690,7 @@ export function mergeSolutionDelta(state: SolutionLodState, activationId: string
       const next = [...new Set(delta.region.allowedVariables.map(normalize).filter(Boolean))];
       if (JSON.stringify(next) !== JSON.stringify(region.allowedVariables)) { region.allowedVariables = next; changed = true; }
     }
-    if (delta.region.acceptanceCriteria) {
+    if (delta.region.acceptanceCriteria?.length) {
       const next = [...new Set(delta.region.acceptanceCriteria.map(normalize).filter(Boolean))];
       if (JSON.stringify(next) !== JSON.stringify(region.acceptanceCriteria)) { region.acceptanceCriteria = next; region.criterionIds = next.map((_, index) => `criterion:${region.scopeId}:${index}` as const); region.inspectionObligationIds = [...region.criterionIds]; region.criterionVerdicts = []; region.inspectionAttempts = 0; changed = true; }
     }
