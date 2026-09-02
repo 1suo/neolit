@@ -135,7 +135,9 @@ render supported results.
 
 The scheduler works on the unresolved frontier, propagates before calling a
 model, performs derivable transitions without a model, and may parallelize
-independent read-only work. Mutations are serialized behind a worktree lease.
+independent read-only work. Change roles mutate isolated baseline mirrors;
+clean replay, commit creation, and user-worktree landing are serialized behind
+a repository lease and remain host-owned controller operations.
 
 Efficiency comes from bounded domains and counterexample rounds, MRV ordering,
 lazy refinement, dependency-projected prompts, normalized deduplication,
@@ -213,8 +215,10 @@ inactivity, schema, and semantic failures and preserves session, tool, usage,
 and progress evidence for bounded recovery.
 
 Hosts may supply `langgraphAcquireWorktree`,
-`langgraphPrepareVerifierWorkspace`, `langgraphReleaseVerifierWorkspace`, and
-`langgraphSnapshotWorkspace` through LangGraph's configurable state. The host
+`langgraphPrepareImplementationWorkspace`, `langgraphPrepareVerifierWorkspace`,
+`langgraphIntegrateVerifiedWorkspace`, `langgraphReleaseVerifierWorkspace`, and
+`langgraphSnapshotWorkspace` through LangGraph's configurable state. Change
+delivery requires the preparation and integration hooks; the host
 owns process isolation, UI, persistence integration, and concrete tool
 execution; Neolit owns state-machine legality, evidence authority, propagation,
 CEGAR gating, refinement contracts, completion, and checkpoint semantics.

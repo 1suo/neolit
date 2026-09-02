@@ -23,6 +23,14 @@ it("does not invalidate worktree evidence when repository observation is unavail
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
+it("treats a landed controller mutation digest as the new evidence epoch", () => {
+  const network = initialNetwork("change");
+  network.evidence.push({ id: "e1", text: "old source fact", source: "src/x.ts", kind: "repository", status: "confirmed", fingerprint: "e1", location: { canonicalPath: "src/x.ts", range: [1, 1], fileDigest: "old", snapshotEpoch: 0 }, controllerVerified: { activationId: "a1", tool: "graph_read" } });
+  network.regions[0]!.integration = { status: "landed", implementationActivationId: "a2", baselineFingerprint: "baseline", changedFiles: ["src/x.ts"], landedFileFingerprints: { "src/x.ts": "accepted" } };
+  expect(invalidateEvidenceDigestMismatches(network, { "src/x.ts": "accepted" }).evidence[0]!.status).toBe("confirmed");
+  expect(invalidateEvidenceDigestMismatches(network, { "src/x.ts": "external-change" }).evidence[0]!.status).toBe("stale");
+});
+
 function bounded(): SolutionNetwork {
   const network = initialNetwork("choose");
   network.activations[0]!.status = "running";

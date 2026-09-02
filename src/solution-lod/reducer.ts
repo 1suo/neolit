@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ActivationContextTelemetry, AgentToolTrace, SolutionExecutionCapability } from "../types.js";
-import type { Activation, ActivationOutput, ActivationReadRef, ActivationTaskResult, CandidateSelectionOutput, Capability, CandidateStance, CompletionCertificate, ContextRefKind, CriterionId, DecisionBoundaryProposal, DecisionVariable, DomainChallengeOutput, DomainGenerationOutput, FindingRoute, ImplementationOutput, InspectionCriterionResult, InspectionOutput, ProgressLedgerEntry, RefinementOutput, RepositoryEvidenceLocation, RequirementId, ScopeId, SemanticCycleKind, SolutionAuthorityFrame, SolutionCandidate, SolutionConstraint, SolutionDelta, SolutionFinding, SolutionLodState, SolutionNetwork, SolutionRegion, SolutionTelemetry, StanceRelation, SynthesisOperation, SynthesisOutput, VerificationFinding, VerificationOutput } from "./types.js";
+import type { Activation, ActivationOutput, ActivationReadRef, ActivationTaskResult, CandidateSelectionOutput, Capability, CandidateStance, ChangeIntegrationResult, CompletionCertificate, ContextRefKind, CriterionId, DecisionBoundaryProposal, DecisionVariable, DomainChallengeOutput, DomainGenerationOutput, FindingRoute, ImplementationOutput, InspectionCriterionResult, InspectionOutput, ProgressLedgerEntry, RefinementOutput, RepositoryEvidenceLocation, RequirementId, ScopeId, SemanticCycleKind, SolutionAuthorityFrame, SolutionCandidate, SolutionConstraint, SolutionDelta, SolutionFinding, SolutionLodState, SolutionNetwork, SolutionRegion, SolutionTelemetry, StanceRelation, SynthesisOperation, SynthesisOutput, VerificationFinding, VerificationOutput } from "./types.js";
 import { DEFAULT_ACTIVATION_CAPABILITIES, roleSupportsCapabilities } from "./roles.js";
 
 const normalize = (value: string) => value.trim().replace(/\s+/g, " ");
@@ -654,7 +654,11 @@ export function invalidateStaleEvidence(networkInput: SolutionNetwork, evidenceI
 }
 
 export function invalidateEvidenceDigestMismatches(network: SolutionNetwork, currentDigests: Readonly<Record<string, string>>): SolutionNetwork {
-  const stale = network.evidence.filter((item) => item.kind === "repository" && item.status !== "stale" && item.location && currentDigests[item.location.canonicalPath] !== undefined && currentDigests[item.location.canonicalPath] !== item.location.fileDigest).map((item) => item.id);
+  const admittedDigest = (path: string): string | undefined => network.regions
+    .filter((region) => region.integration?.status === "landed")
+    .map((region) => region.integration?.landedFileFingerprints?.[path])
+    .find((digest): digest is string => Boolean(digest));
+  const stale = network.evidence.filter((item) => item.kind === "repository" && item.status !== "stale" && item.location && currentDigests[item.location.canonicalPath] !== undefined && currentDigests[item.location.canonicalPath] !== (admittedDigest(item.location.canonicalPath) ?? item.location.fileDigest)).map((item) => item.id);
   return stale.length ? invalidateStaleEvidence(network, stale) : cloneNetwork(network);
 }
 
@@ -2219,7 +2223,7 @@ function addArtifact(network: SolutionNetwork, region: SolutionRegion, activatio
   network.artifacts.push(item); region.artifactIds.push(item.id);
 }
 
-export function completeImplementation(networkInput: SolutionNetwork, activationId: string, output: ImplementationOutput, actualChangedFiles: string[], changedFileFingerprints: Readonly<Record<string, string>> = {}): SolutionNetwork {
+export function completeImplementation(networkInput: SolutionNetwork, activationId: string, output: ImplementationOutput, actualChangedFiles: string[], changedFileFingerprints: Readonly<Record<string, string>> = {}, baselineFingerprint = "legacy-live-worktree"): SolutionNetwork {
   let network = cloneNetwork(networkInput); const activation = network.activations.find((item) => item.id === activationId); const region = network.regions.find((item) => item.id === activation?.regionId);
   if (!activation || !region) return network;
   for (const finding of network.findings.filter((item) => activation.findingIds?.includes(item.id) && item.status === "open")) if (!finding.repairActivationIds.includes(activationId)) finding.repairActivationIds.push(activationId);
@@ -2263,7 +2267,10 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
     addArtifact(network, region, activationId, { kind: "check", summary: `Already-satisfied proof: ${output.checks.map((item) => `${item.name}: ${item.evidence}`).join("; ")}`, passed: true });
     transitionRegion(region, "selected", undefined, "implemented");
     break;
-  case "completed": transitionRegion(region, "selected", undefined, "implemented"); break;
+  case "completed":
+    if (baselineFingerprint !== "legacy-live-worktree") region.integration = { status: "pending", implementationActivationId: activationId, baselineFingerprint, changedFiles: [...new Set(actualChangedFiles)].sort() };
+    transitionRegion(region, "selected", undefined, "implemented");
+    break;
   case "blocked": if (countReopen(network, region)) {
     transitionRegion(region, "challenging", undefined, "superposed"); region.contradiction = output.blocker || output.summary || "Implementation reported a missing prerequisite."; region.selectedCandidateIds = [];
     region.acceptedFingerprint = null; region.challengeVerdict = null; region.certifiedLeaf = undefined; transitionRegion(region, "challenging");
@@ -2382,7 +2389,7 @@ function createCompletionCertificate(network: SolutionNetwork, region: SolutionR
   region.completionCertificateId = certificate.id;
 }
 
-export function completeVerification(networkInput: SolutionNetwork, activationId: string, output: VerificationOutput): SolutionNetwork {
+export function completeVerification(networkInput: SolutionNetwork, activationId: string, output: VerificationOutput, integration?: ChangeIntegrationResult): SolutionNetwork {
   let network = cloneNetwork(networkInput); const activation = network.activations.find((item) => item.id === activationId); const region = network.regions.find((item) => item.id === activation?.regionId);
   if (!activation || !region) return network;
   activation.status = "completed";
@@ -2400,6 +2407,18 @@ export function completeVerification(networkInput: SolutionNetwork, activationId
   case "pass":
     for (const finding of network.findings.filter((item) => activation.findingIds?.includes(item.id) && item.status === "repairing")) finding.status = "resolved";
     createCompletionCertificate(network, region, activation);
+    if (integration) region.integration = {
+      status: integration.outcome === "landed" ? "landed" : "conflict",
+      implementationActivationId: integration.implementationActivationId,
+      baselineFingerprint: integration.baselineFingerprint,
+      changedFiles: [...integration.changedFiles],
+      patchFingerprint: integration.patchFingerprint,
+      commitId: integration.commitId,
+      treeFingerprint: integration.treeFingerprint,
+      preservedRef: integration.preservedRef,
+      landedFileFingerprints: integration.landedFileFingerprints ? { ...integration.landedFileFingerprints } : undefined,
+      reason: integration.reason,
+    };
     transitionRegion(region, "selected", undefined, "verified");
     break;
   case "repair":
@@ -2435,7 +2454,7 @@ export function completePresentation(networkInput: SolutionNetwork, activationId
   const input = semanticInputFingerprint(network, region); const output = hash(normalize(answer)); region.answer = answer; addArtifact(network, region, activationId, { kind: "answer", summary: answer }); if (recordSemanticCycle(network, region, "present", input, output, region.criterionIds)) transitionRegion(region, "selected", undefined, "implemented"); network.revision++; return network;
 }
 
-export function applyActivationOutput(snapshot: SolutionLodState | SolutionNetwork, activation: Activation, output: ActivationOutput, changedFiles: string[] = [], tools?: readonly AgentToolTrace[], changedFileFingerprints: Readonly<Record<string, string>> = {}): SolutionNetwork {
+export function applyActivationOutput(snapshot: SolutionLodState | SolutionNetwork, activation: Activation, output: ActivationOutput, changedFiles: string[] = [], tools?: readonly AgentToolTrace[], changedFileFingerprints: Readonly<Record<string, string>> = {}, baselineFingerprint?: string, integration?: ChangeIntegrationResult): SolutionNetwork {
   const state = "network" in snapshot ? snapshot : stateForNetwork(snapshot);
   const live = state.network.activations.find((item) => item.id === activation.id);
   if (!live || live.capability !== activation.capability || live.operation !== activation.operation) throw new Error(`Activation ${activation.id} does not match the supplied snapshot.`);
@@ -2444,8 +2463,8 @@ export function applyActivationOutput(snapshot: SolutionLodState | SolutionNetwo
   case "synthesize": network = mergeSynthesisOutput(state, activation.id, output as SynthesisOutput); break;
   case "inspect": validateSolutionDelta(state, activation.regionId, "inspect", output as SolutionDelta, tools); network = mergeSolutionDelta(state, activation.id, output as SolutionDelta, tools); break;
   case "refine": validateRefinementOutput(state, activation.regionId, output as RefinementOutput); network = mergeRefinementOutput(state.network, activation.id, output as RefinementOutput); break;
-  case "implement": validateImplementationOutput(state, activation.regionId, output as ImplementationOutput); network = completeImplementation(state.network, activation.id, output as ImplementationOutput, changedFiles, changedFileFingerprints); break;
-  case "verify": validateVerificationOutput(state, activation.regionId, output as VerificationOutput); network = completeVerification(state.network, activation.id, output as VerificationOutput); break;
+  case "implement": validateImplementationOutput(state, activation.regionId, output as ImplementationOutput); network = completeImplementation(state.network, activation.id, output as ImplementationOutput, changedFiles, changedFileFingerprints, baselineFingerprint); break;
+  case "verify": validateVerificationOutput(state, activation.regionId, output as VerificationOutput); network = completeVerification(state.network, activation.id, output as VerificationOutput, integration); break;
   case "present": { const answer = (output as { outcome: "answer"; answer: string }).answer; validatePresentationAnswer(state, activation.regionId, answer); network = completePresentation(state.network, activation.id, answer); break; }
   default: assertNever(activation.capability);
   }
@@ -2695,7 +2714,7 @@ export function applyBatchRecords(networkInput: SolutionNetwork, records: Activa
     const activation = network.activations.find((item) => item.id === record.activationId);
     if (!activation) throw new Error(`Unknown activation ${record.activationId}`);
     const output = delta.kind === "delta" ? delta.delta : delta.output;
-    const applied = applyActivationOutput(network, activation, output, delta.kind === "implementation" ? delta.changedFiles : [], record.tools, delta.kind === "implementation" ? delta.changedFileFingerprints : {});
+    const applied = applyActivationOutput(network, activation, output, delta.kind === "implementation" ? delta.changedFiles : [], record.tools, delta.kind === "implementation" ? delta.changedFileFingerprints : {}, delta.kind === "implementation" ? delta.baselineFingerprint : undefined, delta.kind === "verification" ? delta.integration : undefined);
     const landed = applied.activations.find((item) => item.id === record.activationId)!;
     return markActivation(applied, record.activationId, landed.status, record.sessionId, landed.error);
   };
@@ -2873,7 +2892,8 @@ export function ensureRunnableWork(input: SolutionNetwork, width = 1, maxInspect
   if (recoveredInspectionLimit) network.revision++;
   if (selectActivationBatch(network, width).length) return { network, done: false };
   const required = network.regions;
-  const terminal = required.length > 0 && required.every((region) => region.completionCertificateId && isCompletionCertificateValid(network, region.completionCertificateId) || region.status === "collapsed" && network.regions.some((child) => child.parentId === region.id));
+  const deliveryComplete = (region: SolutionRegion): boolean => !region.integration || region.integration.status === "landed";
+  const terminal = required.length > 0 && required.every((region) => region.completionCertificateId && isCompletionCertificateValid(network, region.completionCertificateId) && deliveryComplete(region) || region.status === "collapsed" && network.regions.some((child) => child.parentId === region.id));
   if (terminal) {
     for (const region of required) {
       const children = required.filter((item) => item.parentId === region.id);
@@ -2890,6 +2910,8 @@ export function ensureRunnableWork(input: SolutionNetwork, width = 1, maxInspect
     if (unresolvedFindings.length) return { network, done: false, blocked: `Completion audit failed: unresolved finding IDs ${unresolvedFindings.map((item) => item.id).join(", ")}.` };
     return { network, done: true };
   }
+  const integrationConflict = required.find((region) => region.integration?.status === "conflict");
+  if (integrationConflict) return { network, done: false, blocked: `Integration conflict in ${integrationConflict.id}: ${integrationConflict.integration?.reason ?? "the verified commit could not be landed without overlapping concurrent changes"}. Preserved commit: ${integrationConflict.integration?.commitId ?? "unknown"}${integrationConflict.integration?.preservedRef ? ` (${integrationConflict.integration.preservedRef})` : ""}.` };
   const implementing = required.find((region) => region.status === "implementing");
   if (implementing) return { network, done: false, blocked: `Implementation activation for ${implementing.id} disappeared.` };
   const contradiction = required.find((region) => region.status === "contradiction");

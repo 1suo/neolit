@@ -135,15 +135,17 @@ The desired projection obeys these properties:
 
 Candidate-domain relationships remain local to the current region; evidence and artifacts are sparse by explicit reference.
 
-Workspace status and file content hashes are captured around mutating activations. Actual changes are recorded even when an agent's final output is malformed or interrupted. Pre-existing dirty files remain distinct from files changed during the activation.
+Before implementation, the host captures the exact target baseline: `HEAD`, working-tree/index content, untracked content digests, and admitted mutation resources. The role mutates an isolated mirror of that baseline. Actual changes are measured atomically against the captured baseline even when final model output is malformed or interrupted; pre-existing dirty content is never misclassified as activation output.
 
-The locked worktree is authoritative. The connector preserves pre-existing changes and never automatically stashes, resets, or discards them. After verification, a controller-owned host operation commits exactly the verified, measured, task-owned paths with a conventional commit message. It must not stage unrelated paths or a path that was already dirty before the activation; an overlap is reported before implementation and resolved only through an explicit recoverable operator action. The commit identity and resulting tree fingerprint are checkpointed so retry is idempotent and a crash cannot silently duplicate or lose the commit.
+After semantic implementation, the host replays only the measured activation delta onto clean `HEAD` in another isolated workspace. Verification runs against that replay. A passing replay is committed independently with exactly the admitted paths, and the commit identity, tree fingerprint, patch fingerprint, and preserved run ref are checkpointed before the host attempts a deterministic three-way landing into the locked user worktree. A concurrent landing conflict preserves the verified artifact and commit and blocks only integration; it must not reopen inspection, selection, refinement, implementation, or verification. A delta that cannot replay on clean `HEAD` is reported as a precise dependency on pre-existing dirty content rather than staged together with that content. Retry is idempotent, and no operation automatically stashes, resets, discards, or commits user-owned changes.
+
+Repository evidence invalidation is mutation-epoch aware. A current digest equal to the controller-recorded landed digest is an admitted self-mutation and does not stale ancestor planning evidence; a later different digest is an external defeater and invalidates normally.
 
 Turns, tokens, cache reads, and cost are telemetry and per-call scheduling quanta. They do not cause human budget interruptions or discard solution state. Human input is reserved for genuine decisions or authority that repository inspection cannot supply.
 
 ## Completion
 
-A change region moves through unrefined (selected), collapsed (split), actionable (computed implementable), implementing, implemented, and verified. A verifier pass completes it. A bounded defect returns it to actionable; a contradicted solution choice reopens the targeted region and drops its refinement. A read-only region completes after presentation. The run completes only when all required live regions are verified or have a verified answer.
+A change region moves through unrefined (selected), collapsed (split), actionable (computed implementable), implementing, implemented, and verified. Repository delivery has an orthogonal `pending → landed | conflict` lifecycle. A verifier pass completes semantic verification; a change run completes only after landing. A bounded defect returns it to actionable; a contradicted solution choice reopens the targeted region and drops its refinement. A read-only region completes after presentation.
 
 ## Node contracts
 

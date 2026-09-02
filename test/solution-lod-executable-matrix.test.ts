@@ -10,6 +10,11 @@ import type { SolutionLodState, SolutionNetwork } from "../src/solution-lod/type
 
 const directories = new Set<string>();
 const agents = { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" } as const;
+const changeHooks = (directory: string) => ({
+  langgraphPrepareImplementationWorkspace: async () => ({ worktree: directory, baselineFingerprint: "matrix-baseline" }),
+  langgraphPrepareVerifierWorkspace: async () => directory,
+  langgraphIntegrateVerifiedWorkspace: async (_runId: string, _verificationActivationId: string, _worktree: string, implementationActivationId: string, changedFiles: string[]) => ({ outcome: "landed" as const, implementationActivationId, baselineFingerprint: "matrix-baseline", changedFiles, patchFingerprint: "matrix-patch", commitId: "matrix-commit", treeFingerprint: "matrix-tree", preservedRef: "refs/neolit/matrix", landedFileFingerprints: Object.fromEntries(changedFiles.map((file) => [file, `landed:${file}`])) }),
+});
 
 afterEach(() => {
   for (const directory of directories) fs.rmSync(directory, { recursive: true, force: true });
@@ -107,9 +112,9 @@ describe("solution LOD executable task matrix", () => {
     const result = await configured.graph.invoke(initial, { recursionLimit: 128, configurable: {
       thread_id: "matrix-dependent-repair",
       langgraphOpenCodeRuntime: runtime,
+      ...changeHooks(directory),
       langgraphAcquireWorktree: async () => {},
       langgraphSnapshotWorkspace: snapshot,
-      langgraphPrepareVerifierWorkspace: async () => directory,
       langgraphReleaseVerifierWorkspace: async () => {},
     } });
     const final = result as SolutionLodState;
@@ -137,7 +142,7 @@ describe("solution LOD executable task matrix", () => {
       throw new Error(`unexpected call ${input.node}`);
     } };
     const configured = solutionLodGraph({ agents, checkpointer: new MemorySaver() });
-    const result = await configured.graph.invoke(configured.initial({ task: { id: "certified-fail", exactText: "Correct code.txt" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-certified-fail" }), { recursionLimit: 16, configurable: { thread_id: "matrix-certified-fail", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphSnapshotWorkspace: snapshot, langgraphPrepareVerifierWorkspace: async () => directory, langgraphReleaseVerifierWorkspace: async () => {} } });
+    const result = await configured.graph.invoke(configured.initial({ task: { id: "certified-fail", exactText: "Correct code.txt" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-certified-fail" }), { recursionLimit: 16, configurable: { thread_id: "matrix-certified-fail", langgraphOpenCodeRuntime: runtime, ...changeHooks(directory), langgraphAcquireWorktree: async () => {}, langgraphSnapshotWorkspace: snapshot, langgraphReleaseVerifierWorkspace: async () => {} } });
     expect(calls).toEqual(["inspect:r1", "implement:r1", "verify:r1"]);
     expect(configured.progress?.(result)?.phase).toBe("blocked");
     expect((result as SolutionLodState).network.regions[0]?.blockedDetails?.kind).toBe("blocked-external");
@@ -157,7 +162,7 @@ describe("solution LOD executable task matrix", () => {
       throw new Error(`unexpected call ${input.node}`);
     } };
     const configured = solutionLodGraph({ agents, checkpointer: new MemorySaver() });
-    const result = await configured.graph.invoke(configured.initial({ task: { id: "already", exactText: "Ensure code.txt is correct" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-already" }), { recursionLimit: 16, configurable: { thread_id: "matrix-already", langgraphOpenCodeRuntime: runtime, langgraphSnapshotWorkspace: snapshot, langgraphPrepareVerifierWorkspace: async () => directory, langgraphReleaseVerifierWorkspace: async () => {} } });
+    const result = await configured.graph.invoke(configured.initial({ task: { id: "already", exactText: "Ensure code.txt is correct" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-already" }), { recursionLimit: 16, configurable: { thread_id: "matrix-already", langgraphOpenCodeRuntime: runtime, ...changeHooks(directory), langgraphSnapshotWorkspace: snapshot, langgraphReleaseVerifierWorkspace: async () => {} } });
     expect(calls).toEqual(["inspect:r1", "verify:r1"]);
     expect(configured.progress?.(result)?.phase, configured.result?.(result)).toBe("completed");
   });
@@ -208,7 +213,7 @@ describe("solution LOD executable task matrix", () => {
       throw new Error(`unexpected call ${input.node}`);
     } };
     const configured = solutionLodGraph({ agents, checkpointer: new MemorySaver() });
-    const result = await configured.graph.invoke(configured.initial({ task: { id: "cegar", exactText: "Apply the repository approach" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-cegar" }), { recursionLimit: 64, configurable: { thread_id: "matrix-cegar", langgraphOpenCodeRuntime: runtime, langgraphSnapshotWorkspace: snapshot, langgraphPrepareVerifierWorkspace: async () => directory, langgraphReleaseVerifierWorkspace: async () => {} } });
+    const result = await configured.graph.invoke(configured.initial({ task: { id: "cegar", exactText: "Apply the repository approach" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-cegar" }), { recursionLimit: 64, configurable: { thread_id: "matrix-cegar", langgraphOpenCodeRuntime: runtime, ...changeHooks(directory), langgraphSnapshotWorkspace: snapshot, langgraphReleaseVerifierWorkspace: async () => {} } });
     expect(configured.progress?.(result)?.phase, JSON.stringify({ result: configured.result?.(result), calls, failed: (result as SolutionLodState).network.activations.filter((item) => item.status === "failed").map((item) => item.error) })).toBe("completed");
     expect(challenges).toBe(3);
     expect(selections).toBe(2);
@@ -237,7 +242,7 @@ describe("solution LOD executable task matrix", () => {
       throw new Error(`unexpected call ${input.node}`);
     } };
     const configured = solutionLodGraph({ agents, checkpointer: new MemorySaver() });
-    const result = await configured.graph.invoke(configured.initial({ task: { id: "reopen", exactText: "Apply the correction" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-reopen" }), { recursionLimit: 64, configurable: { thread_id: "matrix-reopen", langgraphOpenCodeRuntime: runtime, langgraphSnapshotWorkspace: snapshot, langgraphPrepareVerifierWorkspace: async () => directory, langgraphReleaseVerifierWorkspace: async () => {} } });
+    const result = await configured.graph.invoke(configured.initial({ task: { id: "reopen", exactText: "Apply the correction" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-reopen" }), { recursionLimit: 64, configurable: { thread_id: "matrix-reopen", langgraphOpenCodeRuntime: runtime, ...changeHooks(directory), langgraphSnapshotWorkspace: snapshot, langgraphReleaseVerifierWorkspace: async () => {} } });
     expect(configured.progress?.(result)?.phase, JSON.stringify({ result: configured.result?.(result), calls, failed: (result as SolutionLodState).network.activations.filter((item) => item.status === "failed").map((item) => item.error) })).toBe("completed");
     expect(verifications).toBe(2);
     expect(calls.filter((node) => node === "challenge-domain:r1")).toHaveLength(2);

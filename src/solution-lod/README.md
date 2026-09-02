@@ -60,7 +60,7 @@ Node and edge inventory (from `solutionLodGraph()` in `graph.ts`):
 | Node | Kind | Calls a model? | Responsibility |
 |---|---|---|---|
 | `schedule` | pure controller | never | Propagate the network, create any missing controller-initiated work, pick the next activation batch, or terminate/blocked |
-| `acquire` | controller side effect | never | Take the worktree lease before a mutating batch (`langgraphAcquireWorktree` from config) |
+| `acquire` | controller side effect | never | Take the repository lease before an implementation batch (`langgraphAcquireWorktree` from config) |
 | `activate` | agent boundary | **yes — the only one** | Call the host runtime once for one activation; produce one `ActivationTaskResult` |
 | `merge` | pure controller | never | Deterministically apply the finished batch's records to the network (propagation, supersession, usage accounting) |
 | `finish` | pure controller | never | Derive the final result string |
@@ -242,7 +242,7 @@ Runs before every mutating implementation singleton, including after resume. It 
 Given one activation task:
 
 1. Rebuilds a task-local `SolutionLodState` from the snapshot.
-2. For `implement`, snapshots the workspace first (`git status --porcelain -z` + per-file sha256 via `statusPaths`, or the injected `langgraphSnapshotWorkspace` hook).
+2. For `implement`, requires `langgraphPrepareImplementationWorkspace`, runs the role in that exact baseline mirror, and measures only the delta produced there. The original worktree is not mutated by the role.
 3. Selects the output schema by capability and operation:
    | Capability | Zod schema |
    |---|---|
@@ -256,9 +256,11 @@ Given one activation task:
    | `present` | `PresentationOutputSchema` |
 4. Calls `runtime.call({agent, node: "capability:regionId", state, limits, schema, validateStructured, prompt})` once for the activation, with the capability's role limits as the scheduling quantum and the dependency-projected context (§7) as the prompt. The host decides how to isolate or resume its execution session. `validateStructured` additionally runs controller-side semantic validation before output is accepted. Inspection prompts list the exact projected live hypothesis IDs allowed in `validations`; the controller drops optional validation entries aimed at any other ID and clears meaningless evidence attachments from `unresolved` validations, records each field-local recovery as a validation failure, and still validates the independent evidence, criterion verdicts, and boundary normally.
 5. Produces exactly one `ActivationTaskResult`:
-   - structured success → `outcome: "applied"` with a `networkDelta` of kind `delta | refinement | implementation | verification | presentation` (implement also records the diff of actually changed files between the two workspace snapshots);
+   - structured success → `outcome: "applied"` with a `networkDelta` of kind `delta | refinement | implementation | verification | presentation` (implement also records the exact baseline fingerprint and measured delta; a passing change verifier records the host-owned integration result);
    - scheduling-quantum stop (`budgetStop`) → `outcome: "deferred"`; the region stays actionable and the activation can be rescheduled on a new revision;
-   - throw (invalid JSON, schema error, timeout) → `outcome: "error"` with the message; **actual workspace changes are still captured** in `changedFiles`.
+   - throw (invalid JSON, schema error, timeout) → `outcome: "error"` with the message; **actual isolated-workspace changes are still captured** in `changedFiles` without touching user files.
+
+For a change verifier, `langgraphPrepareVerifierWorkspace` replays only the admitted activation delta onto clean `HEAD`; replay conflict is an integration dependency, not a reason to reopen semantic discovery. After a pass, `langgraphIntegrateVerifiedWorkspace` creates an independent commit, preserves it under a run ref, and then attempts to merge the same activation delta into the locked user worktree. The region records `pending → landed | conflict` integration state separately from `implemented → verified`. A conflict keeps the completion certificate, selected family, artifacts, commit identity, and tree fingerprint intact while blocking only repository landing.
 
 ### 4.5 `merge` — deterministic reconciliation
 
@@ -266,7 +268,7 @@ Given one activation task:
 
 1. Orders the finished records by `(basisRevision, activationId)` regardless of completion order.
 2. Applies each record with the capability-specific merge (`mergeSolutionDelta`, `mergeRefinementOutput`, `completeImplementation`, `completeVerification`, `completePresentation`), or marks it `failed`.
-3. Handles **failed implement** specially: retained workspace mutations are reconciled as a blocked implementation with the changed files recorded; otherwise the region returns to `actionable`.
+3. Handles **failed implement** specially: retained isolated-workspace mutations are reconciled as a blocked implementation with the changed files recorded; otherwise the region returns to `actionable`.
 4. **Supersession:** a record whose region vanished, whose merge throws, or which was computed against an outdated `basisRevision` and whose application lands its region in `contradiction` is rolled back and marked `superseded` — superseded outcomes never consume the retry limit.
 5. Runs `propagateNetwork` after every attempted record, including failed and rolled-back records, then one final idempotent pass. Derived contradictions and locks therefore cannot remain stale merely because an activation produced no accepted delta.
 6. Accumulates `usage`, increments `callsUsed` by the record count, clears `results` and `activeBatch`, and sets `phase` to `activation-failed` / `activation-deferred` / `propagating`.

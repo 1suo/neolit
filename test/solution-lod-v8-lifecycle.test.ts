@@ -8,6 +8,7 @@ import { OpenCodeRuntimeError } from "../src/runtime-error.js";
 const usage = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 const state = (network: SolutionNetwork): SolutionLodState => ({ stateVersion: 10, runId: "v10", directory: "/r", worktree: "/r", phase: "", activeBatch: [], network, results: [], usage, callsUsed: 0, startedAt: 0, result: "" });
 const initialInput = (task: string, runId: string) => ({ task: { id: `task-${runId}`, exactText: task }, authoritativeMessages: [], directory: "/r", worktree: "/r", runId });
+const implementationWorkspace = async () => ({ worktree: "/r", baselineFingerprint: "lifecycle-baseline" });
 
 function activation(network: SolutionNetwork, operation: Activation["operation"]): Activation {
   const region = network.regions[0]!;
@@ -270,7 +271,7 @@ describe("solution LOD state v8 lifecycle", () => {
       throw new Error(`unexpected call ${input.node}`);
     } };
     const configured = solutionLodGraph({ agents: { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" }, checkpointer: new MemorySaver() });
-    const result = await configured.graph.invoke(configured.initial(initialInput("change it", "v9-e2e")), { recursionLimit: 64, configurable: { thread_id: "v9-e2e", langgraphOpenCodeRuntime: runtime, langgraphPrepareVerifierWorkspace: async () => "/r", langgraphReleaseVerifierWorkspace: async () => {} } });
+    const result = await configured.graph.invoke(configured.initial(initialInput("change it", "v9-e2e")), { recursionLimit: 64, configurable: { thread_id: "v9-e2e", langgraphOpenCodeRuntime: runtime, langgraphPrepareImplementationWorkspace: implementationWorkspace, langgraphPrepareVerifierWorkspace: async () => "/r", langgraphReleaseVerifierWorkspace: async () => {} } });
     expect(calls).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "implement:r1", "verify:r1"]);
     expect(configured.progress?.(result as SolutionLodState)?.phase).toBe("completed");
     expect(configured.result?.(result as SolutionLodState)).toContain("Verified 1 solution region.");
@@ -315,7 +316,7 @@ describe("solution LOD state v8 lifecycle", () => {
       throw new Error(`unexpected call ${input.node}`);
     } };
     const configured = solutionLodGraph({ agents: { inspect: "inspect", synthesize: "synthesize", refine: "refine", implement: "implement", verify: "verify", present: "present" }, checkpointer: new MemorySaver() });
-    const result = await configured.graph.invoke(configured.initial(initialInput("change it", "v9-dedup-e2e")), { recursionLimit: 128, configurable: { thread_id: "v9-dedup-e2e", langgraphOpenCodeRuntime: runtime, langgraphPrepareVerifierWorkspace: async () => "/r", langgraphReleaseVerifierWorkspace: async () => {} } });
+    const result = await configured.graph.invoke(configured.initial(initialInput("change it", "v9-dedup-e2e")), { recursionLimit: 128, configurable: { thread_id: "v9-dedup-e2e", langgraphOpenCodeRuntime: runtime, langgraphPrepareImplementationWorkspace: implementationWorkspace, langgraphPrepareVerifierWorkspace: async () => "/r", langgraphReleaseVerifierWorkspace: async () => {} } });
     const final = result as SolutionLodState;
     expect(configured.progress?.(final)?.phase, JSON.stringify({ blocked: final.network.regions.filter((r) => r.blockedReason).map((r) => [r.id, r.blockedReason]), failed: final.network.activations.filter((a) => a.status === "failed").slice(-2).map((a) => [a.id, a.capability, String(a.error).slice(0, 300)]) })).toBe("completed");
     expect(nodeCalls.get("inspect:r1")).toBe(2);

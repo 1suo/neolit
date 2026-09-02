@@ -49,11 +49,10 @@ techniques such as singleton collapse and minimum-remaining-values scheduling.
 
 - [ ] Make inspection convergence monotonic across episodes. Track why an
   inspection episode reopened, retain a bounded region-level cycle count when
-  stale evidence or changed criteria reset the two-pass episode, and prevent
-  repository changes produced by the graph's own accepted implementation from
-  repeatedly invalidating ancestor planning evidence without a new external
-  defeater. Cover the self-mutation → stale evidence → ancestor reinspection
-  regression through the compiled graph.
+  stale evidence or changed criteria reset the two-pass episode. Accepted
+  implementation mutations now carry a landed digest epoch and no longer stale
+  ancestor evidence; retain a compiled-graph regression for the complete
+  self-mutation → schedule → external-defeater sequence.
 - [ ] Centralize legal region transitions and their preconditions instead of
   assigning statuses across propagation, implementation, verification, and
   reopening code paths.

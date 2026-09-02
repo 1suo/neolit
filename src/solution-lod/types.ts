@@ -146,6 +146,34 @@ export interface SolutionRegion {
   convergenceCycles?: SemanticCycleRecord[];
   blockedDetails?: { kind: string; fingerprints?: string[]; unresolvedCriterionIds?: CriterionId[]; unresolvedScopeIds?: ScopeId[] };
   completionCertificateId?: string;
+  /** Repository delivery is controller-owned and does not change semantic verification state. */
+  integration?: ChangeIntegration;
+}
+
+export interface ChangeIntegration {
+  status: "pending" | "landed" | "conflict";
+  implementationActivationId: string;
+  baselineFingerprint: string;
+  changedFiles: string[];
+  patchFingerprint?: string;
+  commitId?: string;
+  treeFingerprint?: string;
+  preservedRef?: string;
+  landedFileFingerprints?: Record<string, string>;
+  reason?: string;
+}
+
+export interface ChangeIntegrationResult {
+  outcome: "landed" | "conflict";
+  implementationActivationId: string;
+  baselineFingerprint: string;
+  changedFiles: string[];
+  patchFingerprint: string;
+  commitId?: string;
+  treeFingerprint?: string;
+  preservedRef?: string;
+  landedFileFingerprints?: Record<string, string>;
+  reason?: string;
 }
 
 export interface ProgressLedgerEntry {
@@ -411,8 +439,8 @@ export type ActivationNetworkDelta =
   | { kind: "delta"; delta: SolutionDelta }
   | { kind: "synthesis"; output: SynthesisOutput }
   | { kind: "refinement"; output: RefinementOutput }
-  | { kind: "implementation"; output: ImplementationOutput; changedFiles: string[]; changedFileFingerprints: Record<string, string> }
-  | { kind: "verification"; output: VerificationOutput }
+  | { kind: "implementation"; output: ImplementationOutput; changedFiles: string[]; changedFileFingerprints: Record<string, string>; baselineFingerprint?: string }
+  | { kind: "verification"; output: VerificationOutput; integration?: ChangeIntegrationResult }
   | { kind: "presentation"; output: z.infer<typeof PresentationOutputSchema> };
 
 export type ActivationOutput = SolutionDelta | SynthesisOutput | RefinementOutput | ImplementationOutput | VerificationOutput | z.infer<typeof PresentationOutputSchema>;

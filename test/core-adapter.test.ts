@@ -1450,6 +1450,8 @@ describe("solution LOD graph", () => {
     return undefined;
   };
   const certifiedLeaf = { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "bounded test change", criterionIds: ["criterion:scope:r1:0"], requirementIds: ["requirement:root-criterion-0"], evidenceRefs: [], mutationResources: ["target.txt"], checks: [{ criterionId: "criterion:scope:r1:0", commandOrObservation: "run focused test" }] }, atomicityWitness: { outcome: "bounded test change", criterionIds: ["criterion:scope:r1:0"], requirementIds: ["requirement:root-criterion-0"], mutationResources: ["target.txt"], whySplittingFails: "The target edit and focused check are one change." } } };
+  const testImplementationWorkspace = async (_runId: string, _activationId: string, worktree: string) => ({ worktree, baselineFingerprint: "test-baseline" });
+  const testIntegration = async (_runId: string, _verificationActivationId: string, _worktree: string, implementationActivationId: string, changedFiles: string[]) => ({ outcome: "landed" as const, implementationActivationId, baselineFingerprint: "test-baseline", changedFiles, patchFingerprint: "test-patch", commitId: "test-commit", treeFingerprint: "test-tree", preservedRef: "refs/neolit/test", landedFileFingerprints: Object.fromEntries(changedFiles.map((file) => [file, `landed:${file}`])) });
 
   it("executes a collapsed region and verifies it without a fixed role pipeline", async () => {
     const directory = temp("solution-lod-graph-");
@@ -1469,7 +1471,7 @@ describe("solution LOD graph", () => {
       if (input.node === "verify:r1") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "target updated", passed: true, evidence: "target updated: after" }], completionEvidence: { implementation: "measured target.txt", directTest: "target check passed", correctnessReview: "reviewed target", releaseGate: "suite passed", changedFiles: ["target.txt"], focusedTests: ["target"], fullChecks: ["suite"] } } };
       throw new Error(`unexpected node ${input.node}`);
     } };
-    const result = await configured.graph.invoke(configured.initial(solutionInput("update", directory, "run")), { recursionLimit: 64, configurable: { thread_id: "run", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareVerifierWorkspace: async (runId: string, activationId: string, worktree: string) => { preparedVerifier = [runId, activationId, worktree]; return directory; }, langgraphReleaseVerifierWorkspace: async (runId: string, activationId: string) => { releasedVerifier = [runId, activationId]; } } });
+    const result = await configured.graph.invoke(configured.initial(solutionInput("update", directory, "run")), { recursionLimit: 64, configurable: { thread_id: "run", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareImplementationWorkspace: testImplementationWorkspace, langgraphPrepareVerifierWorkspace: async (runId: string, activationId: string, worktree: string) => { preparedVerifier = [runId, activationId, worktree]; return directory; }, langgraphIntegrateVerifiedWorkspace: testIntegration, langgraphReleaseVerifierWorkspace: async (runId: string, activationId: string) => { releasedVerifier = [runId, activationId]; } } });
     expect(calls).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "implement:r1", "verify:r1"]);
     expect(maxAttempts.get("generate-domain:r1")).toBe(3);
     expect(maxAttempts.get("challenge-domain:r1")).toBe(3);
@@ -1495,7 +1497,7 @@ describe("solution LOD graph", () => {
       if (input.node === "implement:r1") return { text: "", structured: { outcome: "blocked", summary: "missing prerequisite", changedFiles: [], checks: [], blocker: "missing prerequisite" } };
       throw new Error(`unexpected node ${input.node}`);
     } };
-    const result = await configured.graph.invoke(configured.initial(solutionInput("update", directory, "stalled")), { recursionLimit: 128, configurable: { thread_id: "stalled", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {} } });
+    const result = await configured.graph.invoke(configured.initial(solutionInput("update", directory, "stalled")), { recursionLimit: 128, configurable: { thread_id: "stalled", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareImplementationWorkspace: testImplementationWorkspace } });
     expect(calls.filter((node) => node === "implement:r1")).toHaveLength(4);
     const region = (result as SolutionLodState).network.regions.find((item) => item.id === "r1")!;
     expect(region.status).toBe("stalled");
@@ -1528,7 +1530,7 @@ describe("solution LOD graph", () => {
     } };
     let snapshots = 0;
     const snapshot = () => snapshots++ === 0 ? new Map([["untouched.txt", "M:user"], ["target.txt", "clean:base"]]) : new Map([["untouched.txt", "M:user"], ["target.txt", "M:agent"], ["new.txt", "?:new"]]);
-    const result = await configured.graph.invoke(configured.initial(solutionInput("change", directory, "artifacts")), { recursionLimit: 32, configurable: { thread_id: "artifacts", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphSnapshotWorkspace: snapshot } });
+    const result = await configured.graph.invoke(configured.initial(solutionInput("change", directory, "artifacts")), { recursionLimit: 32, configurable: { thread_id: "artifacts", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareImplementationWorkspace: testImplementationWorkspace, langgraphPrepareVerifierWorkspace: async () => directory, langgraphIntegrateVerifiedWorkspace: testIntegration, langgraphSnapshotWorkspace: snapshot } });
     const files = (result as SolutionLodState).network.artifacts.filter((item) => item.kind === "file").map((item) => item.path).sort();
     expect(files).toEqual(["new.txt", "target.txt"]);
     expect(files).not.toContain("untouched.txt");
@@ -1548,7 +1550,7 @@ describe("solution LOD graph", () => {
     } };
     let snapshots = 0;
     const snapshot = () => snapshots++ === 0 ? new Map([["target.txt", "clean:base"]]) : new Map([["target.txt", "M:retained"]]);
-    const result = await configured.graph.invoke(configured.initial(solutionInput("change", directory, "malformed-mutation")), { recursionLimit: 32, configurable: { thread_id: "malformed-mutation", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphSnapshotWorkspace: snapshot } });
+    const result = await configured.graph.invoke(configured.initial(solutionInput("change", directory, "malformed-mutation")), { recursionLimit: 32, configurable: { thread_id: "malformed-mutation", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareImplementationWorkspace: testImplementationWorkspace, langgraphSnapshotWorkspace: snapshot } });
     expect(fs.readFileSync(path.join(directory, "target.txt"), "utf8")).toBe("retained");
     expect((result as SolutionLodState).network.artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "file", path: "target.txt" })]));
     expect(configured.progress?.(result)?.phase).toBe("blocked");
@@ -1609,7 +1611,7 @@ describe("solution LOD graph", () => {
     } };
     let snapshots = 0;
     const snapshot = () => snapshots++ === 0 ? new Map([["target.txt", "clean:before"]]) : new Map([["target.txt", "M:after"]]);
-    const result = await configured.graph.invoke(configured.initial(solutionInput("update", directory, "acquire")), { recursionLimit: 64, configurable: { thread_id: "acquire", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => { order.push("acquire"); }, langgraphSnapshotWorkspace: snapshot, langgraphPrepareVerifierWorkspace: async () => directory, langgraphReleaseVerifierWorkspace: async () => {} } });
+    const result = await configured.graph.invoke(configured.initial(solutionInput("update", directory, "acquire")), { recursionLimit: 64, configurable: { thread_id: "acquire", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => { order.push("acquire"); }, langgraphPrepareImplementationWorkspace: testImplementationWorkspace, langgraphSnapshotWorkspace: snapshot, langgraphPrepareVerifierWorkspace: async () => directory, langgraphIntegrateVerifiedWorkspace: testIntegration, langgraphReleaseVerifierWorkspace: async () => {} } });
     expect(order.filter((item) => item === "acquire")).toHaveLength(1);
     expect(order.indexOf("acquire")).toBeLessThan(order.indexOf("node:implement:r1"));
     expect(configured.progress?.(result)?.phase).toBe("completed");

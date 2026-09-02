@@ -110,4 +110,15 @@ describe("change completion correctness review", () => {
     expect(completed.activations[1]).toMatchObject({ status: "failed", error: expect.stringContaining("conflicts with a measured workspace change") });
     expect(completed.regions[0]).toMatchObject({ status: "blocked" });
   });
+
+  it("preserves semantic verification and the isolated commit when landing conflicts", () => {
+    const network = ready();
+    network.regions[0]!.integration = { status: "pending", implementationActivationId: "a1", baselineFingerprint: "baseline", changedFiles: ["src/x.ts"] };
+    const completed = completeVerification(network, "a2", pass(), {
+      outcome: "conflict", implementationActivationId: "a1", baselineFingerprint: "baseline", changedFiles: ["src/x.ts"], patchFingerprint: "patch", commitId: "abc123", treeFingerprint: "tree123", preservedRef: "refs/neolit/runs/run/a1", reason: "concurrent edit overlaps src/x.ts",
+    });
+    expect(completed.regions[0]).toMatchObject({ status: "verified", selectedCandidateIds: ["r1:chosen"], integration: { status: "conflict", commitId: "abc123" } });
+    expect(completed.regions[0]!.completionCertificateId).toBeTruthy();
+    expect(ensureRunnableWork(completed)).toMatchObject({ done: false, blocked: expect.stringContaining("Preserved commit: abc123") });
+  });
 });
