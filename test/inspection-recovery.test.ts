@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileActivationPrompt } from "../src/solution-lod/graph.js";
-import { activationContextFingerprint, ensureRunnableWork, initialNetwork, inspectionOutputToDelta, MAX_SCHEMA_ATTEMPTS, mergeSolutionDelta, validateSolutionDelta } from "../src/solution-lod/reducer.js";
+import { activationContextFingerprint, ensureRunnableWork, initialNetwork, inspectionOutputToDelta, MAX_SCHEMA_ATTEMPTS, mergeSolutionDelta, validateInspectionOutputProgress, validateSolutionDelta } from "../src/solution-lod/reducer.js";
 import { InspectionOutputSchema } from "../src/solution-lod/types.js";
 import type { AgentToolTrace, SolutionLodState, SolutionNetwork } from "../src/types.js";
 
@@ -51,6 +51,19 @@ describe("inspection schema-failure recovery (regression: run 1cd79e7f)", () => 
       factIds: ["some-made-up-fact-id"],
     }), tools);
     expect(() => validateSolutionDelta(state(network), "r1", "inspect", delta, tools)).toThrow(/Unknown, stale, or unprojected graph fact ID some-made-up-fact-id/);
+  });
+
+  it("rejects criterion-free fact collection that would manufacture another inspection pass", () => {
+    const network = initialNetwork("add the requested behavior");
+    network.activations[0]!.status = "running";
+    const output = InspectionOutputSchema.parse({
+      outcome: "facts",
+      evidence: [
+        { text: "The current implementation lacks the requested export.", source: "TODO-process-designer.md", kind: "repository", chunkId },
+        { text: "A new test is probably required.", source: "model", kind: "inference", assertion: "other-claim" },
+      ],
+    });
+    expect(() => validateInspectionOutputProgress(state(network), network.activations[0]!, output)).toThrow(/Facts-only inspection may not author inference claims[\s\S]*decision boundary/);
   });
 
   it("rejects a boundary that leaves newly proposed criteria unclosed, with corrective guidance", () => {

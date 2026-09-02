@@ -17,7 +17,7 @@ const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(valu
 export function assertNever(value: never): never { throw new Error(`Unexpected outcome: ${String(value)}`); }
 const EMPTY_USAGE = { turns: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 const EMPTY_CONTEXT_TELEMETRY: ActivationContextTelemetry = { repositoryReadChars: 0, repositoryOutputChars: 0, otherToolOutputChars: 0, bashOutputChars: 0, duplicateReadCharsAvoided: 0, accumulatedSessionInput: 0, cacheReadInput: 0, structuredRepairAttempts: 0 };
-const INITIAL_INSPECTION_REQUEST = "Find the repository facts needed to form complete alternatives for this goal. Investigate lower-level details when they affect that choice, but do not turn them into choices yet.";
+const INITIAL_INSPECTION_REQUEST = "Find the repository facts needed to form complete alternatives for this goal, then return the local decision boundary, root decomposition, or mechanically certified terminal result in this activation. Investigate lower-level details when they affect that choice, but do not turn them into choices yet. A facts-only result is valid only when it closes an explicit supplied proof or validation obligation.";
 const emptyTelemetry = (): SolutionTelemetry => ({ activations: 0, physicalActivations: 0, promptAttempts: 0, schemaRetries: 0, schemaRepairs: 0, operationCalls: {}, counterexampleRepairs: 0, retries: 0, reopens: 0, cycles: 0, candidates: 0, regionCount: 0, promptChars: 0, schemaChars: 0, projectedContextChars: 0, validationFailures: 0, elapsedMs: 0, queueMs: 0, roleMs: {}, implementationMs: 0, verificationMs: 0, usage: { ...EMPTY_USAGE }, blockedReasons: [], regions: {}, contextTelemetry: { ...EMPTY_CONTEXT_TELEMETRY }, recordedActivationIds: [], activationRecords: [] });
 const progressEntry = (): ProgressLedgerEntry => ({ count: 0, fingerprint: null, unresolvedCriterionIds: [] });
 const emptyProgress = (): SolutionRegion["progress"] => ({ inspectionNoProgress: progressEntry(), cegarRounds: progressEntry(), selectionNoProgress: progressEntry(), reopenAttempts: progressEntry(), repairCycles: progressEntry() });
@@ -1047,6 +1047,17 @@ export function inspectionOutputToDelta(output: InspectionOutput, tools?: readon
     default: assertNever(output);
   }
   return delta;
+}
+
+export function validateInspectionOutputProgress(state: SolutionLodState, activation: Activation, output: InspectionOutput): void {
+  if (output.outcome !== "facts") return;
+  const region = state.network.regions.find((item) => item.id === activation.regionId);
+  if (!region) return;
+  const liveValidationTargets = new Set(region.evidenceIds.filter((id) => state.network.evidence.find((item) => item.id === id)?.status === "hypothesis"));
+  const closesSuppliedValidation = output.validations?.some((item) => liveValidationTargets.has(item.claimRef)) ?? false;
+  const hasSuppliedCriterion = (region.inspectionObligationIds?.length ?? region.criterionIds.length) > 0;
+  if (!hasSuppliedCriterion && !closesSuppliedValidation && output.evidence.some((item) => item.kind === "inference"))
+    throw new Error("Facts-only inspection may not author inference claims when no supplied proof or validation obligation exists. Return the evidence-backed decision boundary, root decomposition, or mechanically certified terminal result in this activation; do not manufacture another inspection pass.");
 }
 
 function validateRepositoryProvenance(items: SolutionDelta["evidence"], tools: readonly AgentToolTrace[] | undefined): void {
