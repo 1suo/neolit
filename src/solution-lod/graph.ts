@@ -15,6 +15,8 @@ import { activationContextFingerprint, activationRequiredCapabilities, applyActi
 import { requiredToolsForCapabilities, roleSupportsCapabilities, SOLUTION_ROLE_CONTRACTS, SYNTHESIS_OPERATION_CONTRACTS } from "./roles.js";
 import { ChangeInspectionOutputSchema, DEFAULT_SOLUTION_ROLE_LIMITS, EstablishedChangeInspectionOutputSchema, ImplementationOutputSchema, InspectionOutputSchema, PresentationOutputSchema, RefinementOutputSchema, SolutionDeltaSchema, VerificationOutputSchema, type Activation, type ActivationOutput, type ActivationTaskInput, type ActivationTaskResult, type ActiveBatchEntry, type Capability, type ChangeIntegrationResult, type InspectionOutput, type RefinementOutput, type RoleContextPacket, type SolutionAuthorityFrame, type SolutionLodState, type SolutionLodV11InitialInput, type SolutionNetwork, type SolutionRegion, type SolutionRoleLimits, type SolutionRunLimits, type SynthesisOutput } from "./types.js";
 
+type HostVerificationCheck = { criterionId: string; name: string; passed: boolean; evidence: string };
+
 const resultsReducer = (left: ActivationTaskResult[], right: ActivationTaskResult[]): ActivationTaskResult[] => {
   // An empty write from `merge` atomically clears the append-only log; task writes always carry exactly one record.
   if (!right.length) return [];
@@ -530,6 +532,7 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
       const prepareImplementation = config?.configurable?.langgraphPrepareImplementationWorkspace as ((runId: string, activationId: string, worktree: string, resumeFromActivationId?: string) => Promise<{ worktree: string; baselineFingerprint: string; baselineWorktree?: string }>) | undefined;
        const prepareVerifier = config?.configurable?.langgraphPrepareVerifierWorkspace as ((runId: string, activationId: string, worktree: string, implementationActivationId?: string) => Promise<string>) | undefined;
        const integrateVerified = config?.configurable?.langgraphIntegrateVerifiedWorkspace as ((runId: string, verificationActivationId: string, worktree: string, implementationActivationId: string, changedFiles: string[]) => Promise<ChangeIntegrationResult>) | undefined;
+       const executeVerificationChecks = config?.configurable?.langgraphExecuteVerificationChecks as ((runId: string, verificationActivationId: string, worktree: string, regionId: string, criterionIds: string[]) => Promise<HostVerificationCheck[]>) | undefined;
        const releaseVerifier = config?.configurable?.langgraphReleaseVerifierWorkspace as ((runId: string, activationId: string) => Promise<void>) | undefined;
       let executionWorktree = state.worktree;
       let baselineFingerprint: string | undefined;
@@ -554,6 +557,7 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
          if (activation.capability === "verify" && activationRegion?.delivery === "change" && !prepareVerifier) throw new Error("Change verification requires an isolated verifier workspace supplied by langgraphPrepareVerifierWorkspace.");
         const implementationActivationId = activationRegion?.integration?.implementationActivationId;
         if (activation.capability === "verify" && activationRegion?.integration?.status === "pending" && !integrateVerified) throw new Error("Change verification requires controller-owned commit and landing supplied by langgraphIntegrateVerifiedWorkspace.");
+        if (activation.capability === "verify" && activationRegion?.integration?.status === "pending" && !executeVerificationChecks) throw new Error("Change verification requires host-executed criterion checks supplied by langgraphExecuteVerificationChecks.");
         if (activation.capability === "verify" && state.network.evidence.some((item) => item.status !== "stale" && item.location?.observation === "worktrees")) {
           try { inventoryBefore = inspectLinkedWorktrees(state.worktree).value as WorktreeInventory; landingBefore = statusPaths(state.worktree); }
           catch { /* Without a baseline, a changed inventory cannot be attributed to landing. */ }
@@ -592,7 +596,15 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
         if (activation.capability === "verify") {
           const changedFiles = verifierBefore ? changedBetween(verifierBefore, snapshot(executionWorktree)) : [];
           if (changedFiles.length) throw new Error(`Verifier mutated its isolated workspace: ${changedFiles.join(", ")}. Verification is read-only.`);
-          const output = canonicalizeActivationOutput(state, activation, structured(result, VerificationOutputSchema));
+          let output = canonicalizeActivationOutput(state, activation, structured(result, VerificationOutputSchema));
+          if (output.outcome === "pass" && activationRegion?.integration?.status === "pending") {
+            const hostChecks = await executeVerificationChecks!(state.runId, activation.id, executionWorktree, activation.regionId, [...activationRegion.criterionIds]);
+            const expected = [...activationRegion.criterionIds].sort();
+            const actual = hostChecks.map((item) => item.criterionId).sort();
+            if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`Host verification must return exactly one check for every criterion: expected ${expected.join(", ")}, received ${actual.join(", ")}.`);
+            if (hostChecks.some((item) => !item.passed || !item.evidence.trim())) throw new Error("Host verification reported a failed or unevidenced criterion check.");
+            output = { ...output, checks: hostChecks.map((item) => ({ name: item.name, passed: item.passed, evidence: item.evidence, disposition: "criterion-gating" as const, criterionIds: [item.criterionId], baselineEvidenceRefs: [], requiredEvidence: [] })) };
+          }
           applyActivationOutput(state, activation, output, [], result.tools);
           const integration = completedIntegration = output.outcome === "pass" && activationRegion?.integration?.status === "pending" && implementationActivationId
             ? await integrateVerified!(state.runId, activation.id, state.worktree, implementationActivationId, activationRegion.integration.changedFiles)

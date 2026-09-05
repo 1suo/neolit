@@ -117,6 +117,7 @@ describe("delivery recovery", () => {
         if (observeWorktrees) git("worktree", "add", "--detach", verifierCheckout, "HEAD");
         return execution;
       },
+      langgraphExecuteVerificationChecks: async (_run: string, _verify: string, _worktree: string, _region: string, criterionIds: string[]) => criterionIds.map((criterionId) => ({ criterionId, name: `host ${criterionId}`, passed: true, evidence: "host check passed" })),
       langgraphReleaseVerifierWorkspace: async () => { if (observeWorktrees && fs.existsSync(verifierCheckout)) git("worktree", "remove", verifierCheckout); },
       langgraphIntegrateVerifiedWorkspace: async (_run: string, _verify: string, worktree: string, implementationActivationId: string, changedFiles: string[]) => { for (const file of changedFiles) fs.copyFileSync(path.join(execution, file), path.join(directory, file)); if (externalDuringLanding) fs.writeFileSync(path.join(directory, "outside.txt"), "external modification"); return { outcome: "landed", implementationActivationId, changedFiles, baselineFingerprint: "original-baseline", patchFingerprint: "patch", commitId: "commit", treeFingerprint: "tree", preservedRef: "refs/test/landed", landedFileFingerprints: Object.fromEntries([...snapshot(execution)].map(([file, value]) => [file, digest(value)])) }; },
     } }) as SolutionLodState;
@@ -286,6 +287,7 @@ describe("delivery recovery", () => {
       thread_id: `boundary-recovery-${persistent}`, langgraphOpenCodeRuntime: runtime, langgraphSnapshotWorkspace: snapshot,
       langgraphPrepareImplementationWorkspace: async () => ({ worktree: execution, baselineFingerprint: "before" }),
       langgraphPrepareVerifierWorkspace: async () => execution,
+      langgraphExecuteVerificationChecks: async (_run: string, _verify: string, _worktree: string, _region: string, criterionIds: string[]) => criterionIds.map((criterionId) => ({ criterionId, name: `host ${criterionId}`, passed: true, evidence: "host check passed" })),
       langgraphIntegrateVerifiedWorkspace: async (_run: string, _verify: string, _worktree: string, implementationActivationId: string, changedFiles: string[]) => {
         fs.copyFileSync(path.join(execution, "code.txt"), path.join(directory, "code.txt"));
         return { outcome: "landed", implementationActivationId, changedFiles, baselineFingerprint: "before", patchFingerprint: "array-patch", commitId: "array-commit", treeFingerprint: "array-tree", preservedRef: "refs/test/array", landedFileFingerprints: { "code.txt": digest("array implementation") } };
