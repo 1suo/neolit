@@ -30,7 +30,7 @@ This file tracks the clean state-v3 replacement of the fixed progressive-lod pip
 - [x] Start implementation when required regions are actionable rather than at a fixed depth.
 - [x] Map verifier failures to exact criteria and responsible regions; reopen only those regions.
 - [x] Complete only when every required root region is answered or verified and no necessary frontier remains unresolved.
-- [ ] Require host-executed, criterion-specific verification witnesses. The current controller checks criterion coverage, but its evidence text still comes from the model runtime rather than a deterministic host check result.
+- [x] Require host-executed, criterion-specific verification witnesses. Pending change delivery now requires `langgraphExecuteVerificationChecks`; the controller replaces model-reported checks with its exact criterion results before integration.
 
 ## TUI
 
