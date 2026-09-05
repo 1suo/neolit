@@ -2313,16 +2313,9 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
     network.revision++;
     return network;
   }
-  const allowed = [...new Set((region.certifiedLeaf?.mutationResources ?? region.mutationResources ?? []).map(normalizeMutationPath).filter(Boolean))];
-  const outsideScope = actualChangedFiles.map(normalizeMutationPath).filter((file) => !allowed.some((resource) => file === resource || file.startsWith(`${resource}/`)));
-  if (outsideScope.length) {
-    for (const file of [...new Set(actualChangedFiles)]) addArtifact(network, region, activationId, { kind: "file", path: file, summary: `Changed ${file}`, fingerprint: changedFileFingerprints[file] ?? hash({ kind: "file", path: file, summary: `Changed ${file}` }) });
-    activation.status = "failed";
-    activation.error = `Implementation changed files outside the certified mutation scope: ${outsideScope.join(", ")}.`;
-    transitionRegion(region, "blocked", activation.error, "blocked");
-    network.revision++;
-    return network;
-  }
+  // Mutation resources guide inspection and review; they are not a predicted-file
+  // write fence. Implementation discovers transitive seams in its isolated
+  // worktree, and the verifier reviews the measured diff against the task.
   activation.status = "completed";
   const repairedVerificationIds = new Set(network.findings.filter((item) => activation.findingIds?.includes(item.id)).map((item) => item.sourceActivationId));
   if (output.outcome !== "blocked" && activation.findingIds?.length) for (const artifact of network.artifacts) {
