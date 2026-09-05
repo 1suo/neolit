@@ -259,3 +259,8 @@ entries keyed by the supplied canonical `requirementId`.
 npm run check   # tsc --noEmit + vitest + generated role-graph check
 npm run build   # emit dist/
 ```
+
+Linked-worktree observations fingerprint changed tracked file contents as well as
+Git metadata; same-size edits to an already-dirty file invalidate the observation.
+Deleted paths and symlink targets are fingerprinted without following symlinks
+outside the worktree.

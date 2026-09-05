@@ -80,6 +80,25 @@ describe("exported scoped repository service", () => {
     expect(inventory.worktrees[0]).toMatchObject({ changedPaths: ["README.md"], diffChunks: [{ path: "README.md" }] });
   });
 
+  it.each(["README.md", "spaced name.txt"])("detects successive dirty content changes in %s with identical diff statistics", (file) => {
+    const root = repository();
+    fs.writeFileSync(path.join(root, file), "original\n");
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    execFileSync("git", ["add", "."], { cwd: root });
+    execFileSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-qm", "base"], { cwd: root });
+    const observe = () => new ScopedRepositoryService(root).inspectWorktrees().value as { observationDigest: string; worktrees: Array<{ diffStat: string; status: string; diffChunks: Array<{ chunkId: string }> }> };
+    fs.writeFileSync(path.join(root, file), "changed1\n");
+    const first = observe();
+    fs.writeFileSync(path.join(root, file), "changed2\n");
+    const second = observe();
+    expect(second.worktrees[0]!.diffStat).toBe(first.worktrees[0]!.diffStat);
+    expect(second.worktrees[0]!.status).toBe(first.worktrees[0]!.status);
+    expect(second.observationDigest).not.toBe(first.observationDigest);
+    expect(second.worktrees[0]!.diffChunks[0]!.chunkId).not.toBe(first.worktrees[0]!.diffChunks[0]!.chunkId);
+    fs.unlinkSync(path.join(root, file));
+    expect(observe().observationDigest).not.toBe(second.observationDigest);
+  });
+
   it("keeps valid worktrees inspectable when a registered worktree path is missing", () => {
     const root = repository();
     execFileSync("git", ["init", "-q"], { cwd: root });

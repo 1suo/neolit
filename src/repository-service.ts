@@ -125,6 +125,21 @@ function compact(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit)}\n[truncated]`;
 }
 
+function workingPathDigest(worktree: string, changedPath: string): string {
+  const absolute = path.resolve(worktree, changedPath);
+  if (!inside(worktree, absolute)) throw new Error(`Changed path escapes worktree: ${changedPath}`);
+  try {
+    const entry = fs.lstatSync(absolute);
+    if (entry.isSymbolicLink()) return `symlink:${digest(fs.readlinkSync(absolute))}`;
+    if (!entry.isFile()) return "non-file";
+    if (!inside(worktree, fs.realpathSync(absolute))) throw new Error(`Changed path follows a symlink outside worktree: ${changedPath}`);
+    return `file:${digest(fs.readFileSync(absolute))}`;
+  } catch (error) {
+    if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return "missing";
+    throw error;
+  }
+}
+
 export function inspectLinkedWorktrees(rootInput: string): RepositoryToolResponse {
   const root = fs.realpathSync(rootInput);
   const currentHead = git(root, ["rev-parse", "HEAD"]).trim();
@@ -160,7 +175,7 @@ export function inspectLinkedWorktrees(rootInput: string): RepositoryToolRespons
     const status = bounded(git(worktree, ["status", "--short", "--untracked-files=all"]));
     const diffStat = bounded(git(worktree, ["--no-pager", "diff", "--no-ext-diff", "--no-textconv", "--stat=120,80", currentHead, "--"]));
     const commits = bounded(git(worktree, ["log", "--oneline", "--max-count=100", `${currentHead}..HEAD`]));
-    const tracked = git(worktree, ["--no-pager", "diff", "--no-ext-diff", "--no-textconv", "--name-only", currentHead, "--"]).split("\n").filter(Boolean);
+    const tracked = git(worktree, ["--no-pager", "diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", currentHead, "--"]).split("\0").filter(Boolean);
     const untracked = status.text.split("\n").filter((line) => line.startsWith("?? ")).map((line) => line.slice(3)).filter((changedPath) => {
       const entry = fs.lstatSync(path.join(worktree, changedPath), { throwIfNoEntry: false });
       return Boolean(entry && !entry.isDirectory());
@@ -168,7 +183,8 @@ export function inspectLinkedWorktrees(rootInput: string): RepositoryToolRespons
     const changedPaths = [...new Set([...tracked, ...untracked])].sort().slice(0, 500);
     const rawDiff = git(worktree, ["--no-pager", "diff", "--no-ext-diff", "--no-textconv", "--raw", "--full-index", currentHead, "--"]);
     const untrackedDigests = untracked.slice(0, 500).map((changedPath) => `${changedPath}\0${git(worktree, ["hash-object", "--", changedPath]).trim()}`);
-    const changeFingerprint = digest(`${rawDiff}\0${untrackedDigests.join("\n")}`);
+    const trackedDigests = tracked.map((changedPath) => [changedPath, workingPathDigest(worktree, changedPath)]);
+    const changeFingerprint = digest(`${rawDiff}\0${JSON.stringify(trackedDigests)}\0${untrackedDigests.join("\n")}`);
     repositoryReadChars += status.text.length + diffStat.text.length + commits.text.length;
     return { id: worktreeId, path: worktree, current: worktree === root, head: typeof fields.HEAD === "string" ? fields.HEAD : null, branch: typeof fields.branch === "string" ? fields.branch : fields.detached ? "detached" : null, available: true, unavailableReason: null, status: status.text, changedPaths, commitsRelativeToCurrent: commits.text, diffStat: diffStat.text, changeFingerprint, diffChunks: changedPaths.map((changedPath) => ({ path: changedPath, chunkId: digest(`${worktreeId}\0${changedPath}\0${changeFingerprint}`).slice(0, 24) })), truncated: status.truncated || diffStat.truncated || commits.truncated || changedPaths.length === 500 };
   });
