@@ -174,6 +174,20 @@ describe("delivery recovery", () => {
     expect(() => validateRefinementOutput(state, "r1", leaf)).toThrow(/outside/);
   });
 
+  it.each(["server/", "server\\runtime\\", "./server/"])("retains partial edits under normalized resource %s", (resource) => {
+    let network = certifiedNetwork();
+    const region = network.regions[0]!;
+    // Legacy checkpoints may retain ./ and backslash spellings accepted by completion.
+    region.mutationResources = [resource];
+    region.certifiedLeaf!.mutationResources = [resource];
+    network = queueActivation(network, "implement", "r1", "Fix server value", "server-value");
+    const activation = network.activations.at(-1)!;
+    const changedFile = resource.includes("runtime") ? "server/runtime/value.ts" : "server/value.ts";
+    const failed = applyBatchRecords(network, [{ activationId: activation.id, regionId: "r1", capability: "implement", basisRevision: network.revision, startedAt: 1, finishedAt: 2, outcome: "error", networkDelta: null, changedFiles: [changedFile], error: "interrupted after edit", usage: initial().usage }]).network;
+    expect(failed.regions[0]).toMatchObject({ status: "actionable", retainedImplementationActivationId: activation.id });
+    expect(failed.telemetry?.recoveryEvents?.map((event) => event.kind)).toEqual(["implementation-retry"]);
+  });
+
   it("retires automatic workspace continuation after pruning a failed partial implementation", () => {
     const network = certifiedNetwork();
     const activation = network.activations.at(-1)!;

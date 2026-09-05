@@ -22,7 +22,12 @@ function mutationPath(resource: string): string {
   if (!value || value.startsWith("/") || /^[a-z]:/i.test(value) || value.split("/").some((part) => !part || part === "." || part === ".." || part === ".git")) throw new Error(`Unsafe mutation resource path: ${resource}`);
   return value;
 }
-const pathWithin = (child: string, parent: string): boolean => child === parent || child.startsWith(`${parent}/`);
+const normalizeMutationPath = (value: string): string => value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
+const pathWithin = (child: string, parent: string): boolean => {
+  const childPath = normalizeMutationPath(child);
+  const parentPath = normalizeMutationPath(parent);
+  return childPath === parentPath || childPath.startsWith(`${parentPath}/`);
+};
 
 const INITIAL_INSPECTION_REQUEST = "First preserve task structure: separately verifiable deliverables at an unpartitioned root require decompose with taskScopes and any execution dependencies. A prescribed implementation does not erase those scope boundaries. Within one cohesive scope, if confirmed repository evidence grounds a fixed correction, return certified with its bounded mutation paths; if it is already satisfied, return already-satisfied. Do not invent alternatives for execution tactics. Otherwise find the repository facts needed to form complete alternatives for this goal, then return the local decision boundary, root decomposition, or mechanically certified terminal result in this activation. Investigate lower-level details when they affect that choice, but do not turn them into choices yet. A facts-only result is valid only when it closes an explicit supplied proof or validation obligation.";
 const emptyTelemetry = (): SolutionTelemetry => ({ activations: 0, physicalActivations: 0, promptAttempts: 0, schemaRetries: 0, schemaRepairs: 0, operationCalls: {}, counterexampleRepairs: 0, retries: 0, reopens: 0, cycles: 0, candidates: 0, regionCount: 0, promptChars: 0, schemaChars: 0, projectedContextChars: 0, validationFailures: 0, elapsedMs: 0, queueMs: 0, roleMs: {}, implementationMs: 0, verificationMs: 0, usage: { ...EMPTY_USAGE }, blockedReasons: [], regions: {}, contextTelemetry: { ...EMPTY_CONTEXT_TELEMETRY }, recordedActivationIds: [], activationRecords: [] });
@@ -2291,9 +2296,8 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
     network.revision++;
     return network;
   }
-  const normalizePath = (value: string) => value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
-  const allowed = [...new Set((region.certifiedLeaf?.mutationResources ?? region.mutationResources ?? []).map(normalizePath).filter(Boolean))];
-  const outsideScope = actualChangedFiles.map(normalizePath).filter((file) => !allowed.some((resource) => file === resource || file.startsWith(`${resource}/`)));
+  const allowed = [...new Set((region.certifiedLeaf?.mutationResources ?? region.mutationResources ?? []).map(normalizeMutationPath).filter(Boolean))];
+  const outsideScope = actualChangedFiles.map(normalizeMutationPath).filter((file) => !allowed.some((resource) => file === resource || file.startsWith(`${resource}/`)));
   if (outsideScope.length) {
     for (const file of [...new Set(actualChangedFiles)]) addArtifact(network, region, activationId, { kind: "file", path: file, summary: `Changed ${file}`, fingerprint: changedFileFingerprints[file] ?? hash({ kind: "file", path: file, summary: `Changed ${file}` }) });
     activation.status = "failed";
