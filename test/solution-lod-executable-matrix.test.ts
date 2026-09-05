@@ -13,7 +13,7 @@ const agents = { inspect: "inspect", synthesize: "synthesize", refine: "refine",
 const changeHooks = (directory: string) => ({
   langgraphPrepareImplementationWorkspace: async () => ({ worktree: directory, baselineFingerprint: "matrix-baseline" }),
   langgraphPrepareVerifierWorkspace: async () => directory,
-  langgraphExecuteVerificationChecks: async (_runId: string, _activationId: string, _worktree: string, _regionId: string, criterionIds: string[]) => criterionIds.map((criterionId) => ({ criterionId, name: `host ${criterionId}`, passed: true, evidence: "host check passed" })),
+  langgraphExecuteVerificationChecks: async (_runId: string, _activationId: string, _worktree: string, _regionId: string, checks: Array<{ criterionId: string }>) => checks.map((check) => ({ criterionId: check.criterionId, name: `host ${check.criterionId}`, passed: true, evidence: "host check passed" })),
   langgraphIntegrateVerifiedWorkspace: async (_runId: string, _verificationActivationId: string, _worktree: string, implementationActivationId: string, changedFiles: string[]) => ({ outcome: "landed" as const, implementationActivationId, baselineFingerprint: "matrix-baseline", changedFiles, patchFingerprint: "matrix-patch", commitId: "matrix-commit", treeFingerprint: "matrix-tree", preservedRef: "refs/neolit/matrix", landedFileFingerprints: Object.fromEntries(changedFiles.map((file) => [file, `landed:${file}`])) }),
 });
 
