@@ -152,7 +152,7 @@ describe("solution LOD executable task matrix", () => {
       const region = input.state.network.regions[0];
       if (input.node === "inspect:r1") { const observation = observed("code.txt contains the incorrect fixed value"); return { text: "", tools: observation.tools, structured: {
         outcome: "certified", region: { acceptanceCriteria: ["code is corrected"] }, evidence: observation.evidence, criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["observed-chunk"] }],
-        certifiedVerdict: { proposition: "Correct code.txt", implementationScope: "Replace the incorrect value", evidenceRefs: ["observed-chunk"], mutationResources: ["code.txt"] },
+        certifiedVerdict: { proposition: "Correct code.txt", implementationScope: "Replace the incorrect value", evidenceRefs: ["observed-chunk"], mutationResources: ["code.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the focused code.txt test and assert it reads fixed." }] },
       } }; }
       if (input.node === "implement:r1") { fs.writeFileSync(path.join(directory, "code.txt"), "fixed"); return { text: "", structured: { outcome: "completed", summary: "corrected", changedFiles: ["code.txt"], checks: [{ name: "code is corrected", passed: true, evidence: "observed fixed" }] } }; }
       if (input.node === "verify:r1") return { text: "", structured: { outcome: "fail", summary: "external service unavailable", findings: [{ regionId: "r1", criterionId: region.criterionIds[0], severity: "high", target: { kind: "environment", refs: [] }, problem: "required service is unavailable", regressionCriterion: "code is corrected", evidence: "connection refused", evidenceRefs: [], resolutionOwner: "service operator", requiredEvidence: ["successful service probe"] }], checks: [] } };

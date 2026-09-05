@@ -176,7 +176,7 @@ describe("root coverage and certified fast path", () => {
     network.activations[0]!.status = "running";
     const location = { canonicalPath: "src/x.ts", range: [4, 4] as [number, number], fileDigest: "digest", snapshotEpoch: 0 };
     const tools = [{ tool: "graph_read", status: "completed" as const, metadata: { repositoryDescriptor: location } }];
-    const delta = SolutionDeltaSchema.parse({ region: { acceptanceCriteria: ["exact text is corrected"] }, evidence: [{ text: "the literal is misspelled", source: "src/x.ts:4", kind: "repository", location }], candidates: [], constraints: [], select: [], activations: [], materialRequirements: [{ key: "typo", text: "Correct the literal", criterion: "exact text is corrected", evidenceRefs: ["src/x.ts:4"] }], certifiedVerdict: { proposition: "Correct the misspelled literal", implementationScope: "Edit the literal in src/x.ts", evidenceRefs: ["src/x.ts:4"], mutationResources: ["src/x.ts"] } });
+    const delta = SolutionDeltaSchema.parse({ region: { acceptanceCriteria: ["exact text is corrected"] }, evidence: [{ text: "the literal is misspelled", source: "src/x.ts:4", kind: "repository", location }], candidates: [], constraints: [], select: [], activations: [], materialRequirements: [{ key: "typo", text: "Correct the literal", criterion: "exact text is corrected", evidenceRefs: ["src/x.ts:4"] }], certifiedVerdict: { proposition: "Correct the misspelled literal", implementationScope: "Edit the literal in src/x.ts", evidenceRefs: ["src/x.ts:4"], mutationResources: ["src/x.ts"], checks: [{ criterionIndex: 0, commandOrObservation: "Read src/x.ts and assert the corrected literal is present." }] } });
     validateSolutionDelta(state(network), "r1", "inspect", delta, tools);
     const merged = mergeSolutionDelta(state(network), "a1", delta, tools);
     expect(merged.regions[0]).toMatchObject({ status: "actionable", mutationResources: ["src/x.ts"] });
@@ -212,7 +212,7 @@ describe("root coverage and certified fast path", () => {
 
   it("rejects request-only certification and unrequested estimate language", () => {
     const network = initialNetwork("fix typo");
-    const candidate = SolutionDeltaSchema.parse({ region: { acceptanceCriteria: ["fixed"] }, evidence: [], candidates: [], constraints: [], select: [], activations: [], certifiedVerdict: { proposition: "Fix it", implementationScope: "Do it in two hours", evidenceRefs: ["task"], mutationResources: ["src/x.ts"] } });
+    const candidate = SolutionDeltaSchema.parse({ region: { acceptanceCriteria: ["fixed"] }, evidence: [], candidates: [], constraints: [], select: [], activations: [], certifiedVerdict: { proposition: "Fix it", implementationScope: "Do it in two hours", evidenceRefs: ["task"], mutationResources: ["src/x.ts"], checks: [{ criterionIndex: 0, commandOrObservation: "Read src/x.ts and assert it is fixed." }] } });
     expect(() => validateSolutionDelta(state(network), "r1", "inspect", candidate)).toThrow();
   });
 

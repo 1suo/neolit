@@ -859,7 +859,7 @@ export const SolutionDeltaSchema = z.object({
     requirementId: z.string().min(1).describe("Exact supplied material requirement ID whose evidence is being refreshed."),
     evidenceRefs: z.array(z.string().min(1)).min(1).describe("Current confirmed facts or same-result repository chunks establishing this requirement."),
   }).strict()).optional().describe("Evidence-only refresh for established material requirements. Never repeat their key, text, scope, or criterion."),
-  certifiedVerdict: z.object({ proposition: z.string().min(1), implementationScope: z.string().min(1), evidenceRefs: z.array(z.string()).min(1), mutationResources: z.array(z.string().min(1)).min(1) }).strict().optional().describe("Mechanically fixed small correction whose exact repository evidence, implementation scope, and mutation paths leave no genuine solution choice."),
+  certifiedVerdict: z.object({ proposition: z.string().min(1), implementationScope: z.string().min(1), evidenceRefs: z.array(z.string()).min(1), mutationResources: z.array(z.string().min(1)).min(1), checks: z.array(z.object({ criterionIndex: z.number().int().nonnegative(), commandOrObservation: z.string().min(1) }).strict()).min(1) }).strict().optional().describe("Mechanically fixed small correction whose exact repository evidence, implementation scope, mutation paths, and one executable behavioral check per criterion leave no genuine solution choice."),
   alreadySatisfied: z.object({
     proposition: z.string().min(1),
     criterionEvidence: z.array(z.object({ criterionIndex: z.number().int().nonnegative(), evidenceRefs: z.array(z.string().min(1)).min(1) }).strict()).min(1),

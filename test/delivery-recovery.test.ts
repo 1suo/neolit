@@ -33,7 +33,7 @@ function certifiedNetwork() {
   const seen = observation();
   const output = InspectionOutputSchema.parse({ outcome: "certified", region: { acceptanceCriteria: ["both values are fixed"] }, evidence: seen.evidence,
     criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["code-observation"] }],
-    certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set both values to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"] },
+    certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set both values to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the delivery fixture and assert both files read fixed." }] },
   });
   const network = applyActivationOutput(state, state.network.activations[0]!, inspectionOutputToDelta(output, seen.tools), [], seen.tools);
   return queueActivation(network, "implement", "r1", "Fix both values", "fixed-values");
@@ -87,7 +87,7 @@ describe("delivery recovery", () => {
         return { text: "", tools: seen.tools, structured: {
           outcome: "certified", region: { acceptanceCriteria: ["both values are fixed"] }, evidence: seen.evidence,
           criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["code-observation"] }],
-          certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set code and helper to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"] },
+          certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set code and helper to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the delivery fixture and assert both files read fixed." }] },
         } };
       }
       if (input.node === "implement:r2") {
@@ -364,7 +364,7 @@ describe("delivery recovery", () => {
     const seen = observation();
     const output = InspectionOutputSchema.parse({ outcome: "certified", region: { acceptanceCriteria: ["value fixed"] }, evidence: seen.evidence,
       criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["code-observation"] }],
-      certifiedVerdict: { proposition: "Correct value", implementationScope: "Set value to fixed", evidenceRefs: ["code-observation"], mutationResources: [resource] },
+      certifiedVerdict: { proposition: "Correct value", implementationScope: "Set value to fixed", evidenceRefs: ["code-observation"], mutationResources: [resource], checks: [{ criterionIndex: 0, commandOrObservation: "Run the value fixture and assert it reads fixed." }] },
     });
     expect(() => validateSolutionDelta(state, "r1", "inspect", inspectionOutputToDelta(output, seen.tools), seen.tools)).toThrow(/outside|Unsafe/);
   });
