@@ -162,6 +162,8 @@ export interface ChangeIntegration {
   treeFingerprint?: string;
   preservedRef?: string;
   landedFileFingerprints?: Record<string, string>;
+  /** Controller-observed synthetic worktree inventory digests after landing and cleanup. */
+  landedObservationFingerprints?: Record<string, string>;
   reason?: string;
 }
 
@@ -175,6 +177,8 @@ export interface ChangeIntegrationResult {
   treeFingerprint?: string;
   preservedRef?: string;
   landedFileFingerprints?: Record<string, string>;
+  /** Controller-observed synthetic worktree inventory digests after landing and cleanup. */
+  landedObservationFingerprints?: Record<string, string>;
   reason?: string;
 }
 

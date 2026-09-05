@@ -536,6 +536,10 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
       let before: Map<string, string> | undefined;
       let verifierBefore: Map<string, string> | undefined;
       let callResult: AgentCallResult | undefined;
+      let completedIntegration: ChangeIntegrationResult | undefined;
+      type WorktreeInventory = { currentHead: string; observationDigest: string; worktrees: Array<{ current: boolean; branch: unknown; [key: string]: unknown }> };
+      let inventoryBefore: WorktreeInventory | undefined;
+      let landingBefore: Map<string, string> | undefined;
       const record = (partial: Pick<ActivationTaskResult, "outcome"> & Partial<ActivationTaskResult>): ActivationTaskResult => ({ activationId: activation.id, logicalActivationId: activation.logicalActivationId, regionId: activation.regionId, capability: activation.capability, operation: activation.operation, domainSize: state.network.regions.find((item) => item.id === activation.regionId)?.candidateIds.length, basisRevision: activation.basisRevision, startedAt, finishedAt: Date.now(), usage: { ...EMPTY_USAGE }, networkDelta: null, promptChars: promptText.length + schemaChars, schemaChars, projectedSectionChars: { ...projection.sectionChars, "OUTPUT SCHEMA": schemaChars }, validationFailures: [...validationFailures], ...partial });
       try {
         const requiredCapabilities = [...activationRequiredCapabilities(activation)];
@@ -550,6 +554,10 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
          if (activation.capability === "verify" && activationRegion?.delivery === "change" && !prepareVerifier) throw new Error("Change verification requires an isolated verifier workspace supplied by langgraphPrepareVerifierWorkspace.");
         const implementationActivationId = activationRegion?.integration?.implementationActivationId;
         if (activation.capability === "verify" && activationRegion?.integration?.status === "pending" && !integrateVerified) throw new Error("Change verification requires controller-owned commit and landing supplied by langgraphIntegrateVerifiedWorkspace.");
+        if (activation.capability === "verify" && state.network.evidence.some((item) => item.status !== "stale" && item.location?.observation === "worktrees")) {
+          try { inventoryBefore = inspectLinkedWorktrees(state.worktree).value as WorktreeInventory; landingBefore = statusPaths(state.worktree); }
+          catch { /* Without a baseline, a changed inventory cannot be attributed to landing. */ }
+        }
         if (activation.capability === "verify" && prepareVerifier) { executionWorktree = await prepareVerifier(state.runId, activation.id, state.worktree, implementationActivationId); verifierBefore = snapshot(executionWorktree); }
         const result = callResult = await runtime(config).call({ agent: options.agents[activation.capability] ?? activation.capability, node: `${activation.operation ?? activation.capability}:${activation.regionId}`, state, directory: executionWorktree, worktree: executionWorktree, limits: limits[activation.capability], requiredCapabilities, requiredTools: requiredToolsForCapabilities(requiredCapabilities), physicalActivationId: activation.id, logicalActivationId: activation.logicalActivationId, attemptOrdinal: activation.schemaReservation?.attemptOrdinal, maxAttempts: activation.schemaReservation?.maxAttempts ?? 0, session: activation.operation === "challenge-domain" ? { strategy: "fresh" } : recovery ? { strategy: recovery.strategy, sessionId: recovery.sessionId } : undefined, schema: jsonSchema, validateStructured: (value, diagnostics = { tools: [] }) => { try { const parsed = schema.parse(value); const changedFiles = before ? changedBetween(before, snapshot(executionWorktree)) : []; let canonical = canonicalizeActivationOutput(state, activation, parsed, changedFiles); if (activation.capability === "inspect") {
           const sanitized = sanitizeInspectionValidations(state, activation, canonical as InspectionOutput);
@@ -586,7 +594,7 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
           if (changedFiles.length) throw new Error(`Verifier mutated its isolated workspace: ${changedFiles.join(", ")}. Verification is read-only.`);
           const output = canonicalizeActivationOutput(state, activation, structured(result, VerificationOutputSchema));
           applyActivationOutput(state, activation, output, [], result.tools);
-          const integration = output.outcome === "pass" && activationRegion?.integration?.status === "pending" && implementationActivationId
+          const integration = completedIntegration = output.outcome === "pass" && activationRegion?.integration?.status === "pending" && implementationActivationId
             ? await integrateVerified!(state.runId, activation.id, state.worktree, implementationActivationId, activationRegion.integration.changedFiles)
             : undefined;
           return { results: [record({ ...base, outcome: "applied", roleOutcome: output.outcome, changedFiles, networkDelta: { kind: "verification", output, integration } })] };
@@ -612,6 +620,21 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
         return { results: [record({ outcome: "error", error: message, changedFiles, ...failure, usage: failure.usage ?? callResult?.usage ?? { ...EMPTY_USAGE }, tools: failure.tools ?? callResult?.tools?.map((tool) => ({ ...tool })), contextTelemetry: failure.contextTelemetry ?? (callResult?.contextTelemetry ? { ...callResult.contextTelemetry } : undefined) })] };
       } finally {
         if (activation.capability === "verify" && releaseVerifier) await releaseVerifier(state.runId, activation.id);
+        if (completedIntegration?.outcome === "landed") {
+          // The returned record shares this object and is admitted after cleanup.
+          // Acknowledge aggregate inventory changes only when the source transition
+          // is confined to admitted files and every other worktree is unchanged.
+          completedIntegration.landedObservationFingerprints = {};
+          if (inventoryBefore && landingBefore) try {
+            const after = inspectLinkedWorktrees(state.worktree).value as WorktreeInventory;
+            const otherWorktrees = (inventory: WorktreeInventory) => JSON.stringify(inventory.worktrees.filter((item) => !item.current));
+            const attributable = inventoryBefore.currentHead === after.currentHead
+              && inventoryBefore.worktrees.find((item) => item.current)?.branch === after.worktrees.find((item) => item.current)?.branch
+              && otherWorktrees(inventoryBefore) === otherWorktrees(after)
+              && changedBetween(landingBefore, statusPaths(state.worktree)).every((file) => completedIntegration!.changedFiles.includes(file));
+            if (attributable) completedIntegration.landedObservationFingerprints = Object.fromEntries(state.network.evidence.filter((item) => item.status !== "stale" && item.location?.observation === "worktrees").map((item) => [item.location!.canonicalPath, after.observationDigest]));
+          } catch { /* Preserve ordinary stale detection when attribution is unavailable. */ }
+        }
       }
     })
     .addNode("merge", (state: SolutionLodState) => {

@@ -55,6 +55,12 @@ techniques such as singleton collapse and minimum-remaining-values scheduling.
 - [x] Preserve settled criterion observations during boundary-counterexample
   repair, carry the missing family and defect into focused rebuilding, and keep
   the CEGAR budget cumulative across regenerated domains.
+- [x] Refresh linked-worktree observation epochs after attributable controller
+  landing and workspace cleanup; preserve invalidation for other worktrees and
+  source paths outside the admitted patch.
+- [ ] Include tracked working-tree content digests in aggregate worktree
+  observations: successive edits to an already-dirty file can preserve raw Git
+  diff metadata and diff statistics, leaving the aggregate digest unchanged.
 - [ ] Centralize legal region transitions and their preconditions instead of
   assigning statuses across propagation, implementation, verification, and
   reopening code paths.

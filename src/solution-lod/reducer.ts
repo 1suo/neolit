@@ -682,7 +682,7 @@ function repositoryEpochs(network: SolutionNetwork): NonNullable<SolutionNetwork
   return network.repositoryEpochs ?? Object.fromEntries(network.regions
     .filter((region) => region.integration?.status === "landed")
     .sort((left, right) => Number(left.integration!.implementationActivationId.slice(1)) - Number(right.integration!.implementationActivationId.slice(1)))
-    .flatMap((region) => Object.entries(region.integration?.landedFileFingerprints ?? {}).map(([file, digest]) => [file, { digest, revision: network.revision }])));
+    .flatMap((region) => Object.entries({ ...region.integration?.landedFileFingerprints, ...region.integration?.landedObservationFingerprints }).map(([file, digest]) => [file, { digest, revision: network.revision }])));
 }
 
 export function invalidateEvidenceDigestMismatches(network: SolutionNetwork, currentDigests: Readonly<Record<string, string>>): SolutionNetwork {
@@ -2501,11 +2501,14 @@ export function completeVerification(networkInput: SolutionNetwork, activationId
       treeFingerprint: integration.treeFingerprint,
       preservedRef: integration.preservedRef,
       landedFileFingerprints: integration.landedFileFingerprints ? { ...integration.landedFileFingerprints } : undefined,
+      landedObservationFingerprints: integration.landedObservationFingerprints ? Object.fromEntries(Object.entries(integration.landedObservationFingerprints).filter(([observation]) => network.evidence.some((item) => item.kind === "repository" && item.location?.observation === "worktrees" && item.location.canonicalPath === observation))) : undefined,
       reason: integration.reason,
     };
     if (integration?.outcome === "landed") {
       network.repositoryEpochs = structuredClone(repositoryEpochs(network));
       for (const [file, digest] of Object.entries(integration.landedFileFingerprints ?? {})) network.repositoryEpochs[file] = { digest, revision: network.revision + 1 };
+      const observationPaths = new Set(network.evidence.filter((item) => item.kind === "repository" && item.location?.observation === "worktrees").map((item) => item.location!.canonicalPath));
+      for (const [observation, digest] of Object.entries(integration.landedObservationFingerprints ?? {})) if (observationPaths.has(observation)) network.repositoryEpochs[observation] = { digest, revision: network.revision + 1 };
     }
     transitionRegion(region, "selected", undefined, "verified");
     break;

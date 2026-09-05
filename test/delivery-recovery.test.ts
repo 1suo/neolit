@@ -2,10 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { MemorySaver } from "@langchain/langgraph";
-import { solutionLodGraph } from "../src/solution-lod/graph.js";
+import { repositoryEvidenceDigests, solutionLodGraph } from "../src/solution-lod/graph.js";
 import { applyActivationOutput, applyBatchRecords, completeImplementation, completeVerification, ensureRunnableWork, initialNetwork, inspectionOutputToDelta, isCompletionCertificateValid, queueActivation, invalidateEvidenceDigestMismatches, resetPrunedRegion, validateRefinementOutput, validateSolutionDelta } from "../src/solution-lod/reducer.js";
+import { inspectLinkedWorktrees } from "../src/repository-service.js";
 import { InspectionOutputSchema } from "../src/solution-lod/types.js";
 import type { RefinementOutput, SolutionLodState } from "../src/solution-lod/types.js";
 
@@ -38,10 +40,18 @@ function certifiedNetwork() {
 }
 
 describe("delivery recovery", () => {
-  it.each([false, true])("retains failed writes and verifies cumulative patches with artifact premises=%s", async (citeArtifacts) => {
+  it.each([[false, false, false], [true, false, false], [true, true, false], [true, true, true]])("retains cumulative delivery: artifacts=%s inventory=%s externalDuringLanding=%s", async (citeArtifacts, observeWorktrees, externalDuringLanding) => {
     const directory = workspace();
     const baseline = workspace();
     const execution = workspace();
+    const verifierCheckout = `${directory}-verifier`;
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: directory, encoding: "utf8", stdio: "pipe" });
+    if (observeWorktrees) {
+      fs.writeFileSync(path.join(directory, "outside.txt"), "outside-before");
+      git("init", "-q"); git("add", ".");
+      git("-c", "user.name=Recovery Test", "-c", "user.email=recovery@example.test", "commit", "-qm", "initial");
+      directories.push(verifierCheckout);
+    }
     const calls: string[] = [];
     const preparations: Array<{ id: string; resume?: string }> = [];
     let implementationCount = 0;
@@ -64,7 +74,16 @@ describe("delivery recovery", () => {
       if (input.node === "inspect:r3") return { text: "", structured: { outcome: "answer", resolvedAnswer: { answer: "Both values are fixed.", acceptanceCriteria: ["answer states the fixed value"], evidenceRefs: ["task"] } } };
       if (input.node === "verify:r3") return { text: "", structured: { outcome: "pass", summary: "answer correct", findings: [], checks: [{ name: "answer states the fixed value", passed: true, evidence: "answer says fixed", criterionIds: region.criterionIds }] } };
       if (input.node === "inspect:r2") {
-        const seen = observation();
+        const inventoryDigest = observeWorktrees ? (inspectLinkedWorktrees(directory).value as { observationDigest: string }).observationDigest : "";
+        const seen = observeWorktrees ? {
+          tools: [
+            { tool: "graph_inspect_worktrees", status: "completed", metadata: { repositoryDescriptor: { chunkId: "code-observation", canonicalPath: ".git/worktrees", range: [0, 0], fileDigest: inventoryDigest, snapshotEpoch: 0, observation: "worktrees" } } },
+            { tool: "graph_read", status: "completed", metadata: { repositoryDescriptor: { chunkId: "outside-observation", canonicalPath: "outside.txt", range: [1, 1], fileDigest: digest("outside-before"), snapshotEpoch: 0 } } },
+          ], evidence: [
+            { kind: "repository", text: "Worktree inventory observed before correction", source: ".git/worktrees", chunkId: "code-observation" },
+            { kind: "repository", text: "Outside file observed before correction", source: "outside.txt:1", chunkId: "outside-observation" },
+          ],
+        } : observation();
         return { text: "", tools: seen.tools, structured: {
           outcome: "certified", region: { acceptanceCriteria: ["both values are fixed"] }, evidence: seen.evidence,
           criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["code-observation"] }],
@@ -94,11 +113,27 @@ describe("delivery recovery", () => {
         preparations.push({ id, resume });
         return { worktree: execution, baselineWorktree: baseline, baselineFingerprint: "original-baseline" };
       },
-      langgraphPrepareVerifierWorkspace: async () => execution,
-      langgraphReleaseVerifierWorkspace: async () => {},
-      langgraphIntegrateVerifiedWorkspace: async (_run: string, _verify: string, worktree: string, implementationActivationId: string, changedFiles: string[]) => { for (const file of changedFiles) fs.copyFileSync(path.join(execution, file), path.join(directory, file)); return { outcome: "landed", implementationActivationId, changedFiles, baselineFingerprint: "original-baseline", patchFingerprint: "patch", commitId: "commit", treeFingerprint: "tree", preservedRef: "refs/test/landed", landedFileFingerprints: Object.fromEntries([...snapshot(execution)].map(([file, value]) => [file, digest(value)])) }; },
+      langgraphPrepareVerifierWorkspace: async () => {
+        if (observeWorktrees) git("worktree", "add", "--detach", verifierCheckout, "HEAD");
+        return execution;
+      },
+      langgraphReleaseVerifierWorkspace: async () => { if (observeWorktrees && fs.existsSync(verifierCheckout)) git("worktree", "remove", verifierCheckout); },
+      langgraphIntegrateVerifiedWorkspace: async (_run: string, _verify: string, worktree: string, implementationActivationId: string, changedFiles: string[]) => { for (const file of changedFiles) fs.copyFileSync(path.join(execution, file), path.join(directory, file)); if (externalDuringLanding) fs.writeFileSync(path.join(directory, "outside.txt"), "external modification"); return { outcome: "landed", implementationActivationId, changedFiles, baselineFingerprint: "original-baseline", patchFingerprint: "patch", commitId: "commit", treeFingerprint: "tree", preservedRef: "refs/test/landed", landedFileFingerprints: Object.fromEntries([...snapshot(execution)].map(([file, value]) => [file, digest(value)])) }; },
     } }) as SolutionLodState;
+    if (externalDuringLanding) {
+      expect(configured.progress?.(result)?.phase).toBe("blocked");
+      expect(result.network.evidence.find((item) => item.location?.canonicalPath === "outside.txt")?.status).toBe("stale");
+      expect(result.network.evidence.find((item) => item.location?.observation === "worktrees")?.status).toBe("stale");
+      expect(result.network.repositoryEpochs?.["outside.txt"]).toBeUndefined();
+      expect(result.network.repositoryEpochs?.[".git/worktrees"]).toBeUndefined();
+      return;
+    }
     expect(configured.progress?.(result)?.phase, result.result).toBe("completed");
+    if (observeWorktrees) {
+      expect(fs.existsSync(verifierCheckout)).toBe(false);
+      expect(result.network.repositoryEpochs?.[".git/worktrees"]?.digest).toBe((inspectLinkedWorktrees(directory).value as { observationDigest: string }).observationDigest);
+      expect(result.network.repositoryEpochs?.["outside.txt"]).toBeUndefined();
+    }
     expect(calls).toEqual(["inspect:r1", "inspect:r2", "implement:r2", "implement:r2", "verify:r2", "inspect:r3", "verify:r3"]);
     expect(preparations).toHaveLength(2);
     expect(preparations[1]!.resume).toBe(preparations[0]!.id);
@@ -117,10 +152,15 @@ describe("delivery recovery", () => {
     expect(landed.regions[0]!.evidenceIds.length).toBeGreaterThan(0);
     expect(ensureRunnableWork(landed).done).toBe(true);
     fs.writeFileSync(path.join(directory, "code.txt"), "external edit");
-    const external = invalidateEvidenceDigestMismatches(landed, { "code.txt": digest(fs.readFileSync(path.join(directory, "code.txt"), "utf8")) });
+    if (observeWorktrees) git("worktree", "add", "--detach", verifierCheckout, "HEAD");
+    const external = invalidateEvidenceDigestMismatches(landed, observeWorktrees ? repositoryEvidenceDigests(directory, landed) : { "code.txt": digest(fs.readFileSync(path.join(directory, "code.txt"), "utf8")) });
     expect(external.evidence.find((item) => item.kind === "repository")?.status).toBe("stale");
     expect(external.regions[0]!.status).not.toBe("verified");
     expect(external.repositoryEpochs?.["code.txt"]).toBeUndefined();
+    if (observeWorktrees) {
+      expect(external.evidence.find((item) => item.location?.observation === "worktrees")?.status).toBe("stale");
+      expect(external.repositoryEpochs?.[".git/worktrees"]).toBeUndefined();
+    }
   });
 
   it.each(["missing-proof", "e1", "e2"])("retains valid observations when optional claim proof %s is inadmissible", async (proof) => {
@@ -299,9 +339,11 @@ describe("delivery recovery", () => {
     delete network.repositoryEpochs;
     network = queueActivation(network, "verify", "r1", "Verify repair", "repair-verified");
     const verify = network.activations.at(-1)!;
-    const landed = completeVerification(network, verify.id, { outcome: "pass", summary: "fixed", findings: [], checks: [{ name: "both values fixed", passed: true, evidence: "observed", disposition: "criterion-gating", baselineEvidenceRefs: [], requiredEvidence: [], criterionIds: network.regions[0]!.criterionIds }] }, { outcome: "landed", implementationActivationId: implement.id, baselineFingerprint: "baseline", patchFingerprint: "helper-patch", changedFiles: ["helper.txt"], landedFileFingerprints: { "helper.txt": digest("fixed") } });
+    const landed = completeVerification(network, verify.id, { outcome: "pass", summary: "fixed", findings: [], checks: [{ name: "both values fixed", passed: true, evidence: "observed", disposition: "criterion-gating", baselineEvidenceRefs: [], requiredEvidence: [], criterionIds: network.regions[0]!.criterionIds }] }, { outcome: "landed", implementationActivationId: implement.id, baselineFingerprint: "baseline", patchFingerprint: "helper-patch", changedFiles: ["helper.txt"], landedFileFingerprints: { "helper.txt": digest("fixed") }, landedObservationFingerprints: { "code.txt": digest("external edit") } });
     expect(landed.repositoryEpochs?.["code.txt"]?.digest).toBe(digest("fixed"));
     expect(landed.repositoryEpochs?.["helper.txt"]?.digest).toBe(digest("fixed"));
+    expect(landed.regions[0]!.integration?.landedObservationFingerprints).toEqual({});
+    expect(invalidateEvidenceDigestMismatches(landed, { "code.txt": digest("external edit") }).evidence[0]!.status).toBe("stale");
     expect(invalidateEvidenceDigestMismatches(landed, { "code.txt": digest("fixed") }).evidence[0]!.status).toBe("confirmed");
   });
 
