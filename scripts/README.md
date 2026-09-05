@@ -4,6 +4,10 @@ Scripts in this directory maintain deterministic repository artifacts. Recurring
 operations must be exposed through `package.json` so contributors and CI use the
 same command.
 
+Vitest excludes `.neolit/` through `vitest.config.ts`. That directory contains
+retained graph checkpoints and isolated repository workspaces, which are run
+data rather than package test files.
+
 ## Solution role graph
 
 `render-solution-role-graph.ts` renders the Mermaid role topology from
