@@ -858,8 +858,8 @@ describe("solution LOD reducer", () => {
     const rightPrompt = compileActivationPrompt(right, right.network.activations[0]);
     expect(leftPrompt).toContain(left.network.authority.task.exactText);
     expect(rightPrompt).toContain(right.network.authority.task.exactText);
-    expect(leftPrompt).toContain("inspect: First preserve task structure");
-    expect(rightPrompt).toContain("inspect: First preserve task structure");
+    expect(leftPrompt).toContain("inspect: First determine whether the task already prescribes the correction");
+    expect(rightPrompt).toContain("inspect: First determine whether the task already prescribes the correction");
   });
 
   it("compiles the operational contract for every role", () => {
