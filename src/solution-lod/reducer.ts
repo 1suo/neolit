@@ -2063,6 +2063,12 @@ export function validateRefinementOutput(state: SolutionLodState, regionId: stri
     if (!exactSet(output.atomicityWitness.criterionIds, output.certifiedLeaf.criterionIds)) throw new Error("A leaf atomicity witness must cover every exact certified criterion ID and no others.");
     if (!exactSet(output.atomicityWitness.requirementIds, output.certifiedLeaf.requirementIds ?? [])) throw new Error("A leaf atomicity witness must cover every exact certified material requirement ID and no others.");
     if (!exactSet(output.atomicityWitness.mutationResources.map(normalize), output.certifiedLeaf.mutationResources.map(normalize))) throw new Error("A leaf atomicity witness must cover every exact certified mutation resource and no others.");
+    const partition = output.atomicityWitness.partitionAttempt;
+    if (region.criterionIds.length > 1 && !partition) throw new Error("A multi-criterion leaf requires a concrete two-outcome partition attempt; return children when the outcomes are independent.");
+    if (partition) {
+      if (!partition.leftCriterionIds.length || !partition.rightCriterionIds.length || !exactSet([...partition.leftCriterionIds, ...partition.rightCriterionIds], region.criterionIds)) throw new Error("A leaf partition attempt must assign every exact criterion to one of its two outcomes.");
+      for (const ref of partition.dependencyEvidenceRefs) if (!knownRef(state.network, ref) || !isConfirmedEvidence(state.network, ref)) throw new Error(`Leaf partition attempt cites unresolved or stale dependency evidence ${ref}.`);
+    }
     return;
   }
   if (output.outcome !== "children") return assertNever(output);

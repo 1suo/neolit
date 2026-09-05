@@ -942,6 +942,14 @@ const AtomicityWitnessSchema = z.object({
   requirementIds: z.array(z.string().min(1)),
   mutationResources: z.array(z.string().min(1)),
   whySplittingFails: z.string().min(1).describe("Why a two-way partition would overlap mutation ownership, require unresolved coordination, or merely wrap the same change."),
+  partitionAttempt: z.object({
+    leftOutcome: z.string().min(1),
+    rightOutcome: z.string().min(1),
+    leftCriterionIds: z.array(z.string().min(1)),
+    rightCriterionIds: z.array(z.string().min(1)),
+    dependencyEvidenceRefs: z.array(z.string()),
+    whyNotIndependent: z.string().min(1),
+  }).strict().optional(),
 }).strict();
 export const LeafRefinementOutputSchema = RefinementOutputBaseSchema.extend({ outcome: z.literal("leaf"), certifiedLeaf: CertifiedLeafSchema, atomicityWitness: AtomicityWitnessSchema });
 export const RefinementOutputSchema = z.discriminatedUnion("outcome", [
