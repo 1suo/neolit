@@ -959,7 +959,7 @@ const ImplementationOutputBaseSchema = z.object({
 export const ImplementationOutputSchema = z.discriminatedUnion("outcome", [
   ImplementationOutputBaseSchema.extend({ outcome: z.literal("completed") }),
   ImplementationOutputBaseSchema.extend({ outcome: z.literal("already-satisfied") }),
-  ImplementationOutputBaseSchema.extend({ outcome: z.literal("blocked"), blocker: z.string().min(1) }),
+  ImplementationOutputBaseSchema.extend({ outcome: z.literal("blocked"), blocker: z.string().min(1), requiredMutationResources: z.array(z.string().min(1)).default([]).describe("Repository-relative execution seams discovered outside the certified mutation scope. The controller reinspects these paths before expanding a root certificate.") }),
 ]);
 export type ImplementationOutput = z.infer<typeof ImplementationOutputSchema>;
 

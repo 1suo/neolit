@@ -1376,10 +1376,8 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
       if (delta.certifiedVerdict.checks.some((check) => /^(verify the criterion|run (a )?focused test|test works)\.?$/i.test(normalize(check.commandOrObservation)))) throw new Error("A certified verdict check witness must name a concrete command or observation and its expected semantic result.");
       for (const resource of delta.certifiedVerdict.mutationResources) {
         const admitted = mutationPath(resource);
-        // A root certificate is allowed to correct its earlier file inventory after a
-        // repository inspection.  That inventory is a discovery result, not an
-        // authority boundary.  Descendants still may only narrow their parent.
-        if (region.parentId && region.mutationResources?.length && !region.mutationResources.some((parent) => pathWithin(admitted, mutationPath(parent)))) throw new Error(`Certified correction mutation resource ${resource} is outside its parent scope.`);
+        const authorizedExpansion = state.network.activations.some((item) => item.regionId === region.id && item.capability === "implement" && item.expectedDelta.startsWith("scope-expansion:"));
+        if (region.mutationResources?.length && !region.mutationResources.some((parent) => pathWithin(admitted, mutationPath(parent))) && !(region.edge === "root" && authorizedExpansion)) throw new Error(`Certified correction mutation resource ${resource} is outside its parent scope.`);
       }
       if (delta.certifiedVerdict.evidenceRefs.some((ref) => ref === "task")) throw new Error("A certified supplied verdict requires repository-grounded evidence, not the request alone.");
     }
@@ -2346,16 +2344,25 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
     if (baselineFingerprint !== "legacy-live-worktree") region.integration = { status: "pending", implementationActivationId: activationId, baselineFingerprint, changedFiles: [...new Set(actualChangedFiles)].sort() };
     transitionRegion(region, "selected", undefined, "implemented");
     break;
-  case "blocked": if (region.edge === "root" && /^scope expansion:/i.test(normalize(output.blocker ?? ""))) {
+  case "blocked": {
+    // Older sessions did not have requiredMutationResources. Extract only clear
+    // repository-relative source paths from their blocker so a crashed run can
+    // still make the same evidence-backed recovery.
+    const legacyPaths = (output.blocker ?? "").match(/(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.(?:[cm]?[jt]s|json|md|vue)/g) ?? [];
+    const requestedResources = [...new Set([...("requiredMutationResources" in output ? output.requiredMutationResources : []), ...legacyPaths].map(normalizeMutationPath).filter(Boolean))];
+    if (region.edge === "root" && requestedResources.length) {
     // The implementation found that the inspected root file inventory omitted an
     // execution seam.  Re-inspect that named seam before replacing the certificate.
     transitionRegion(region, "inspecting", undefined, "superposed");
-    addActivation(network, { capability: "inspect", requiredCapabilities: [...DEFAULT_ACTIVATION_CAPABILITIES.inspect], regionId: region.id, request: output.blocker!, expectedDelta: "Confirm the named execution seam and re-certify the root mutation resources.", contextRefs: region.certifiedLeaf?.evidenceRefs ?? [] });
-  } else if (countReopen(network, region)) {
+    activation.expectedDelta = `scope-expansion:${requestedResources.join(",")}`;
+    addActivation(network, { capability: "inspect", requiredCapabilities: [...DEFAULT_ACTIVATION_CAPABILITIES.inspect], regionId: region.id, request: `Inspect these implementation-discovered execution seams and, if confirmed, re-certify the root mutation resources: ${requestedResources.join(", ")}. ${output.blocker}`, expectedDelta: "Confirm the named execution seams and re-certify the root mutation resources.", contextRefs: region.certifiedLeaf?.evidenceRefs ?? [] });
+    } else if (countReopen(network, region)) {
     transitionRegion(region, "challenging", undefined, "superposed"); region.contradiction = output.blocker || output.summary || "Implementation reported a missing prerequisite."; region.selectedCandidateIds = [];
     region.acceptedFingerprint = null; region.challengeVerdict = null; region.certifiedLeaf = undefined; clearImplementationContinuation(region); transitionRegion(region, "challenging");
     for (const candidate of network.candidates.filter((item) => item.regionId === region.id && item.status === "selected")) { candidate.status = "possible"; candidate.declaredStatus = "possible"; }
-  } break;
+    }
+    break;
+  }
   default: assertNever(output);
   }
   if (output.outcome !== "blocked") for (const finding of network.findings.filter((item) => activation.findingIds?.includes(item.id) && item.status === "open")) finding.status = "repairing";
