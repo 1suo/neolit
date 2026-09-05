@@ -26,7 +26,7 @@ const ready = () => {
   network.activations.push({ id: "a2", capability: "verify", regionId: "r1", request: "verify", expectedDelta: "verify", contextRefs: ["r1"], status: "running", basisRevision: 0 });
   return network;
 };
-const pass = (overrides: Partial<NonNullable<VerificationOutput["completionEvidence"]>> = {}): VerificationOutput => ({ outcome: "pass", summary: "verified", findings: [], checks: [{ name: "behavior works", passed: true, evidence: "behavior works in focused test" }], completionEvidence: { implementationOutcome: "changed", implementation: "measured implementation", directTest: "focused passed", correctnessReview: "reviewed before completion", releaseGate: "configured gates passed", changedFiles: ["src/x.ts"], focusedTests: ["focused test passed"], fullChecks: ["npm test passed", "tsc passed"], criterionIds: ["criterion:scope:r1:0"], inspectionEvidenceRefs: [], ...overrides } });
+const pass = (overrides: Partial<NonNullable<VerificationOutput["completionEvidence"]>> = {}): VerificationOutput => ({ outcome: "pass", summary: "verified", findings: [], checks: [{ name: "behavior works", passed: true, evidence: "behavior works in focused test", criterionIds: ["criterion:scope:r1:0"] }], completionEvidence: { implementationOutcome: "changed", implementation: "measured implementation", directTest: "focused passed", correctnessReview: "reviewed before completion", releaseGate: "configured gates passed", changedFiles: ["src/x.ts"], focusedTests: ["focused test passed"], fullChecks: ["npm test passed", "tsc passed"], criterionIds: ["criterion:scope:r1:0"], inspectionEvidenceRefs: [], ...overrides } });
 
 describe("change completion correctness review", () => {
   it("requires measured mutation, focused evidence, all criteria, release gates, and TODO disposition", () => {
@@ -109,6 +109,33 @@ describe("change completion correctness review", () => {
     const completed = completeImplementation(network, "a2", { outcome: "already-satisfied", summary: "already present", changedFiles: [], checks: [{ name: "focused", passed: true, evidence: "passed" }] }, ["src/x.ts"]);
     expect(completed.activations[1]).toMatchObject({ status: "failed", error: expect.stringContaining("conflicts with a measured workspace change") });
     expect(completed.regions[0]).toMatchObject({ status: "blocked" });
+  });
+
+  it("rejects an out-of-scope measured diff and requires root scope reinspection", () => {
+    const network = ready();
+    const region = network.regions[0]!;
+    region.status = "actionable";
+    region.mutationResources = ["src/x.ts"];
+    region.certifiedLeaf = { ...region.certifiedLeaf!, mutationResources: ["src/x.ts"] };
+    network.activations[1]!.capability = "implement";
+
+    const completed = completeImplementation(network, "a2", { outcome: "completed", summary: "changed docs too", changedFiles: ["docs/contract.md"], checks: [{ name: "focused", passed: true, evidence: "passed" }] }, ["docs/contract.md"]);
+
+    expect(completed.activations[1]).toMatchObject({ status: "failed", error: expect.stringContaining("outside the certified mutation scope") });
+    expect(completed.regions[0]).toMatchObject({ status: "superposed" });
+    expect(completed.activations.at(-1)).toMatchObject({ capability: "inspect", status: "queued", expectedDelta: "Confirm or reject the measured scope expansion before a new certified leaf is created." });
+  });
+
+  it("does not complete a changed region until controller-owned landing is recorded", () => {
+    const network = ready();
+    network.artifacts.push({ id: "x1", regionId: "r1", kind: "file", path: "src/x.ts", summary: "Changed src/x.ts", activationId: "a1", fingerprint: "src-x" });
+    network.regions[0]!.artifactIds = ["x1"];
+    network.regions[0]!.integration = { status: "pending", implementationActivationId: "a1", baselineFingerprint: "baseline", changedFiles: ["src/x.ts"] };
+
+    const verified = completeVerification(network, "a2", pass());
+
+    expect(verified.regions[0]).toMatchObject({ status: "verified", completionCertificateId: expect.any(String) });
+    expect(ensureRunnableWork(verified).done).toBe(false);
   });
 
   it("preserves semantic verification and the isolated commit when landing conflicts", () => {

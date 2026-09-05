@@ -2313,9 +2313,20 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
     network.revision++;
     return network;
   }
-  // Mutation resources guide inspection and review; they are not a predicted-file
-  // write fence. Implementation discovers transitive seams in its isolated
-  // worktree, and the verifier reviews the measured diff against the task.
+  const allowed = [...new Set((region.certifiedLeaf?.mutationResources ?? region.mutationResources ?? []).map(normalizeMutationPath).filter(Boolean))];
+  const outsideScope = actualChangedFiles.map(normalizeMutationPath).filter((file) => !allowed.some((resource) => pathWithin(file, resource)));
+  if (allowed.length && outsideScope.length) {
+    for (const file of [...new Set(actualChangedFiles)]) addArtifact(network, region, activationId, { kind: "file", path: file, summary: `Changed ${file}`, fingerprint: changedFileFingerprints[file] ?? hash({ kind: "file", path: file, summary: `Changed ${file}` }) });
+    activation.status = "failed";
+    activation.error = `Implementation changed files outside the certified mutation scope: ${outsideScope.join(", ")}.`;
+    if (region.edge === "root" && outsideScope.length) {
+      transitionRegion(region, "inspecting", undefined, "superposed");
+      activation.expectedDelta = `scope-expansion:${outsideScope.join(",")}`;
+      addActivation(network, { capability: "inspect", requiredCapabilities: [...DEFAULT_ACTIVATION_CAPABILITIES.inspect], regionId: region.id, request: `Inspect the measured execution seams outside the certified mutation scope and re-certify only confirmed repository-relative paths: ${outsideScope.join(", ")}.`, expectedDelta: "Confirm or reject the measured scope expansion before a new certified leaf is created.", contextRefs: region.certifiedLeaf?.evidenceRefs ?? [] });
+    } else transitionRegion(region, "blocked", activation.error, "blocked");
+    network.revision++;
+    return network;
+  }
   activation.status = "completed";
   const repairedVerificationIds = new Set(network.findings.filter((item) => activation.findingIds?.includes(item.id)).map((item) => item.sourceActivationId));
   if (output.outcome !== "blocked" && activation.findingIds?.length) for (const artifact of network.artifacts) {
@@ -2343,7 +2354,7 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
     // still make the same evidence-backed recovery.
     const legacyPaths = (output.blocker ?? "").match(/(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.(?:[cm]?[jt]s|json|md|vue)/g) ?? [];
     const requestedResources = [...new Set([...("requiredMutationResources" in output ? output.requiredMutationResources : []), ...legacyPaths].map(normalizeMutationPath).filter(Boolean))];
-    if (region.edge === "root") {
+    if (region.edge === "root" && requestedResources.length) {
     // The implementation found that the inspected root file inventory omitted an
     // execution seam.  Re-inspect that named seam before replacing the certificate.
     transitionRegion(region, "inspecting", undefined, "superposed");

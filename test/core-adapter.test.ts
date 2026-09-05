@@ -600,7 +600,7 @@ describe("solution LOD reducer", () => {
     current.network.evidence.push({ id: "e-inspected", text: "target is already updated", source: "inspection", kind: "tool", status: "confirmed", fingerprint: "already-updated" }); current.network.regions[0].evidenceIds.push("e-inspected");
     expect(() => validateImplementationOutput(current, "r1", { outcome: "completed", summary: "done", changedFiles: [], checks: [] })).toThrow(/focused check/);
     expect(() => validateVerificationOutput(current, "r1", { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "smoke", passed: true, evidence: "unrelated" }] })).toThrow(/criterion-specific evidence/);
-    expect(() => validateVerificationOutput(current, "r1", { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "target updated", passed: true, evidence: "target updated: yes" }], completionEvidence: { implementation: "already satisfied after inspection", implementationOutcome: "already-satisfied", inspectionEvidenceRefs: ["e-inspected"], directTest: "focused passed", correctnessReview: "reviewed", releaseGate: "full passed", changedFiles: [], focusedTests: ["focused"], fullChecks: ["full"] } })).not.toThrow();
+    expect(() => validateVerificationOutput(current, "r1", { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "target updated", passed: true, evidence: "target updated: yes", criterionIds: ["criterion:scope:r1:0"] }], completionEvidence: { implementation: "already satisfied after inspection", implementationOutcome: "already-satisfied", inspectionEvidenceRefs: ["e-inspected"], directTest: "focused passed", correctnessReview: "reviewed", releaseGate: "full passed", changedFiles: [], focusedTests: ["focused"], fullChecks: ["full"] } })).not.toThrow();
   });
 
   it("demotes previously selected candidates when a resolved answer lands", () => {
@@ -1468,7 +1468,7 @@ describe("solution LOD graph", () => {
       const synthesis = synthesisOutput(input); if (synthesis) return synthesis;
       if (input.node === "refine:r1") return certifiedLeaf;
       if (input.node === "implement:r1") { fs.writeFileSync(path.join(directory, "target.txt"), "after"); return { text: "", structured: { outcome: "completed", summary: "updated", changedFiles: ["target.txt"], checks: [{ name: "target updated", passed: true, evidence: "target updated: after" }] } }; }
-      if (input.node === "verify:r1") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "target updated", passed: true, evidence: "target updated: after" }], completionEvidence: { implementation: "measured target.txt", directTest: "target check passed", correctnessReview: "reviewed target", releaseGate: "suite passed", changedFiles: ["target.txt"], focusedTests: ["target"], fullChecks: ["suite"] } } };
+      if (input.node === "verify:r1") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "target updated", passed: true, evidence: "target updated: after", criterionIds: input.state!.network.regions[0]!.criterionIds }], completionEvidence: { implementation: "measured target.txt", directTest: "target check passed", correctnessReview: "reviewed target", releaseGate: "suite passed", changedFiles: ["target.txt"], focusedTests: ["target"], fullChecks: ["suite"] } } };
       throw new Error(`unexpected node ${input.node}`);
     } };
     const result = await configured.graph.invoke(configured.initial(solutionInput("update", directory, "run")), { recursionLimit: 64, configurable: { thread_id: "run", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareImplementationWorkspace: testImplementationWorkspace, langgraphPrepareVerifierWorkspace: async (runId: string, activationId: string, worktree: string) => { preparedVerifier = [runId, activationId, worktree]; return directory; }, langgraphIntegrateVerifiedWorkspace: testIntegration, langgraphReleaseVerifierWorkspace: async (runId: string, activationId: string) => { releasedVerifier = [runId, activationId]; } } });
@@ -1579,8 +1579,8 @@ describe("solution LOD graph", () => {
       }
       if (input.node === "present:r2") return { text: "", structured: { outcome: "answer", answer: "left answer" } };
       if (input.node === "present:r3") return { text: "", structured: { outcome: "answer", answer: "right answer" } };
-      if (input.node === "verify:r2") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "left answered", passed: true, evidence: "left answered: left answer" }] } };
-      if (input.node === "verify:r3") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "right answered", passed: true, evidence: "right answered: right answer" }] } };
+      if (input.node === "verify:r2") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "left answered", passed: true, evidence: "left answered: left answer", criterionIds: input.state!.network.regions.find((item) => item.id === "r2")!.criterionIds }] } };
+      if (input.node === "verify:r3") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "right answered", passed: true, evidence: "right answered: right answer", criterionIds: input.state!.network.regions.find((item) => item.id === "r3")!.criterionIds }] } };
       throw new Error(`unexpected node ${input.node}`);
     } };
     const result = await configured.graph.invoke(configured.initial(solutionInput("answer two questions", directory, "parallel")), { recursionLimit: 128, configurable: { thread_id: "parallel", langgraphOpenCodeRuntime: runtime } });
@@ -1606,7 +1606,7 @@ describe("solution LOD graph", () => {
       const synthesis = synthesisOutput(input); if (synthesis) return synthesis;
       if (input.node === "refine:r1") return certifiedLeaf;
       if (input.node === "implement:r1") { fs.writeFileSync(path.join(directory, "target.txt"), "after"); return { text: "", structured: { outcome: "completed", summary: "updated", changedFiles: [], checks: [{ name: "target updated", passed: true, evidence: "target updated: after" }] } }; }
-      if (input.node === "verify:r1") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "target updated", passed: true, evidence: "target updated: after" }], completionEvidence: { implementation: "measured target.txt", directTest: "target check passed", correctnessReview: "reviewed target", releaseGate: "suite passed", changedFiles: ["target.txt"], focusedTests: ["target"], fullChecks: ["suite"] } } };
+      if (input.node === "verify:r1") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "target updated", passed: true, evidence: "target updated: after", criterionIds: ["criterion:scope:r1:0"] }], completionEvidence: { implementation: "measured target.txt", directTest: "target check passed", correctnessReview: "reviewed target", releaseGate: "suite passed", changedFiles: ["target.txt"], focusedTests: ["target"], fullChecks: ["suite"] } } };
       throw new Error(`unexpected node ${input.node}`);
     } };
     let snapshots = 0;

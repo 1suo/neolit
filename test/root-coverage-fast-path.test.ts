@@ -48,7 +48,7 @@ describe("root coverage and certified fast path", () => {
     region.criterionIds = ["criterion:scope:r1:0"];
     network.artifacts.push({ id: "x1", regionId: "r1", kind: "file", path: "src/x.ts", summary: "Changed src/x.ts", activationId: "a1", fingerprint: "src-x" });
     region.artifactIds = ["x1"];
-    const checks = [{ name: "behavior works", passed: true, evidence: "behavior works in focused test" }];
+    const checks = [{ name: "behavior works", passed: true, evidence: "behavior works in focused test", criterionIds: ["criterion:scope:r1:0"] }];
     expect(() => validateVerificationOutput(state(network), "r1", { outcome: "pass", summary: "looks good", findings: [], checks })).toThrow(/completion evidence/);
     expect(() => validateVerificationOutput(state(network), "r1", { outcome: "pass", summary: "verified", findings: [], checks, completionEvidence: { implementation: "measured src/x.ts", directTest: "focused test passed", correctnessReview: "reviewed behavior", releaseGate: "full suite passed", changedFiles: ["src/x.ts"], focusedTests: ["focused"], fullChecks: ["npm test"] } })).not.toThrow();
   });
