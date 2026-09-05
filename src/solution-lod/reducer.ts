@@ -78,7 +78,7 @@ function cloneNetwork(network: SolutionNetwork): SolutionNetwork {
     ...network,
     authority: structuredClone(network.authority),
     repositoryEpochs: network.repositoryEpochs ? structuredClone(network.repositoryEpochs) : undefined,
-    regions: network.regions.map((item) => ({ ...item, progress: structuredClone(item.progress), decisionBoundary: item.decisionBoundary ? structuredClone(item.decisionBoundary) : undefined, allowedVariables: [...item.allowedVariables], acceptanceCriteria: [...item.acceptanceCriteria], criterionIds: [...(item.criterionIds ?? [])], inspectionObligationIds: item.inspectionObligationIds ? [...item.inspectionObligationIds] : undefined, criterionVerdicts: item.criterionVerdicts?.map((verdict) => ({ ...verdict, evidenceRefs: [...verdict.evidenceRefs] })), candidateIds: [...item.candidateIds], selectedCandidateIds: [...item.selectedCandidateIds], constraintIds: [...item.constraintIds], evidenceIds: [...item.evidenceIds], activationIds: [...item.activationIds], artifactIds: [...item.artifactIds], coveredCriteria: item.coveredCriteria ? [...item.coveredCriteria] : undefined, requirementIds: [...(item.requirementIds ?? [])], dependencyScopeIds: [...(item.dependencyScopeIds ?? [])], mutationResources: [...(item.mutationResources ?? [])], selectionPremiseRefs: item.selectionPremiseRefs ? [...item.selectionPremiseRefs] : undefined, implementationPremiseRefs: item.implementationPremiseRefs ? [...item.implementationPremiseRefs] : undefined, verificationPremiseRefs: item.verificationPremiseRefs ? [...item.verificationPremiseRefs] : undefined, convergenceCycles: item.convergenceCycles?.map((cycle) => ({ ...cycle, unresolvedCriterionIds: [...cycle.unresolvedCriterionIds] })), blockedDetails: item.blockedDetails ? structuredClone(item.blockedDetails) : undefined, certifiedLeaf: item.certifiedLeaf ? { ...item.certifiedLeaf, criterionIds: [...item.certifiedLeaf.criterionIds], requirementIds: [...(item.certifiedLeaf.requirementIds ?? [])], evidenceRefs: [...item.certifiedLeaf.evidenceRefs] } : undefined })),
+    regions: network.regions.map((item) => ({ ...item, progress: structuredClone(item.progress), decisionBoundary: item.decisionBoundary ? structuredClone(item.decisionBoundary) : undefined, allowedVariables: [...item.allowedVariables], acceptanceCriteria: [...item.acceptanceCriteria], criterionIds: [...(item.criterionIds ?? [])], inspectionObligationIds: item.inspectionObligationIds ? [...item.inspectionObligationIds] : undefined, criterionVerdicts: item.criterionVerdicts?.map((verdict) => ({ ...verdict, evidenceRefs: [...verdict.evidenceRefs] })), candidateIds: [...item.candidateIds], selectedCandidateIds: [...item.selectedCandidateIds], constraintIds: [...item.constraintIds], evidenceIds: [...item.evidenceIds], activationIds: [...item.activationIds], artifactIds: [...item.artifactIds], coveredCriteria: item.coveredCriteria ? [...item.coveredCriteria] : undefined, requirementIds: [...(item.requirementIds ?? [])], dependencyScopeIds: [...(item.dependencyScopeIds ?? [])], mutationResources: [...(item.mutationResources ?? [])], scopeExpansionEvidenceRefs: item.scopeExpansionEvidenceRefs ? [...item.scopeExpansionEvidenceRefs] : undefined, selectionPremiseRefs: item.selectionPremiseRefs ? [...item.selectionPremiseRefs] : undefined, implementationPremiseRefs: item.implementationPremiseRefs ? [...item.implementationPremiseRefs] : undefined, verificationPremiseRefs: item.verificationPremiseRefs ? [...item.verificationPremiseRefs] : undefined, convergenceCycles: item.convergenceCycles?.map((cycle) => ({ ...cycle, unresolvedCriterionIds: [...cycle.unresolvedCriterionIds] })), blockedDetails: item.blockedDetails ? structuredClone(item.blockedDetails) : undefined, certifiedLeaf: item.certifiedLeaf ? { ...item.certifiedLeaf, criterionIds: [...item.certifiedLeaf.criterionIds], requirementIds: [...(item.certifiedLeaf.requirementIds ?? [])], evidenceRefs: [...item.certifiedLeaf.evidenceRefs] } : undefined })),
     candidates: network.candidates.map((item) => ({ ...item, evidenceIds: [...item.evidenceIds], declaredEvidenceIds: item.declaredEvidenceIds ? [...item.declaredEvidenceIds] : undefined, eliminationReasons: [...item.eliminationReasons], declaredEliminationReasons: item.declaredEliminationReasons ? [...item.declaredEliminationReasons] : undefined, stances: (item.stances ?? []).map((stance) => ({ ...stance })) })),
     constraints: network.constraints.map((item) => ({ ...item })), evidence: network.evidence.map((item) => ({ ...item, location: item.location ? { ...item.location, range: [...item.location.range] } : undefined, controllerVerified: item.controllerVerified ? { ...item.controllerVerified } : undefined, validationEvidenceRefs: item.validationEvidenceRefs ? [...item.validationEvidenceRefs] : undefined, statusTimeline: item.statusTimeline?.map((event) => ({ ...event, evidenceRefs: [...event.evidenceRefs] })) })), activations: network.activations.map((item) => ({ ...item, contextRefs: [...item.contextRefs], requiredCapabilities: item.requiredCapabilities ? [...item.requiredCapabilities] : undefined, readRefs: item.readRefs?.map((ref) => ({ ...ref })), mutationResources: [...(item.mutationResources ?? [])], findingIds: [...(item.findingIds ?? [])], recovery: item.recovery ? { ...item.recovery, retryTrace: item.recovery.retryTrace?.map((trace) => ({ ...trace })) } : undefined })), artifacts: network.artifacts.map((item) => ({ ...item, evidenceRefs: item.evidenceRefs ? [...item.evidenceRefs] : undefined, requiredEvidence: item.requiredEvidence ? [...item.requiredEvidence] : undefined })),
     variables: network.variables.map((item) => ({ ...item, seedLabels: [...(item.seedLabels ?? [])], evidenceRefs: [...(item.evidenceRefs ?? [])] })), findings: network.findings.map((item) => ({ ...item, target: { ...item.target, refs: [...item.target.refs] }, route: structuredClone(item.route), evidenceRefs: [...item.evidenceRefs], repairActivationIds: [...item.repairActivationIds] })), certificates: network.certificates.map((item) => ({ ...item, criterionIds: [...item.criterionIds], requirementIds: [...(item.requirementIds ?? [])], selectedFamilyIds: [...item.selectedFamilyIds], equivalenceProofConstraintIds: [...item.equivalenceProofConstraintIds], premiseRefs: [...item.premiseRefs], dependencyCertificateRefs: [...item.dependencyCertificateRefs], measuredArtifactIds: item.measuredArtifactIds ? [...item.measuredArtifactIds] : undefined, focusedCheckArtifactIds: item.focusedCheckArtifactIds ? [...item.focusedCheckArtifactIds] : undefined, releaseCheckArtifactIds: item.releaseCheckArtifactIds ? [...item.releaseCheckArtifactIds] : undefined, artifactFingerprints: { ...item.artifactFingerprints }, resolvedFindingIds: [...item.resolvedFindingIds] })), materialRequirements: network.materialRequirements?.map((item) => ({ ...item, evidenceRefs: [...(item.evidenceRefs ?? [])] })) as SolutionNetwork["materialRequirements"], taskDispositions: network.taskDispositions?.map((item) => ({ ...item, evidenceRefs: [...item.evidenceRefs] })), schemaRetries: structuredClone(network.schemaRetries), telemetry: network.telemetry ? structuredClone(network.telemetry) : emptyTelemetry(),
@@ -692,9 +692,15 @@ function repositoryEpochs(network: SolutionNetwork): NonNullable<SolutionNetwork
 
 export function invalidateEvidenceDigestMismatches(network: SolutionNetwork, currentDigests: Readonly<Record<string, string>>): SolutionNetwork {
   const epochs = repositoryEpochs(network);
+  const supersededByOwnImplementation = (evidenceId: string, file: string): boolean => network.regions.some((region) => {
+    if (region.status !== "implemented" && region.status !== "verified") return false;
+    if (!(region.scopeExpansionEvidenceRefs ?? []).includes(evidenceId)) return false;
+    return network.artifacts.some((artifact) => artifact.regionId === region.id && !artifact.historical && artifact.kind === "file" && artifact.path === file && network.activations.find((activation) => activation.id === artifact.activationId)?.capability === "implement");
+  });
   const stale = network.evidence.filter((item) => {
     if (item.kind !== "repository" || item.status === "stale" || !item.location) return false;
     const file = item.location.canonicalPath;
+    if (supersededByOwnImplementation(item.id, file)) return false;
     const epoch = epochs[file];
     const expected = epoch && (item.createdRevision ?? 0) <= epoch.revision ? epoch.digest : item.location.fileDigest;
     return currentDigests[file] !== undefined && currentDigests[file] !== expected;
@@ -1055,6 +1061,35 @@ function successfulRepositoryDescriptors(tools: readonly AgentToolTrace[] | unde
   return new Map(successfulRepositoryReads(tools).map((item) => [JSON.stringify(item.location), item.tool]));
 }
 
+/**
+ * A local inspector may discover a concrete implementation file missing from a
+ * provisional region scope. The controller admits that one-way expansion only
+ * when this activation observed the exact path and cites that observation in
+ * the certified verdict. A sibling already doing mutation work retains its
+ * claim; that conflict must be resolved by normal local routing.
+ */
+function certifiedScopeExpansions(state: SolutionLodState, region: SolutionRegion, delta: SolutionDelta, tools: readonly AgentToolTrace[] | undefined): string[] {
+  const verdict = delta.certifiedVerdict;
+  if (!verdict || !region.mutationResources?.length) return [];
+  const reads = successfulRepositoryReads(tools);
+  const cited = new Set(verdict.evidenceRefs);
+  const activeSiblingResources = state.network.regions
+    .filter((sibling) => sibling.parentId === region.parentId && sibling.id !== region.id && (sibling.status === "actionable" || sibling.status === "implemented"))
+    .flatMap((sibling) => sibling.mutationResources ?? [])
+    .map(mutationPath);
+  return verdict.mutationResources
+    .map(mutationPath)
+    .filter((resource) => resource && !region.mutationResources!.some((parent) => pathWithin(resource, mutationPath(parent))))
+    .filter((resource) => {
+      const observation = delta.evidence.find((item) => item.kind === "repository" && item.location?.canonicalPath === resource);
+      if (!observation?.location) return false;
+      const observedChunk = reads.find((read) => JSON.stringify(read.location) === JSON.stringify(observation.location))?.chunkId;
+      return cited.has(observation.source) || Boolean(observedChunk && cited.has(observedChunk));
+    })
+    .filter((resource) => !activeSiblingResources.some((sibling) => pathWithin(resource, sibling) || pathWithin(sibling, resource)))
+    .sort();
+}
+
 export function inspectionOutputToDelta(output: InspectionOutput, tools?: readonly AgentToolTrace[]): SolutionDelta {
   const reads = new Map(successfulRepositoryReads(tools).flatMap((item) => item.chunkId ? [[item.chunkId, item.location] as const] : []));
   const authoredChunks = new Set(output.evidence.flatMap((item) => item.kind === "repository" ? [item.chunkId] : []));
@@ -1374,10 +1409,12 @@ export function validateSolutionDelta(state: SolutionLodState, regionId: string,
       const certifiedCriterionIndexes = Array.from({ length: region.criterionIds.length || delta.region?.acceptanceCriteria?.length || 1 }, (_, index) => index);
       if (new Set(certifiedCheckIndexes).size !== certifiedCheckIndexes.length || JSON.stringify([...certifiedCheckIndexes].sort((left, right) => left - right)) !== JSON.stringify(certifiedCriterionIndexes)) throw new Error("A certified verdict requires exactly one executable behavioral check witness for every current criterion index.");
       if (delta.certifiedVerdict.checks.some((check) => /^(verify the criterion|run (a )?focused test|test works)\.?$/i.test(normalize(check.commandOrObservation)))) throw new Error("A certified verdict check witness must name a concrete command or observation and its expected semantic result.");
+      const expansions = new Set(certifiedScopeExpansions(state, region, delta, tools));
       for (const resource of delta.certifiedVerdict.mutationResources) {
         const admitted = mutationPath(resource);
         const authorizedExpansion = state.network.activations.some((item) => item.regionId === region.id && item.capability === "implement" && item.expectedDelta.startsWith("scope-expansion:"));
-        if (region.mutationResources?.length && !region.mutationResources.some((parent) => pathWithin(admitted, mutationPath(parent))) && !(region.edge === "root" && authorizedExpansion)) throw new Error(`Certified correction mutation resource ${resource} is outside its parent scope.`);
+        const withinScope = region.mutationResources?.some((parent) => pathWithin(admitted, mutationPath(parent)));
+        if (region.mutationResources?.length && !withinScope && !expansions.has(admitted) && !(region.edge === "root" && authorizedExpansion)) throw new Error(`Certified correction mutation resource ${resource} is outside its parent scope.`);
       }
       if (delta.certifiedVerdict.evidenceRefs.some((ref) => ref === "task")) throw new Error("A certified supplied verdict requires repository-grounded evidence, not the request alone.");
     }
@@ -1845,11 +1882,13 @@ export function mergeSolutionDelta(state: SolutionLodState, activationId: string
     changed = true;
   }
   if (activation.capability === "inspect" && delta.certifiedVerdict) {
+    const expandedResources = new Set(certifiedScopeExpansions(state, region, delta, tools));
     const evidenceIds = delta.certifiedVerdict.evidenceRefs.map((ref) => localEvidence.get(ref) ?? ref).filter((ref) => network.evidence.some((item) => item.id === ref));
     const id = candidateId(region.id, "certified-verdict");
     const candidate: SolutionCandidate = { id, regionId: region.id, key: "certified-verdict", proposition: normalize(delta.certifiedVerdict.proposition), status: "selected", declaredStatus: "selected", evidenceIds, declaredEvidenceIds: evidenceIds, eliminationReasons: [], declaredEliminationReasons: [], stances: [], createdRevision: network.revision + 1, sourceActivationId: activation.id };
     network.candidates = network.candidates.filter((item) => item.regionId !== region.id).concat(candidate);
     region.candidateIds = [id]; region.selectedCandidateIds = [id]; region.mutationResources = [...new Set(delta.certifiedVerdict.mutationResources)].sort();
+    region.scopeExpansionEvidenceRefs = evidenceIds.filter((ref) => expandedResources.has(mutationPath(network.evidence.find((item) => item.id === ref)?.location?.canonicalPath ?? ""))).sort();
     region.certifiedLeaf = { criterionIds: [...region.criterionIds], requirementIds: [...(region.requirementIds ?? [])], implementationScope: normalize(delta.certifiedVerdict.implementationScope), evidenceRefs: evidenceIds, mutationResources: [...region.mutationResources], checks: delta.certifiedVerdict.checks.map((check) => ({ criterionId: region.criterionIds[check.criterionIndex]!, commandOrObservation: normalize(check.commandOrObservation) })) };
     region.enumerationFingerprint = enumerationFingerprint(network, region.id); region.boundDomainFingerprint = boundDomainFingerprint(network, region.id); region.domainFingerprint = region.boundDomainFingerprint; region.acceptedFingerprint = region.boundDomainFingerprint; region.challengeVerdict = "accept";
     transitionRegion(region, "selected", undefined, "actionable");

@@ -34,9 +34,9 @@ function snapshot(directory: string): Map<string, string> {
   return new Map(["code.txt", "docs.txt"].map((file) => [file, fs.readFileSync(path.join(directory, file), "utf8")]));
 }
 
-const observed = (text: string) => ({
-  tools: [{ tool: "graph_read", status: "completed" as const, metadata: { repositoryDescriptor: { chunkId: "observed-chunk", canonicalPath: "docs.txt", range: [1, 1], fileDigest: createHash("sha256").update("before").digest("hex"), snapshotEpoch: 0 } } }],
-  evidence: [{ kind: "repository" as const, text, source: "docs.txt:1", chunkId: "observed-chunk" }],
+const observed = (text: string, file = "docs.txt") => ({
+  tools: [{ tool: "graph_read", status: "completed" as const, metadata: { repositoryDescriptor: { chunkId: "observed-chunk", canonicalPath: file, range: [1, 1], fileDigest: createHash("sha256").update("before").digest("hex"), snapshotEpoch: 0 } } }],
+  evidence: [{ kind: "repository" as const, text, source: `${file}:1`, chunkId: "observed-chunk" }],
 });
 
 describe("solution LOD executable task matrix", () => {
@@ -165,6 +165,32 @@ describe("solution LOD executable task matrix", () => {
     expect(calls).toEqual(["inspect:r1", "implement:r1", "verify:r1"]);
     expect(configured.progress?.(result)?.phase).toBe("blocked");
     expect((result as SolutionLodState).network.regions[0]?.blockedDetails?.kind).toBe("blocked-external");
+  });
+
+  it("admits an evidence-backed implementation dependency missing from a provisional local scope", async () => {
+    const directory = workspace();
+    const calls: string[] = [];
+    const runtime = { call: async (input: any) => {
+      calls.push(input.node);
+      const region = input.state.network.regions[0];
+      if (input.node === "inspect:r1") { const observation = observed("code.txt contains the validator implementation that must change", "code.txt"); return { text: "", tools: observation.tools, structured: {
+        outcome: "certified", region: { acceptanceCriteria: ["code is corrected"] }, evidence: observation.evidence, criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["observed-chunk"] }],
+        certifiedVerdict: { proposition: "Correct code.txt", implementationScope: "Replace the incorrect value", evidenceRefs: ["observed-chunk"], mutationResources: ["code.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the focused code.txt test and assert it reads fixed." }] },
+      } }; }
+      if (input.node === "implement:r1") { fs.writeFileSync(path.join(directory, "code.txt"), "fixed"); return { text: "", structured: { outcome: "completed", summary: "corrected", changedFiles: ["code.txt"], checks: [{ name: "code is corrected", passed: true, evidence: "focused check ran" }] } }; }
+      if (input.node === "verify:r1") return { text: "", structured: { outcome: "pass", summary: "verified", findings: [], checks: [{ name: "code is corrected", passed: true, evidence: "code.txt is fixed", criterionIds: [...region.criterionIds] }], completionEvidence: { implementation: "changed code.txt", directTest: "focused code test passed", correctnessReview: "reviewed corrected value", releaseGate: "matrix checks passed", changedFiles: ["code.txt"], focusedTests: ["code.txt focused"], fullChecks: ["matrix suite"] } } };
+      throw new Error(`unexpected call ${input.node}`);
+    } };
+    const configured = solutionLodGraph({ agents, checkpointer: new MemorySaver() });
+    const initial = configured.initial({ task: { id: "scope-expansion", exactText: "Correct code.txt" }, authoritativeMessages: [], directory, worktree: directory, runId: "scope-expansion" });
+    initial.network.regions[0]!.mutationResources = ["docs.txt"];
+    initial.network.activations = [];
+    initial.network.regions[0]!.activationIds = [];
+    initial.network = queueActivation(initial.network, "inspect", "r1", "Inspect code.txt", "inspect:r1", ["r1"]);
+    const result = await configured.graph.invoke(initial, { recursionLimit: 32, configurable: { thread_id: "scope-expansion", langgraphOpenCodeRuntime: runtime, ...changeHooks(directory), langgraphAcquireWorktree: async () => {}, langgraphSnapshotWorkspace: snapshot, langgraphReleaseVerifierWorkspace: async () => {} } }) as SolutionLodState;
+    expect(calls).toEqual(["inspect:r1", "implement:r1", "verify:r1"]);
+    expect(result.network.regions[0]!.certifiedLeaf?.mutationResources).toEqual(["code.txt"]);
+    expect(result.result).toContain("completed");
   });
 
   it("routes an already-satisfied inspection directly to verification", async () => {

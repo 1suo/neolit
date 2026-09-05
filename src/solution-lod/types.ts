@@ -134,6 +134,8 @@ export interface SolutionRegion {
   requirementIds?: RequirementId[];
   dependencyScopeIds?: ScopeId[];
   mutationResources?: string[];
+  /** Evidence IDs that justified a local expansion beyond the region's provisional paths. */
+  scopeExpansionEvidenceRefs?: string[];
   definitionFingerprint?: string;
   selectionAge?: number;
   inspectionAttempts?: number;
