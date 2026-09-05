@@ -1631,7 +1631,7 @@ export function mergeSynthesisOutput(state: SolutionLodState, activationId: stri
     const generated = output as DomainGenerationOutput;
     let network = mergeSolutionDelta(state, activationId, synthesisDelta(generated));
     const region = network.regions.find((item) => item.id === activation.regionId)!;
-    region.progress.cegarRounds = progressEntry(); region.acceptedFingerprint = null; region.challengeVerdict = null; transitionRegion(region, "challenging");
+    region.acceptedFingerprint = null; region.challengeVerdict = null; transitionRegion(region, "challenging");
     refreshDomainControls(network); network.revision++;
     return network;
   }
@@ -1662,12 +1662,19 @@ export function mergeSynthesisOutput(state: SolutionLodState, activationId: stri
     case "boundary-counterexample":
       if (region.progress.cegarRounds.count >= MAX_CEGAR_ROUNDS) transitionRegion(region, "blocked", `CEGAR repair bound exceeded: unresolved boundary counterexample ${challenge.missingFamily.proposition}.`);
       else {
-        region.progress.cegarRounds = { count: region.progress.cegarRounds.count + 1, fingerprint: hash(challenge.missingFamily), unresolvedCriterionIds: [...region.criterionIds] };
+        region.progress.cegarRounds = { count: region.progress.cegarRounds.count + 1, fingerprint: hash(challenge.missingFamily), unresolvedCriterionIds: [...(region.inspectionObligationIds ?? [])] };
         for (const candidate of network.candidates.filter((item) => item.regionId === region.id && !item.historical)) candidate.historical = true;
         for (const variable of network.variables.filter((item) => item.ownerRegionId === region.id && !item.historical)) variable.historical = true;
         region.candidateIds = []; region.selectedCandidateIds = []; region.decisionBoundary = undefined; region.enumerationFingerprint = null; region.boundDomainFingerprint = null; region.domainFingerprint = null; region.acceptedFingerprint = null; region.challengeVerdict = null; region.certifiedLeaf = undefined; clearImplementationContinuation(region); region.answer = undefined;
-        region.inspectionObligationIds = [...region.criterionIds];
         purgeDescendants(network, region.id); transitionRegion(region, "inspecting", undefined, "superposed");
+        const diagnostic = JSON.stringify({ missingFamily: challenge.missingFamily, defect: challenge.defect, evidenceRefs: challenge.evidenceRefs });
+        recordRecovery(network, "reopen", region.id, `Boundary counterexample: ${diagnostic}`);
+        network.revision++;
+        addActivation(network, { capability: "inspect", requiredCapabilities: ["repository-observe"], regionId: region.id,
+          request: `Rebuild the decision boundary to represent this concrete missing family and boundary defect: ${diagnostic}. Preserve settled criterion observations; the counterexample changes the decision representation, not repository state. Return boundary using supplied confirmed evidence. Inspect only a fact specifically needed to resolve this defect; do not repeat general inspection or reopen settled criteria.`,
+          expectedDelta: `boundary-rebuild:${region.id}:${region.progress.cegarRounds.count}:${hash(diagnostic)}`,
+          contextRefs: [region.id, ...challenge.evidenceRefs], senderActivationId: activation.id });
+        return propagateNetwork(network);
       }
       break;
     case "needs-fact":

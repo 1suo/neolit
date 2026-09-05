@@ -52,6 +52,9 @@ techniques such as singleton collapse and minimum-remaining-values scheduling.
   256 run activations, 16 inspections and 12 recovery events per region.
 - [x] Preserve admitted self-mutation epochs per path across regions and retain
   isolated implementation deltas through bounded retry and verifier repair.
+- [x] Preserve settled criterion observations during boundary-counterexample
+  repair, carry the missing family and defect into focused rebuilding, and keep
+  the CEGAR budget cumulative across regenerated domains.
 - [ ] Centralize legal region transitions and their preconditions instead of
   assigning statuses across propagation, implementation, verification, and
   reopening code paths.

@@ -174,6 +174,96 @@ describe("delivery recovery", () => {
     expect(() => validateRefinementOutput(state, "r1", leaf)).toThrow(/outside/);
   });
 
+  it.each([false, true])("rebuilds a challenged boundary without reopening settled criteria; persistent=%s", async (persistent) => {
+    const directory = workspace();
+    const execution = workspace();
+    const configured = solutionLodGraph({ agents, checkpointer: new MemorySaver(), maxActivations: 16 });
+    const calls: string[] = [];
+    let inspections = 0;
+    let challenges = 0;
+    const defect = "The storage and index variables need a permitted pair for indexed arrays.";
+    const missingFamily = { key: "indexed-array", proposition: "Use an array plus a lookup index" };
+    const runtime = { call: async (input: any) => {
+      calls.push(input.node);
+      const network = input.state.network;
+      const region = network.regions[0];
+      if (input.node === "inspect:r1") {
+        inspections++;
+        const seen = observation();
+        if (inspections > 1) {
+          expect(region.inspectionObligationIds).toEqual([]);
+          expect(region.criterionVerdicts).toEqual([expect.objectContaining({ verdict: "unsatisfied", evidenceRefs: ["e1"] })]);
+          const activation = network.activations.find((item: { id: string }) => item.id === input.physicalActivationId);
+          expect(activation.request).toContain(defect);
+          expect(activation.request).toContain(missingFamily.proposition);
+          expect(input.prompt).toContain(defect);
+          expect(input.prompt).toContain(missingFamily.proposition);
+          expect(activation.contextRefs).toContain("e1");
+        }
+        return { text: "", tools: inspections === 1 ? seen.tools : [], structured: {
+          outcome: "boundary", ...(inspections === 1 ? { region: { acceptanceCriteria: ["recent collection implemented"], allowedVariables: ["storage", "index"] }, evidence: seen.evidence, criterionEvidence: [{ criterionIndex: 0, verdict: "unsatisfied", reason: "collection absent", evidenceRefs: ["code-observation"] }] } : {}),
+          decisionBoundary: { basisRevision: network.revision, variables: [
+            { key: "storage", name: "storage", seedLabels: ["array", "set"], evidenceRefs: [inspections === 1 ? "code-observation" : "e1"] },
+            { key: "index", name: "index", seedLabels: ["map"], evidenceRefs: [inspections === 1 ? "code-observation" : "e1"] },
+          ], permittedPairs: inspections > 1 ? [{ leftVariableKey: "storage", rightVariableKey: "index", evidenceRefs: ["e1"] }] : [] },
+        } };
+      }
+      if (input.node === "generate-domain:r1") {
+        const variables = region.decisionBoundary.variables;
+        const storage = variables.find((item: { name: string }) => item.name === "storage").id;
+        const index = variables.find((item: { name: string }) => item.name === "index").id;
+        const candidates = ["array", "set"].map((key) => ({ key, proposition: `Use ${key}`, evidenceRefs: ["e1"], coordinates: [
+          { variableId: storage, applicability: "applies", stances: [{ relation: "requires", valueLabel: key }] },
+          { variableId: index, applicability: "not-applicable", reason: "No auxiliary index" },
+        ] }));
+        if (inspections > 1) candidates.push({ ...missingFamily, evidenceRefs: ["e1"], coordinates: [
+          { variableId: storage, applicability: "applies", stances: [{ relation: "requires", valueLabel: "array" }] },
+          { variableId: index, applicability: "applies", stances: [{ relation: "requires", valueLabel: "map" }] },
+        ] });
+        return { text: "", structured: { outcome: "candidates", candidates } };
+      }
+      if (input.node === "challenge-domain:r1") {
+        challenges++;
+        if (challenges === 1 || persistent) return { text: "", structured: { outcome: "boundary-counterexample", boundDomainFingerprint: region.boundDomainFingerprint, missingFamily, defect: { kind: "missing-pair", description: defect }, evidenceRefs: ["e1"] } };
+        expect(region.candidateIds).toContain("r1:indexed-array");
+        expect(region.progress.cegarRounds.count).toBe(1);
+        return { text: "", structured: { outcome: "accept", boundDomainFingerprint: region.boundDomainFingerprint, viableCandidateIds: region.candidateIds } };
+      }
+      if (input.node === "select-candidate:r1") return { text: "", structured: { outcome: "selected", boundDomainFingerprint: region.boundDomainFingerprint, selectedCandidateId: "r1:array", comparisons: region.candidateIds.map((candidateId: string) => ({ candidateId, userPreference: "neutral", repositoryCompatibility: "neutral", changeScope: candidateId === "r1:array" ? "preferred" : "neutral", irreversibleRisk: "neutral", evidenceRefs: ["e1"] })) } };
+      if (input.node === "refine:r1") return { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "Implement array representation", criterionIds: region.criterionIds, requirementIds: region.requirementIds, evidenceRefs: ["e1"], mutationResources: ["code.txt"], checks: [{ criterionId: region.criterionIds[0], commandOrObservation: "check array implementation" }] }, atomicityWitness: { outcome: "Implement array representation", criterionIds: region.criterionIds, requirementIds: region.requirementIds, mutationResources: ["code.txt"], whySplittingFails: "One bounded collection implementation and its behavior check" } } };
+      if (input.node === "implement:r1") {
+        fs.writeFileSync(path.join(input.worktree, "code.txt"), "array implementation");
+        return { text: "", structured: { outcome: "completed", summary: "Array implemented", changedFiles: ["code.txt"], checks: [{ name: "recent collection implemented", passed: true, evidence: "observed array implementation" }] } };
+      }
+      if (input.node === "verify:r1") {
+        expect(fs.readFileSync(path.join(input.worktree, "code.txt"), "utf8")).toBe("array implementation");
+        return { text: "", structured: { outcome: "pass", summary: "Array verified", findings: [], checks: [{ name: "recent collection implemented", passed: true, evidence: "array implementation observed", criterionIds: region.criterionIds }], completionEvidence: { implementation: "measured code.txt", directTest: "array observation passed", correctnessReview: "reviewed chosen representation", releaseGate: "focused checks passed", changedFiles: ["code.txt"], focusedTests: ["array observation"], fullChecks: ["focused checks"] } } };
+      }
+      throw new Error(`Unexpected activation ${input.node}`);
+    } };
+    const start = configured.initial({ task: { id: "task", exactText: "Choose a representation and implement the recent collection" }, authoritativeMessages: [], directory, worktree: directory, runId: `boundary-recovery-${persistent}` });
+    const result = await configured.graph.invoke(start, { recursionLimit: 64, configurable: {
+      thread_id: `boundary-recovery-${persistent}`, langgraphOpenCodeRuntime: runtime, langgraphSnapshotWorkspace: snapshot,
+      langgraphPrepareImplementationWorkspace: async () => ({ worktree: execution, baselineFingerprint: "before" }),
+      langgraphPrepareVerifierWorkspace: async () => execution,
+      langgraphIntegrateVerifiedWorkspace: async (_run: string, _verify: string, _worktree: string, implementationActivationId: string, changedFiles: string[]) => {
+        fs.copyFileSync(path.join(execution, "code.txt"), path.join(directory, "code.txt"));
+        return { outcome: "landed", implementationActivationId, changedFiles, baselineFingerprint: "before", patchFingerprint: "array-patch", commitId: "array-commit", treeFingerprint: "array-tree", preservedRef: "refs/test/array", landedFileFingerprints: { "code.txt": digest("array implementation") } };
+      },
+    } }) as SolutionLodState;
+    expect(result.network.regions[0]!.criterionVerdicts).toEqual([expect.objectContaining({ verdict: "unsatisfied", evidenceRefs: ["e1"] })]);
+    if (persistent) {
+      expect(result.result).toContain("CEGAR repair bound exceeded");
+      expect(inspections).toBe(3);
+      expect(challenges).toBe(3);
+      expect(result.network.regions[0]!.progress.cegarRounds.count).toBe(2);
+    } else {
+      expect(calls, JSON.stringify(result.network.activations.filter((item) => item.status === "failed"))).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "inspect:r1", "generate-domain:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "implement:r1", "verify:r1"]);
+      expect(configured.progress?.(result)?.phase, result.result).toBe("completed");
+      expect(result.network.regions[0]).toMatchObject({ status: "verified", selectedCandidateIds: ["r1:array"], inspectionAttempts: 2 });
+    }
+  });
+
   it.each(["server/", "server\\runtime\\", "./server/"])("retains partial edits under normalized resource %s", (resource) => {
     let network = certifiedNetwork();
     const region = network.regions[0]!;
