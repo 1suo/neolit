@@ -84,6 +84,7 @@ describe("prompt contracts", () => {
     const current = state();
     const rootPrompt = compileActivationPrompt(current, current.network.activations[0]!);
     expect(rootPrompt).toContain("Treat the authoritative task as this region's local goal");
+    expect(rootPrompt).toContain("When repository evidence shows it is broader than one leaf, return a local decision boundary; normal refinement decides children");
     expect(rootPrompt).toContain("Return taskScopes only when repository evidence establishes two or more independently completable requested outcomes");
     expect(rootPrompt).toContain("first define observable region.acceptanceCriteria");
     expect(rootPrompt).toContain('bind every materialRequirement with scopeKey "r1" and the zero-based criterionIndex');

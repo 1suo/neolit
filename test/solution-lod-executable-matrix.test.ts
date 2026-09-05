@@ -57,7 +57,7 @@ describe("solution LOD executable task matrix", () => {
     expect(result.phase).toBe("blocked");
   });
 
-  it("executes fixed dependent tasks, repairs a failed implementation, and verifies in dependency order", async () => {
+  it("locally refines a prescribed non-atomic root before executing dependent children", async () => {
     const directory = workspace();
     const calls: string[] = [];
     const implementations = new Map<string, number>();
@@ -67,15 +67,10 @@ describe("solution LOD executable task matrix", () => {
       const network = input.state.network as SolutionNetwork;
       const region = network.regions.find((item) => input.node.endsWith(`:${item.id}`))!;
       if (input.node === "inspect:r1") return { text: "", structured: {
-        outcome: "decompose",
-        taskScopes: [
-          { key: "code", objective: "Update the runtime code", delivery: "change", allowedVariables: [], acceptanceCriteria: ["code is fixed"], mutationResources: ["code.txt"] },
-          { key: "docs", objective: "Document the fixed runtime", delivery: "change", allowedVariables: [], acceptanceCriteria: ["docs describe fixed code"], dependencyScopeIds: ["code"], mutationResources: ["docs.txt"] },
-        ],
-        materialRequirements: [
-          { key: "code-fixed", text: "code is fixed", scopeKey: "code", criterionIndex: 0, evidenceRefs: ["task"] },
-          { key: "docs-fixed", text: "docs describe fixed code", scopeKey: "docs", criterionIndex: 0, evidenceRefs: ["task"] },
-        ],
+        outcome: "boundary",
+        region: { acceptanceCriteria: ["code is fixed", "docs describe fixed code"] },
+        criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["task"] }, { criterionIndex: 1, evidenceRefs: ["task"] }],
+        decisionBoundary: { basisRevision: network.revision, variables: [], permittedPairs: [] },
       } };
       if (input.node.startsWith("inspect:")) return { text: "", structured: {
         outcome: "boundary",
@@ -90,6 +85,10 @@ describe("solution LOD executable task matrix", () => {
         selectedCandidateId: `${region.id}:fixed`,
         comparisons: region.candidateIds.map((candidateId) => ({ candidateId, userPreference: "neutral", repositoryCompatibility: "neutral", changeScope: "neutral", irreversibleRisk: "neutral", evidenceRefs: [] })),
       } };
+      if (input.node === "refine:r1") return { text: "", structured: { outcome: "children", evidence: [], children: [
+        { key: "code", objective: "Update the runtime code", edge: "partOf", delivery: "change", allowedVariables: [], acceptanceCriteria: ["code is fixed"], coveredCriteria: [0], requirementIds: ["requirement:root-criterion-0"], mutationResources: ["code.txt"] },
+        { key: "docs", objective: "Document the fixed runtime", edge: "partOf", delivery: "change", allowedVariables: [], acceptanceCriteria: ["docs describe fixed code"], coveredCriteria: [1], requirementIds: ["requirement:root-criterion-1"], dependencyScopeIds: ["scope:r1:code"], mutationResources: ["docs.txt"] },
+      ] } };
       if (input.node.startsWith("refine:")) return { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: {
         implementationScope: `Change ${region.mutationResources[0]}`,
         criterionIds: [...region.criterionIds],
@@ -141,6 +140,8 @@ describe("solution LOD executable task matrix", () => {
     expect(fs.readFileSync(path.join(directory, "docs.txt"), "utf8")).toBe("fixed");
     expect(implementations.get("r2")).toBe(2);
     expect(verifications.get("r2")).toBe(2);
+    expect(calls).toContain("refine:r1");
+    expect(calls.indexOf("implement:r1")).toBe(-1);
     expect(calls.indexOf("inspect:r3")).toBeGreaterThan(calls.lastIndexOf("verify:r2"));
     expect(final.network.regions.filter((region) => region.parentId === "r1").every((region) => region.status === "verified")).toBe(true);
   }, 20_000);
