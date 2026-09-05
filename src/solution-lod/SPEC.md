@@ -98,7 +98,7 @@ Inspection is bounded by a controller-owned obligation set initialized from the 
 
 ## Multi-task AND roots
 
-One cohesive objective uses the normal root region. A request containing independently verifiable deliverables uses a root AND-container with one controller-assigned scope identity and one `partOf` child per material task. Each root requirement and acceptance criterion has exactly one typed owner; dependencies, inherited choices, and mutation conflicts use stable scope, criterion, variable, artifact, or path references rather than prose similarity.
+One cohesive objective uses the normal root region. Local inspection may establish that a request contains independently verifiable deliverables and return a root AND-container with one `partOf` child per material task. The controller validates scope identity and coverage but does not impose that decomposition. Each root requirement and acceptance criterion has exactly one typed owner; dependencies, inherited choices, and mutation conflicts use stable scope, criterion, variable, artifact, or path references rather than prose similarity.
 
 Each child has its own lifecycle and follows normal inspection plus the bounded
 domain/challenge/selection cycle whenever a decision domain is required.

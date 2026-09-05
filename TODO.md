@@ -400,10 +400,10 @@ multiply model degeneration, latency, and cost.
   scope at run framing; permit only explicit conflicting, external, or speculative
   dispositions, never an OR choice over a subset of requested work.
 
-- [ ] Frame a request containing independently verifiable deliverables as a root
-  AND-container with one controller-assigned scope ID and `partOf` child per
-  material task. Keep inseparable requirements together and preserve the normal
-  single-root flow for one cohesive objective.
+- [ ] Let local inspection establish independently verifiable deliverables as a
+  root AND-container with one validated `partOf` child per material task. Keep
+  inseparable requirements together and preserve the normal single-root flow
+  for one cohesive objective.
 - [ ] Map every material root requirement and acceptance criterion to exactly one
   owned task scope before execution. Reject duplicate scope ownership by typed
   identity rather than objective, slug, or proposition similarity.
