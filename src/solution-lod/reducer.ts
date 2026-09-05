@@ -263,7 +263,9 @@ export function resolveContextReference(network: SolutionNetwork, ref: string): 
   let kind: ContextRefKind; let value: unknown; let fingerprintValue: unknown; let revision = network.revision;
   if (ref === "task") { kind = "task"; value = network.authority.task; revision = 0; }
   else {
-    const region = network.regions.find((item) => item.id === ref);
+    // Prompts expose both region IDs and controller-owned scope IDs.  Either is a
+    // valid read reference to the same region context.
+    const region = network.regions.find((item) => item.id === ref || item.scopeId === ref);
     const criterionOwner = network.regions.find((item) => item.criterionIds.includes(ref as CriterionId));
     const requirement = network.materialRequirements?.find((item) => item.id === ref);
     const candidate = network.candidates.find((item) => item.id === ref && !item.historical);
