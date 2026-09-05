@@ -395,7 +395,9 @@ Invalidation is surgical: a new synthesis selection drops the previous refinemen
   `~/.local/state/opencode-langgraph/checkpoints`.
 - Every state-bearing controller transition is checkpointable. Compatible
   state can therefore resume after process restart through the host's normal
-  LangGraph invocation flow.
+  LangGraph invocation flow. A reservation interrupted by host death consumes
+  its uncertain schema prompt in the schema ledger, but does not consume the
+  later semantic retry budget for the recovered activation.
 - The reducer exports targeted reopening and subtree invalidation operations.
   A host may expose inspect, prune, pause, or resume controls around those
   primitives, but Neolit does not define that host API, run registry, or UI.

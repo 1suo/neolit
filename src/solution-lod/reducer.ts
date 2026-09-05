@@ -12,6 +12,7 @@ export const MAX_CEGAR_ROUNDS = 2;
 export const MAX_DOMAIN_CANDIDATES = 7;
 export const MAX_NO_PROGRESS_CYCLES = 2;
 export const MAX_SEMANTIC_CYCLES = 2;
+const INTERRUPTED_SCHEMA_ATTEMPT = "Host process exited during a reserved schema attempt;";
 const DEFERRED_WORK = /\b(?:estimate|eta|defer(?:red)?|follow(?:-| )up|future work)\b|\b\d+\s*(?:hours?|days?|weeks?)\b|\boptional(?:ly)?\s+(?:later|follow(?:-| )up|future|subsequent)\b|\b(?:do|finish|implement|address|handle|complete|revisit)\b.{0,40}\blater\b/i;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24);
 export function assertNever(value: never): never { throw new Error(`Unexpected outcome: ${String(value)}`); }
@@ -468,7 +469,9 @@ function addActivation(network: SolutionNetwork, input: ActivationInput): Activa
   // slot — otherwise a killed-and-resumed run deadlocks behind its own superseded record.
   const duplicate = matches.some((item) => item.status !== "failed" && item.status !== "superseded");
   const readFingerprint = hash(readRefs.map(({ ref, kind, fingerprint }) => ({ ref, kind, fingerprint })));
-  const failedAttempts = network.activations.filter((item) => !item.historical && item.regionId === input.regionId && item.capability === input.capability && item.operation === input.operation && item.status === "failed" && (item.readRefs ? hash(item.readRefs.map(({ ref, kind, fingerprint }) => ({ ref, kind, fingerprint }))) === readFingerprint : item.basisRevision === network.revision)).length;
+  // A host death has already consumed the uncertain prompt in its schema ledger.
+  // It must not also consume the semantic retry budget for the next activation.
+  const failedAttempts = network.activations.filter((item) => !item.historical && item.regionId === input.regionId && item.capability === input.capability && item.operation === input.operation && item.status === "failed" && !item.error?.startsWith(INTERRUPTED_SCHEMA_ATTEMPT) && (item.readRefs ? hash(item.readRefs.map(({ ref, kind, fingerprint }) => ({ ref, kind, fingerprint }))) === readFingerprint : item.basisRevision === network.revision)).length;
   const region = network.regions.find((item) => item.id === input.regionId);
   if (duplicate || failedAttempts >= SAME_REVISION_RETRY_POLICY.maxAttempts || !region || input.contextRefs.some((ref) => !knownRef(network, ref)) || input.capability === "synthesize" && !input.operation) return undefined;
   if (input.capability === "implement" && region.status !== "actionable" || input.capability === "verify" && region.status !== "implemented" || input.capability === "present" && (region.status !== "actionable" || region.delivery !== "answer") || input.capability === "refine" && region.status !== "unrefined" || input.capability === "synthesize" && !["unformed", "superposed", "contradiction"].includes(region.status)) return undefined;

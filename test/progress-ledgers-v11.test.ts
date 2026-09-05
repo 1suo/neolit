@@ -78,4 +78,22 @@ describe("state v11 progress ledgers", () => {
     const scheduled = ensureRunnableWork(network).network.activations.at(-1)!;
     expect(scheduled).toMatchObject({ status: "queued", recovery: { sessionId: "child-1", strategy: "fork" } });
   });
+
+  it("does not spend semantic retry budget on reboot-interrupted schema reservations", () => {
+    let network = initialNetwork("task");
+    network.activations[0]!.status = "completed";
+    network.regions[0]!.status = "implemented";
+    const enqueue = () => { network = queueActivation(network, "verify", "r1", "verify", "same-verification"); return network.activations.at(-1)!; };
+    for (let index = 0; index < 2; index++) {
+      const activation = enqueue();
+      activation.status = "failed";
+      activation.error = "Host process exited during a reserved schema attempt; the uncertain attempt was consumed and unused retries were released.";
+    }
+    const verifier = enqueue();
+    verifier.status = "failed";
+    verifier.error = "Agent scheduling quantum reached: turns";
+    const recovered = ensureRunnableWork(network).network.activations.at(-1)!;
+    expect(recovered).toMatchObject({ capability: "verify", status: "queued" });
+    expect(recovered.id).not.toBe(verifier.id);
+  });
 });
