@@ -83,7 +83,8 @@ describe("prompt contracts", () => {
   it("renders the root decomposition boundary for root and child inspectors", () => {
     const current = state();
     const rootPrompt = compileActivationPrompt(current, current.network.activations[0]!);
-    expect(rootPrompt).toContain("For independent deliverables, use outcome=decompose with one taskScope per deliverable");
+    expect(rootPrompt).toContain("Task structure takes precedence over the certified-correction shortcut");
+    expect(rootPrompt).toContain("including explicitly dependent scopes, use outcome=decompose");
     expect(rootPrompt).toContain("first define observable region.acceptanceCriteria");
     expect(rootPrompt).toContain('bind every materialRequirement with scopeKey "r1" and the zero-based criterionIndex');
     expect(rootPrompt).toContain("Use dependencyScopeIds only for real execution ordering");
