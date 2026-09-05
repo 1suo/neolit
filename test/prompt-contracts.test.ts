@@ -137,8 +137,8 @@ describe("prompt contracts", () => {
       expect(prompt).not.toContain("FIXED DECISIONS");
       expect(occurrences(prompt)).toBe(1);
       if (capability === "refine") {
-        expect(prompt).toContain("PARENT MUTATION RESOURCES (exact partition units)");
-        expect(prompt).toContain("do not replace a parent entry with narrower descendant paths");
+        expect(prompt).toContain("PARENT MUTATION AUTHORITY");
+        expect(prompt).toContain("may narrow parent directories to descendant paths without widening authority");
       }
     }
     const verify = compileActivationPrompt(current, { ...current.network.activations[0]!, capability: "verify" });

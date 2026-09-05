@@ -142,9 +142,8 @@ a repository lease and remain host-owned controller operations.
 Efficiency comes from bounded domains and counterexample rounds, MRV ordering,
 lazy refinement, dependency-projected prompts, normalized deduplication,
 semantic fingerprints, fixed-point propagation, no-progress limits, and
-grounded fast paths. Hosts can configure a deterministic run ceiling as the
-final safety fuse; the current preset otherwise relies on its local semantic
-loop bounds. Telemetry must demonstrate a concrete bottleneck before new
+grounded fast paths. Runs default to a 256-activation ceiling, with cumulative region inspection
+and recovery limits that survive checkpoint resume and pruning. Telemetry must demonstrate a concrete bottleneck before new
 reviewers, scoring layers, solver machinery, or learned scheduling are added.
 
 ### Mechanical guarantees and honest limits
@@ -217,7 +216,11 @@ and progress evidence for bounded recovery.
 Hosts may supply `langgraphAcquireWorktree`,
 `langgraphPrepareImplementationWorkspace`, `langgraphPrepareVerifierWorkspace`,
 `langgraphIntegrateVerifiedWorkspace`, `langgraphReleaseVerifierWorkspace`, and
-`langgraphSnapshotWorkspace` through LangGraph's configurable state. Change
+`langgraphSnapshotWorkspace` through LangGraph's configurable state. The implementation preparation hook accepts an optional fourth
+`resumeFromActivationId` argument for retained edits and verification repairs.
+It returns `baselineWorktree` alongside `worktree` and `baselineFingerprint` when
+continuing a cumulative delta; this preserves measurement against the original
+baseline. Change
 delivery requires the preparation and integration hooks; the host
 owns process isolation, UI, persistence integration, and concrete tool
 execution; Neolit owns state-machine legality, evidence authority, propagation,

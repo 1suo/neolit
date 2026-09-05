@@ -137,6 +137,8 @@ export interface SolutionRegion {
   definitionFingerprint?: string;
   selectionAge?: number;
   inspectionAttempts?: number;
+  retainedImplementationActivationId?: string;
+  implementationRecoveryAttempts?: number;
   inspectionObligationIds?: CriterionId[];
   criterionVerdicts?: InspectionCriterionResult[];
   decisionBoundary?: DecisionBoundary;
@@ -496,6 +498,8 @@ export interface ActivationTaskInput {
 }
 
 export interface SolutionNetwork {
+  /** Latest controller-admitted landing per path; optional for existing v11 checkpoints. */
+  repositoryEpochs?: Record<string, { digest: string; revision: number }>;
   authority: SolutionAuthorityFrame;
   revision: number;
   nextRegionId: number;
@@ -637,6 +641,8 @@ export interface ActivationTelemetryRecord {
 }
 
 export interface SolutionTelemetry {
+  recoveryEvents?: Array<{ kind: "invalidation" | "prune" | "reopen" | "implementation-retry"; regionId: string; revision: number; reason: string }>;
+  firstVerifiedChangeAt?: number;
   activations: number;
   physicalActivations: number;
   promptAttempts: number;

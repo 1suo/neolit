@@ -97,7 +97,7 @@ export const SOLUTION_ROLE_CONTRACTS: Record<SolutionPresetRole, SolutionRoleCon
     capabilities: SOLUTION_ROLE_CAPABILITIES.inspect,
     actions: SOLUTION_ACTION_REQUIREMENTS.inspect,
     outcomes: ["facts", "boundary", "need-fact", "decompose", "certified", "already-satisfied", "answer"], outputSchema: InspectionOutputSchema,
-    systemPrompt: prompt("Repository inspector.", "Answer one repository question with relevant sourced facts.", "Observe only: do not select a solution or edit files."),
+    systemPrompt: prompt("Repository inspector.", "Answer one repository question with relevant sourced facts. For a prescribed correction grounded in repository observations, return certified; for evidenced existing behavior, return already-satisfied. Only genuine unresolved design choices require a decision boundary.", "Observe only: do not select a solution or edit files."),
   },
   synthesize: {
     defaultModel: "inherit", agent: "langgraph-synthesizer", tools: NO_TOOLS, maxSteps: DEFAULT_SOLUTION_ROLE_LIMITS.synthesize.maxTurns!,

@@ -39,7 +39,7 @@ Agent routing is not WFC, and hierarchy depth is not automatically a LOD.
 
 ## Terminality and refinement
 
-Actionability is computed by the controller, never set directly by a model. Refinement returns exactly one certified leaf contract or one or more children, never both or neither. Children have unique names and collectively cover every parent criterion; multiple children may contribute to one cross-cutting criterion. Before returning a leaf, refinement attempts a two-way partition. Parent mutation-resource entries are exact partition units: children allocate every entry exactly once and may not substitute descendant paths; an inseparable coarse entry is evidence for a leaf rather than authority to refine the controller-owned scope. A certified leaf carries every stable criterion and material requirement ID, a bounded implementation scope and mutation resources, one executable check per criterion, only confirmed evidence references, and an exact atomicity witness explaining why splitting would overlap ownership, require unresolved coordination, or merely wrap the same change. Implementation additionally requires one selected candidate and acceptance of the exact current domain fingerprint; criterion count and LOD depth are not actionability rules. A new synthesis choice drops the previous refinement's subtree. Reopening does the same and returns an underspecified region to inspection.
+Actionability is computed by the controller, never set directly by a model. Refinement returns exactly one certified leaf contract or one or more children, never both or neither. Children have unique names and collectively cover every parent criterion; multiple children may contribute to one cross-cutting criterion. Before returning a leaf, refinement attempts a two-way partition. Parent mutation resources are authority boundaries: children may narrow a directory to descendant paths, but may not escape or widen its authority. Criterion coverage defines completeness, not exhaustion of every permitted path. Shared mutation paths require serialized execution, not an atomic semantic leaf; the controller retains one implementation lane. Directory ownership alone is never an atomicity witness. A certified leaf carries every stable criterion and material requirement ID, a bounded implementation scope and mutation resources, one executable check per criterion, only confirmed evidence references, and an exact atomicity witness explaining why splitting would overlap ownership, require unresolved coordination, or merely wrap the same change. Implementation additionally requires one selected candidate and acceptance of the exact current domain fingerprint; criterion count and LOD depth are not actionability rules. A new synthesis choice drops the previous refinement's subtree. Reopening does the same and returns an underspecified region to inspection.
 
 ## Solution state
 
@@ -137,7 +137,7 @@ Candidate-domain relationships remain local to the current region; evidence and 
 
 Before implementation, the host captures the exact target baseline: `HEAD`, working-tree/index content, untracked content digests, and admitted mutation resources. The role mutates an isolated mirror of that baseline. Actual changes are measured atomically against the captured baseline even when final model output is malformed or interrupted; pre-existing dirty content is never misclassified as activation output.
 
-After semantic implementation, the host replays only the measured activation delta onto clean `HEAD` in another isolated workspace. Verification runs against that replay. A passing replay is committed independently with exactly the admitted paths, and the commit identity, tree fingerprint, patch fingerprint, and preserved run ref are checkpointed before the host attempts a deterministic three-way landing into the locked user worktree. A concurrent landing conflict preserves the verified artifact and commit and blocks only integration; it must not reopen inspection, selection, refinement, implementation, or verification. A delta that cannot replay on clean `HEAD` is reported as a precise dependency on pre-existing dirty content rather than staged together with that content. Retry is idempotent, and no operation automatically stashes, resets, discards, or commits user-owned changes.
+After semantic implementation, the host replays only the measured activation delta onto the run’s latest verified commit (initially clean `HEAD`) in another isolated workspace. Later dependent scopes must see earlier verified deliveries without committing unrelated user work. Verification runs against that replay. A passing replay is committed independently with exactly the admitted paths, and the commit identity, tree fingerprint, patch fingerprint, and preserved run ref are checkpointed before the host attempts a deterministic three-way landing into the locked user worktree. A concurrent landing conflict preserves the verified artifact and commit and blocks only integration; it must not reopen inspection, selection, refinement, implementation, or verification. A delta that cannot replay on that verified baseline is reported as a precise dependency on pre-existing dirty content rather than staged together with that content. Retry is idempotent, and no operation automatically stashes, resets, discards, or commits user-owned changes.
 
 Repository evidence invalidation is mutation-epoch aware. A current digest equal to the controller-recorded landed digest is an admitted self-mutation and does not stale ancestor planning evidence; a later different digest is an external defeater and invalidates normally.
 
@@ -176,3 +176,24 @@ reopening; compiled-graph tests for answer and mutation paths, malformed-output
 failure, artifact reconciliation, and verifier feedback; typecheck, build, pack,
 and clean-package installation checks; and at least one measured mutation run
 through a conforming host runtime.
+
+## Delivery and recovery acceptance
+
+A release must run a fixed real-host matrix: a prescribed correction, a genuine
+design choice, a multi-file change, and dependent scopes. Independent executable
+checks must verify landed behavior and preserved commit references without prune
+or manual checkpoint edits. Record the model assignments, builds, activation
+counts, validation repairs, recovery events, and time to first verified change.
+
+Retriable implementation failures preserve the certified scope and resume the
+retained isolated delta against its original baseline. Verification repair uses
+that same cumulative delta. Neither path reopens planning merely because files
+changed. Out-of-scope mutations remain blocked. The latest admitted landing for
+each path defines its mutation epoch across regions; an external digest mismatch
+still invalidates its dependents.
+
+Inspection and recovery accounting is cumulative across episodes and explicit
+prunes. Default finite run and region ceilings terminate unsuccessful exploration
+with precise reasons; checkpoint resume must not reset those counts. Optional
+invalid claim validations may be discarded with diagnostics while independently
+valid observations and criterion verdicts remain subject to normal admission.

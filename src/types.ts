@@ -130,6 +130,7 @@ export interface SolutionLodPresetOptions {
   maxParallelActivations?: number;
   maxActivations?: number;
   maxInspectionsPerRegion?: number;
+  runLimits?: import("./solution-lod/types.js").SolutionRunLimits;
 }
 
 export type ConnectorConfig = ConnectorDefinition | ConnectorPresetConfig;

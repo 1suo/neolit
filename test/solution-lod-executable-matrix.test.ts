@@ -39,6 +39,23 @@ const observed = (text: string) => ({
 });
 
 describe("solution LOD executable task matrix", () => {
+  it("does not dispatch parallel work beyond the remaining run allowance", async () => {
+    const directory = workspace();
+    const configured = solutionLodGraph({ agents, maxActivations: 2, maxParallelActivations: 3, checkpointer: new MemorySaver() });
+    const initial = configured.initial({ task: { id: "cap", exactText: "Inspect independent scopes" }, authoritativeMessages: [], directory, worktree: directory, runId: "cap" });
+    initial.callsUsed = 1;
+    initial.network.activations = [];
+    const root = initial.network.regions[0]!;
+    root.activationIds = [];
+    for (const id of ["r2", "r3"]) initial.network.regions.push({ ...structuredClone(root), id, key: id, scopeId: `scope:${id}`, parentId: "r1", edge: "partOf", lod: 1 });
+    for (const id of ["r2", "r3"]) initial.network = queueActivation(initial.network, "inspect", id, "Inspect this scope", `inspect:${id}`, [id]);
+    let calls = 0;
+    const result = await configured.graph.invoke(initial, { recursionLimit: 16, configurable: { thread_id: "cap", langgraphOpenCodeRuntime: { call: async () => { calls++; throw new Error("unavailable"); } } } }) as SolutionLodState;
+    expect(calls).toBe(1);
+    expect(result.callsUsed).toBe(2);
+    expect(result.phase).toBe("blocked");
+  });
+
   it("executes fixed dependent tasks, repairs a failed implementation, and verifies in dependency order", async () => {
     const directory = workspace();
     const calls: string[] = [];

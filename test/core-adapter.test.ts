@@ -858,8 +858,8 @@ describe("solution LOD reducer", () => {
     const rightPrompt = compileActivationPrompt(right, right.network.activations[0]);
     expect(leftPrompt).toContain(left.network.authority.task.exactText);
     expect(rightPrompt).toContain(right.network.authority.task.exactText);
-    expect(leftPrompt).toContain("inspect: Find the repository facts needed");
-    expect(rightPrompt).toContain("inspect: Find the repository facts needed");
+    expect(leftPrompt).toContain("inspect: First determine whether the task already prescribes the correction");
+    expect(rightPrompt).toContain("inspect: First determine whether the task already prescribes the correction");
   });
 
   it("compiles the operational contract for every role", () => {
@@ -1550,7 +1550,7 @@ describe("solution LOD graph", () => {
     } };
     let snapshots = 0;
     const snapshot = () => snapshots++ === 0 ? new Map([["target.txt", "clean:base"]]) : new Map([["target.txt", "M:retained"]]);
-    const result = await configured.graph.invoke(configured.initial(solutionInput("change", directory, "malformed-mutation")), { recursionLimit: 32, configurable: { thread_id: "malformed-mutation", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareImplementationWorkspace: testImplementationWorkspace, langgraphSnapshotWorkspace: snapshot } });
+    const result = await configured.graph.invoke(configured.initial(solutionInput("change", directory, "malformed-mutation")), { recursionLimit: 64, configurable: { thread_id: "malformed-mutation", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareImplementationWorkspace: testImplementationWorkspace, langgraphSnapshotWorkspace: snapshot } });
     expect(fs.readFileSync(path.join(directory, "target.txt"), "utf8")).toBe("retained");
     expect((result as SolutionLodState).network.artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "file", path: "target.txt" })]));
     expect(configured.progress?.(result)?.phase).toBe("blocked");

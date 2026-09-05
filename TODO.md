@@ -47,12 +47,11 @@ techniques such as singleton collapse and minimum-remaining-values scheduling.
 
 ## 3. Workflow state machine
 
-- [ ] Make inspection convergence monotonic across episodes. Track why an
-  inspection episode reopened, retain a bounded region-level cycle count when
-  stale evidence or changed criteria reset the two-pass episode. Accepted
-  implementation mutations now carry a landed digest epoch and no longer stale
-  ancestor evidence; retain a compiled-graph regression for the complete
-  self-mutation → schedule → external-defeater sequence.
+- [x] Bound inspection/recovery cumulatively across episodes and pruning. Retain
+  recovery reasons and physical-activation totals across resume; default to
+  256 run activations, 16 inspections and 12 recovery events per region.
+- [x] Preserve admitted self-mutation epochs per path across regions and retain
+  isolated implementation deltas through bounded retry and verifier repair.
 - [ ] Centralize legal region transitions and their preconditions instead of
   assigning statuses across propagation, implementation, verification, and
   reopening code paths.
@@ -64,9 +63,9 @@ techniques such as singleton collapse and minimum-remaining-values scheduling.
   semantics never existed and nothing used them honestly.
 - [ ] Define one authoritative same-revision retry policy and align the spec,
   reducer, and tests.
-- [ ] Add run-level limits for activations, elapsed time, cost, retries, and
-  reopen cycles; report a semantic blocked result before LangGraph's recursion
-  limit is reached.
+- [x] Add configurable run limits with a finite default physical-activation
+  ceiling and cumulative recovery accounting. Hosts must set LangGraph recursion
+  limits high enough for that controller ceiling.
 - [x] Resume failed graphs through an explicit prune/retry policy.
 
 ## 4. Role and verification contracts
@@ -554,3 +553,17 @@ ships; no external GitHub operation was performed.
 - [x] Render a readable solution plan with distinctive LOD and status elements.
 - [x] Render semantic graph state instead of the raw static LangGraph topology.
 - [x] Event for graph finish/fail for agent to act on
+
+## Delivery recovery (2026-09-05)
+
+- [x] Keep artifact-backed verification certificates valid after landing; retain
+  invalidation when a cited artifact changes or becomes historical.
+
+- [x] Permit validated descendant-path refinement and shared-file serialized
+  work without widening parent authority or weakening criterion coverage.
+- [x] Preserve independent observations when optional claim validation cites
+  unsupported proof; keep consequential boundary and completion admission strict.
+- [x] Prefer the existing certified-correction route for prescribed grounded
+  work; reserve domain exploration for unresolved design choices.
+- [ ] Record the fixed real-host delivery matrix result after the kernel and
+  host recovery changes; include failed attempts as well as fresh successful runs.
