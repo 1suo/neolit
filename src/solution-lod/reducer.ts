@@ -2350,12 +2350,12 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
     // still make the same evidence-backed recovery.
     const legacyPaths = (output.blocker ?? "").match(/(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.(?:[cm]?[jt]s|json|md|vue)/g) ?? [];
     const requestedResources = [...new Set([...("requiredMutationResources" in output ? output.requiredMutationResources : []), ...legacyPaths].map(normalizeMutationPath).filter(Boolean))];
-    if (region.edge === "root" && requestedResources.length) {
+    if (region.edge === "root") {
     // The implementation found that the inspected root file inventory omitted an
     // execution seam.  Re-inspect that named seam before replacing the certificate.
     transitionRegion(region, "inspecting", undefined, "superposed");
     activation.expectedDelta = `scope-expansion:${requestedResources.join(",")}`;
-    addActivation(network, { capability: "inspect", requiredCapabilities: [...DEFAULT_ACTIVATION_CAPABILITIES.inspect], regionId: region.id, request: `Inspect these implementation-discovered execution seams and, if confirmed, re-certify the root mutation resources: ${requestedResources.join(", ")}. ${output.blocker}`, expectedDelta: "Confirm the named execution seams and re-certify the root mutation resources.", contextRefs: region.certifiedLeaf?.evidenceRefs ?? [] });
+    addActivation(network, { capability: "inspect", requiredCapabilities: [...DEFAULT_ACTIVATION_CAPABILITIES.inspect], regionId: region.id, request: `Inspect the execution seam that blocked implementation and, if confirmed, re-certify the root mutation resources. Report exact repository-relative paths; known paths: ${requestedResources.join(", ") || "none"}. ${output.blocker}`, expectedDelta: "Identify the implementation-blocking execution seams and re-certify the root mutation resources.", contextRefs: region.certifiedLeaf?.evidenceRefs ?? [] });
     } else if (countReopen(network, region)) {
     transitionRegion(region, "challenging", undefined, "superposed"); region.contradiction = output.blocker || output.summary || "Implementation reported a missing prerequisite."; region.selectedCandidateIds = [];
     region.acceptedFingerprint = null; region.challengeVerdict = null; region.certifiedLeaf = undefined; clearImplementationContinuation(region); transitionRegion(region, "challenging");
