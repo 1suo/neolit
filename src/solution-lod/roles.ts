@@ -145,7 +145,7 @@ export const SYNTHESIS_OPERATION_CONTRACTS: Record<SynthesisOperation, Synthesis
   },
   "challenge-leaf": {
     owner: "synthesize", outcomes: ["accept-leaf", "counterexample-leaf"], outputSchema: LeafChallengeOutputSchema,
-    instruction: "Adversarially review the supplied certified leaf's atomicity claim. Try to name exactly one concrete finer outcome hidden inside its scope that could be implemented and verified independently — a separate decision, deliverable, or mutation-support subset with its own file ownership. If you find one, return counterexample-leaf with that hidden outcome and the files it would own. Accept only when the leaf's own files genuinely execute and verify as one change; accept requires the exact supplied leaf fingerprint. Do not restate the leaf or propose execution sequencing.",
+    instruction: "Adversarially review the supplied certified leaf's atomicity claim. Try to name exactly one concrete finer outcome hidden inside its scope that could be implemented and verified independently — a separate decision, deliverable, or mutation-support subset with its own file ownership. If you find one, return counterexample-leaf with that hidden outcome and a complete covering child partition: exact parent-criterion and requirement ownership, concrete child files, and child acceptance criteria. The controller materializes this partition directly; do not ask another refiner to rediscover it. Accept only when the leaf's own files genuinely execute and verify as one change; accept requires the exact supplied leaf fingerprint. Do not restate the leaf or propose execution sequencing.",
   },
 };
 
@@ -173,7 +173,7 @@ export const SOLUTION_ROLE_GRAPH = [
   { from: "refine", outcome: "need-fact", to: ["inspect"] },
   { from: "refine", outcome: "leaf", to: ["challenge-leaf", "present"] },
   { from: "challenge-leaf", outcome: "accept-leaf", to: ["implement"] },
-  { from: "challenge-leaf", outcome: "counterexample-leaf", to: ["refine", "blocked"] },
+  { from: "challenge-leaf", outcome: "counterexample-leaf", to: ["inspect", "blocked"] },
   { from: "refine", outcome: "children", to: ["inspect"] },
   { from: "implement", outcome: "completed", to: ["verify"] },
   { from: "implement", outcome: "already-satisfied", to: ["verify"] },

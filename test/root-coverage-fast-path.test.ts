@@ -252,7 +252,7 @@ describe("root coverage and certified fast path", () => {
     network.regions[0]!.status = "collapsed";
     const root = network.regions[0]!;
     network.regions.push(
-      { ...structuredClone(root), id: "r2", key: "looping", scopeId: "scope:r2", parentId: "r1", edge: "partOf", status: "unformed", domainPhase: "inspecting", activationIds: [], inspectionAttempts: 2 },
+      { ...structuredClone(root), id: "r2", key: "looping", scopeId: "scope:r2", parentId: "r1", edge: "partOf", status: "unformed", domainPhase: "inspecting", activationIds: [], acceptanceCriteria: ["loop resolves"], criterionIds: ["criterion:scope:r2:0"], inspectionObligationIds: ["criterion:scope:r2:0"], inspectionAttempts: 2 },
       { ...structuredClone(root), id: "r3", key: "independent", scopeId: "scope:r3", parentId: "r1", edge: "partOf", status: "unformed", domainPhase: "inspecting", activationIds: [], inspectionAttempts: 0 },
     );
     const scheduled = ensureRunnableWork(network, 1, 2);

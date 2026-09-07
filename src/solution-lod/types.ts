@@ -824,6 +824,7 @@ export const LeafChallengeOutputSchema = z.discriminatedUnion("outcome", [
       whyIndependentlyVerifiable: z.string().min(1).describe("Why it can be implemented and verified separately from the rest of the leaf."),
       mutationResources: z.array(z.string().min(1)).min(1).describe("Repository-relative files this hidden outcome would own."),
     }).strict(),
+    children: z.array(ChildRegionSchema).min(2).describe("A complete covering partition of the certified leaf. Each child becomes a smaller controller-owned local decision space; do not ask refinement to rediscover this partition."),
     reason: z.string().min(1),
   }).strict(),
 ]);

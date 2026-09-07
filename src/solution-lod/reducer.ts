@@ -1628,6 +1628,11 @@ export function validateSynthesisOutput(state: SolutionLodState, activation: Act
       if (!isFileResource(resource)) throw new Error(`A leaf counterexample resource ${resource} must be a concrete file path.`);
       if (region.mutationResources?.length && !region.mutationResources.some((parent) => pathWithin(owned, mutationPath(parent)))) throw new Error(`Leaf counterexample resource ${resource} is outside the region's mutation scope.`);
     }
+    validateRefinementOutput(state, region.id, { outcome: "children", evidence: [], children: challenge.children });
+    for (const child of challenge.children) {
+      if (!child.mutationResources?.length) throw new Error(`Leaf counterexample child ${child.key} must name its concrete mutation files.`);
+      validateLeafMutationResources(child.mutationResources, region.certifiedLeaf.mutationResources, `Leaf counterexample child ${child.key}`);
+    }
     return;
   }
   const fingerprint = boundDomainFingerprint(state.network, region.id);
@@ -1756,9 +1761,7 @@ export function mergeSynthesisOutput(state: SolutionLodState, activationId: stri
       network.revision++;
       return propagateNetwork(network);
     }
-    transitionRegion(region, "selected", undefined, "unrefined");
-    network.revision++;
-    return propagateNetwork(network);
+    return mergeRefinementOutput(network, activationId, { outcome: "children", evidence: [], children: challenge.children });
   }
   if (activation.operation === "challenge-domain") {
     const challenge = output as DomainChallengeOutput;

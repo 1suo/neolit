@@ -29,7 +29,7 @@ describe("state v11 progress ledgers", () => {
     expect(network.activations.at(-1)!.schemaReservation).toMatchObject({ attemptOrdinal: 3, maxAttempts: 1 });
     network = fail(network, replacement.id, 1);
     expect(network.schemaRetries[logical]).toMatchObject({ attempts: 3, retries: 1, repairs: 1, reservedAttempts: 0 });
-    expect(ensureRunnableWork(network).blocked).toContain("Inspection pass limit reached");
+    expect(ensureRunnableWork(network).blocked).toContain("No activation can make a novel state delta");
   });
 
   it("admits a fresh schema budget only for changed context", () => {
