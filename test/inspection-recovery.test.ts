@@ -143,6 +143,7 @@ describe("inspection schema-failure recovery (regression: run 1cd79e7f)", () => 
     region.domainPhase = "inspecting";
     region.acceptanceCriteria = ["worktrees reconciled"];
     region.inspectionObligationIds = [];
+    region.inspectionAttempts = 2;
     region.evidenceIds = ["e1"];
     network.evidence.push({ id: "e1", text: "ledger is WAITING", source: "TODO-process-designer.md", kind: "repository", status: "stale", fingerprint: "stale-ledger" });
     network.activations.push({ id: "a2", capability: "inspect", regionId: "r1", request: "boundary", expectedDelta: "inspection:r1:boundary", contextRefs: ["r1", "e1"], status: "completed", basisRevision: network.revision });

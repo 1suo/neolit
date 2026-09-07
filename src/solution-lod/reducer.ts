@@ -3243,8 +3243,11 @@ export function ensureRunnableWork(input: SolutionNetwork, width = 1, maxInspect
     } else if (target.status === "unrefined") {
       network = queueActivation(network, "refine", target.id, "Split the chosen approach into the next steps of work that together cover every success criterion and material requirement.", `refinement:${target.id}:${network.revision}`, currentContextRefs(network, [...target.evidenceIds, ...target.constraintIds, ...(target.requirementIds ?? [])]));
     } else if (target.domainPhase === "inspecting" || target.status === "unformed") {
-      if ((target.inspectionAttempts ?? 0) >= inspectionLimit && !(target.focusedInspectionPending && (target.focusedInspectionGrants ?? 0) < MAX_FOCUSED_INSPECTION_GRANTS)) {
-        const unresolvedCriterionIds = target.inspectionObligationIds ?? target.criterionIds;
+      const criterionIds = target.inspectionObligationIds ?? [];
+      // A closed obligation set needs one compact boundary comparison, not another
+      // repository pass. It remains admissible after discovery budget is exhausted.
+      if ((target.inspectionAttempts ?? 0) >= inspectionLimit && criterionIds.length && !(target.focusedInspectionPending && (target.focusedInspectionGrants ?? 0) < MAX_FOCUSED_INSPECTION_GRANTS)) {
+        const unresolvedCriterionIds = criterionIds;
         const verdicts = (target.criterionVerdicts ?? []).filter((item) => unresolvedCriterionIds.includes(item.criterionId)).map((item) => `${item.criterionId}=${item.verdict}`).join(",") || "unreported";
         transitionRegion(target, "blocked", `Inspection pass limit reached for ${target.id}: used=${target.inspectionAttempts ?? 0} limit=${inspectionLimit} focusedGrants=${target.focusedInspectionGrants ?? 0}/${MAX_FOCUSED_INSPECTION_GRANTS}; unresolvedCriterionIds=${unresolvedCriterionIds.join(",") || "none"}; verdicts=${verdicts}.`, "blocked");
       target.blockedDetails = { kind: "inspection-pass-limit", unresolvedCriterionIds: [...unresolvedCriterionIds] };
@@ -3253,7 +3256,6 @@ export function ensureRunnableWork(input: SolutionNetwork, width = 1, maxInspect
       if (target.focusedInspectionPending && (target.inspectionAttempts ?? 0) >= inspectionLimit) target.focusedInspectionGrants = (target.focusedInspectionGrants ?? 0) + 1;
       target.focusedInspectionPending = false;
       transitionRegion(target, "inspecting");
-      const criterionIds = target.inspectionObligationIds ?? [];
       const inspectionPass = Math.min(2, (target.inspectionAttempts ?? 0) + 1);
       const focusedPass = (target.inspectionAttempts ?? 0) >= inspectionLimit;
       const failedInspections = network.activations.filter((item) => item.regionId === target.id && item.capability === "inspect" && !item.historical && item.status === "failed");
