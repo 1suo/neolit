@@ -90,6 +90,7 @@ describe("delivery recovery", () => {
           certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set code and helper to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the delivery fixture and assert both files read fixed." }] },
         } };
       }
+      if (input.node === "challenge-leaf:r2") return { text: "", structured: { outcome: "accept-leaf", reason: "The two owned value edits and shared check form one bounded delivery." } };
       if (input.node === "implement:r2") {
         implementationCount++;
         if (implementationCount === 1) {
@@ -135,7 +136,7 @@ describe("delivery recovery", () => {
       expect(result.network.repositoryEpochs?.[".git/worktrees"]?.digest).toBe((inspectLinkedWorktrees(directory).value as { observationDigest: string }).observationDigest);
       expect(result.network.repositoryEpochs?.["outside.txt"]).toBeUndefined();
     }
-    expect(calls).toEqual(["inspect:r1", "inspect:r2", "implement:r2", "implement:r2", "verify:r2", "inspect:r3", "verify:r3"]);
+    expect(calls).toEqual(["inspect:r1", "inspect:r2", "challenge-leaf:r2", "implement:r2", "implement:r2", "verify:r2", "inspect:r3", "verify:r3"]);
     expect(preparations).toHaveLength(2);
     expect(preparations[1]!.resume).toBe(preparations[0]!.id);
     expect(result.network.telemetry?.recoveryEvents?.filter((event) => event.kind === "implementation-retry")).toHaveLength(1);
@@ -272,6 +273,7 @@ describe("delivery recovery", () => {
       }
       if (input.node === "select-candidate:r1") return { text: "", structured: { outcome: "selected", boundDomainFingerprint: region.boundDomainFingerprint, selectedCandidateId: "r1:array", comparisons: region.candidateIds.map((candidateId: string) => ({ candidateId, userPreference: "neutral", repositoryCompatibility: "neutral", changeScope: candidateId === "r1:array" ? "preferred" : "neutral", irreversibleRisk: "neutral", evidenceRefs: ["e1"] })) } };
       if (input.node === "refine:r1") return { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "Implement array representation", criterionIds: region.criterionIds, requirementIds: region.requirementIds, evidenceRefs: ["e1"], mutationResources: ["code.txt"], checks: [{ criterionId: region.criterionIds[0], commandOrObservation: "check array implementation" }] }, atomicityWitness: { outcome: "Implement array representation", criterionIds: region.criterionIds, requirementIds: region.requirementIds, mutationResources: ["code.txt"], whySplittingFails: "One bounded collection implementation and its behavior check" } } };
+      if (input.node === "challenge-leaf:r1") return { text: "", structured: { outcome: "accept-leaf", reason: "The collection implementation and check share one bounded file." } };
       if (input.node === "implement:r1") {
         fs.writeFileSync(path.join(input.worktree, "code.txt"), "array implementation");
         return { text: "", structured: { outcome: "completed", summary: "Array implemented", changedFiles: ["code.txt"], checks: [{ name: "recent collection implemented", passed: true, evidence: "observed array implementation" }] } };
@@ -300,7 +302,7 @@ describe("delivery recovery", () => {
       expect(challenges).toBe(3);
       expect(result.network.regions[0]!.progress.cegarRounds.count).toBe(2);
     } else {
-      expect(calls, JSON.stringify(result.network.activations.filter((item) => item.status === "failed"))).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "inspect:r1", "generate-domain:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "implement:r1", "verify:r1"]);
+      expect(calls, JSON.stringify(result.network.activations.filter((item) => item.status === "failed"))).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "inspect:r1", "generate-domain:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "challenge-leaf:r1", "implement:r1", "verify:r1"]);
       expect(configured.progress?.(result)?.phase, result.result).toBe("completed");
       expect(result.network.regions[0]).toMatchObject({ status: "verified", selectedCandidateIds: ["r1:array"], inspectionAttempts: 2 });
     }

@@ -30,6 +30,7 @@ function mockV8Structured(title: string, prompt = ""): unknown {
   const regionId = title.match(/:(r\d+)/)?.[1] ?? "r1";
   if (title.includes("generate-domain:")) return { outcome: "candidates", candidates: [{ key: "direct", proposition: "Update target", evidenceRefs: [], coordinates: [] }, { key: "adapter", proposition: "Update target through an adapter", evidenceRefs: [], coordinates: [] }] };
   if (title.includes("challenge-domain:")) return { outcome: "accept", boundDomainFingerprint: fingerprint, viableCandidateIds: candidateIds };
+  if (title.includes("challenge-leaf:")) return { outcome: "accept-leaf", reason: "The supplied source edit and its check share one owned file." };
   if (title.includes("select-candidate:")) return { outcome: "selected", boundDomainFingerprint: fingerprint, selectedCandidateId: `${regionId}:direct`, comparisons: candidateIds.map((candidateId) => ({ candidateId, userPreference: "neutral", repositoryCompatibility: "neutral", changeScope: candidateId === `${regionId}:direct` ? "preferred" : "disfavored", irreversibleRisk: "neutral", evidenceRefs: [] })) };
   if (title.includes("refine:")) return { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "bounded test change", criterionIds: ["criterion:scope:r1:0"], requirementIds: ["requirement:root-criterion-0"], evidenceRefs: [], mutationResources: ["src/test.ts"], checks: [{ criterionId: "criterion:scope:r1:0", commandOrObservation: "run focused test" }] }, atomicityWitness: { outcome: "bounded test change", criterionIds: ["criterion:scope:r1:0"], requirementIds: ["requirement:root-criterion-0"], mutationResources: ["src/test.ts"], whySplittingFails: "The source edit and its focused check are one change." } };
   return undefined;
@@ -265,7 +266,7 @@ describe("solution LOD reducer", () => {
     expect(nextQueuedActivation(ensureRunnableWork(merged).network)).toMatchObject({ capability: "refine", regionId: "r1" });
     merged = certifyLeaf(merged);
     expect(merged.regions[0]).toMatchObject({ status: "actionable" });
-    expect(nextQueuedActivation(ensureRunnableWork(merged).network)).toMatchObject({ capability: "implement", regionId: "r1" });
+    expect(nextQueuedActivation(ensureRunnableWork(merged).network)).toMatchObject({ capability: "synthesize", operation: "challenge-leaf", regionId: "r1" });
   });
 
   it("materializes refined children, collapses the parent, and inspects each child before synthesis", () => {
@@ -914,7 +915,7 @@ describe("solution LOD reducer", () => {
     const scheduled = ensureRunnableWork(network);
     expect(scheduled.done).toBe(false);
     expect(scheduled.network.regions[0].status).toBe("actionable");
-    expect(scheduled.network.activations.at(-1)).toMatchObject({ capability: "implement", status: "queued" });
+    expect(scheduled.network.activations.at(-1)).toMatchObject({ capability: "synthesize", operation: "challenge-leaf", status: "queued" });
   });
 
   it("collapses an equivalent surviving set as one implementer-local choice", () => {
@@ -1446,6 +1447,7 @@ describe("solution LOD graph", () => {
     const region = input.state?.network.regions.find((item) => item.id === regionId);
     if (input.node.startsWith("generate-domain:")) return { text: "", structured: { outcome: "candidates", candidates: [{ key, proposition, evidenceRefs: [], coordinates: [] }, ...region?.allowedVariables.length ? [{ key: `${key}-alternative`, proposition: `${proposition} with an adapter`, evidenceRefs: [], coordinates: [] }] : []] } };
     if (input.node.startsWith("challenge-domain:")) return { text: "", structured: { outcome: "accept", boundDomainFingerprint: region?.boundDomainFingerprint, viableCandidateIds: region?.candidateIds ?? [] } };
+    if (input.node.startsWith("challenge-leaf:")) return { text: "", structured: { outcome: "accept-leaf", reason: "The bounded source edit and its criterion check share one file." } };
     if (input.node.startsWith("select-candidate:")) return { text: "", structured: { outcome: "selected", boundDomainFingerprint: region?.boundDomainFingerprint, selectedCandidateId: `${regionId}:${key}`, comparisons: (region?.candidateIds ?? []).map((candidateId) => ({ candidateId, userPreference: "neutral", repositoryCompatibility: "neutral", changeScope: candidateId === `${regionId}:${key}` ? "preferred" : "disfavored", irreversibleRisk: "neutral", evidenceRefs: [] })) } };
     return undefined;
   };
@@ -1472,7 +1474,7 @@ describe("solution LOD graph", () => {
       throw new Error(`unexpected node ${input.node}`);
     } };
     const result = await configured.graph.invoke(configured.initial(solutionInput("update", directory, "run")), { recursionLimit: 64, configurable: { thread_id: "run", langgraphOpenCodeRuntime: runtime, langgraphAcquireWorktree: async () => {}, langgraphPrepareImplementationWorkspace: testImplementationWorkspace, langgraphPrepareVerifierWorkspace: async (runId: string, activationId: string, worktree: string) => { preparedVerifier = [runId, activationId, worktree]; return directory; }, langgraphExecuteVerificationChecks: async (_run: string, _verify: string, _worktree: string, _region: string, checks: Array<{ criterionId: string }>) => checks.map((check) => ({ criterionId: check.criterionId, name: `host ${check.criterionId}`, passed: true, evidence: "host check passed" })), langgraphIntegrateVerifiedWorkspace: testIntegration, langgraphReleaseVerifierWorkspace: async (runId: string, activationId: string) => { releasedVerifier = [runId, activationId]; } } });
-    expect(calls).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "implement:r1", "verify:r1"]);
+    expect(calls).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "challenge-leaf:r1", "implement:r1", "verify:r1"]);
     expect(maxAttempts.get("generate-domain:r1")).toBe(3);
     expect(maxAttempts.get("challenge-domain:r1")).toBe(3);
     expect(maxAttempts.get("select-candidate:r1")).toBe(3);
@@ -1577,6 +1579,7 @@ describe("solution LOD graph", () => {
         const region = input.state!.network.regions.find((item) => item.id === input.node.slice("refine:".length))!;
         return { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "bounded answer", criterionIds: [...region.criterionIds], requirementIds: [...(region.requirementIds ?? [])], evidenceRefs: [], mutationResources: [region.key], checks: region.criterionIds.map((criterionId) => ({ criterionId, commandOrObservation: "check answer" })) }, atomicityWitness: { outcome: "bounded answer", criterionIds: [...region.criterionIds], requirementIds: [...(region.requirementIds ?? [])], mutationResources: [region.key], whySplittingFails: "The answer and its check are one result." } } };
       }
+      if (input.node === "challenge-leaf:r2" || input.node === "challenge-leaf:r3") return { text: "", structured: { outcome: "accept-leaf", reason: "The answer leaf and its check are one bounded result." } };
       if (input.node === "present:r2") return { text: "", structured: { outcome: "answer", answer: "left answer" } };
       if (input.node === "present:r3") return { text: "", structured: { outcome: "answer", answer: "right answer" } };
       if (input.node === "verify:r2") return { text: "", structured: { outcome: "pass", summary: "ok", findings: [], checks: [{ name: "left answered", passed: true, evidence: "left answered: left answer", criterionIds: input.state!.network.regions.find((item) => item.id === "r2")!.criterionIds }] } };

@@ -93,6 +93,7 @@ flowchart LR
   M[implement]
   P[present]
   V[verify]
+  L[challenge-leaf]
   Done((completed))
   Block((blocked))
 
@@ -103,7 +104,7 @@ flowchart LR
   I -->|need-fact| I
   I -->|need-fact| Block
   I -->|decompose| I
-  I -->|certified| M
+  I -->|certified| L
   I -->|already-satisfied| V
   I -->|answer| V
   G -->|candidates| C
@@ -119,8 +120,11 @@ flowchart LR
   S -->|needs-fact| Block
   R -->|boundary| G
   R -->|need-fact| I
-  R -->|leaf| M
+  R -->|leaf| L
   R -->|leaf| P
+  L -->|accept-leaf| M
+  L -->|counterexample-leaf| R
+  L -->|counterexample-leaf| Block
   R -->|children| I
   M -->|completed| V
   M -->|already-satisfied| V

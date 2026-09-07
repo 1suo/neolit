@@ -97,6 +97,7 @@ describe("solution LOD executable task matrix", () => {
         mutationResources: [...region.mutationResources],
         checks: region.criterionIds.map((criterionId) => ({ criterionId, commandOrObservation: `check ${region.acceptanceCriteria[0]}` })),
       }, atomicityWitness: { outcome: `Change ${region.mutationResources[0]}`, criterionIds: [...region.criterionIds], requirementIds: [...region.requirementIds], mutationResources: [...region.mutationResources], whySplittingFails: "The bounded file change and its focused check are one change." } } };
+      if (input.node.startsWith("challenge-leaf:")) return { text: "", structured: { outcome: "accept-leaf", reason: "Each leaf owns one bounded file change and its check." } };
       if (input.node.startsWith("implement:")) {
         const count = (implementations.get(region.id) ?? 0) + 1;
         implementations.set(region.id, count);
@@ -156,13 +157,14 @@ describe("solution LOD executable task matrix", () => {
         outcome: "certified", region: { acceptanceCriteria: ["code is corrected"] }, evidence: observation.evidence, criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["observed-chunk"] }],
         certifiedVerdict: { proposition: "Correct code.txt", implementationScope: "Replace the incorrect value", evidenceRefs: ["observed-chunk"], mutationResources: ["code.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the focused code.txt test and assert it reads fixed." }] },
       } }; }
+      if (input.node === "challenge-leaf:r1") return { text: "", structured: { outcome: "accept-leaf", reason: "The correction and focused check form one file-owned change." } };
       if (input.node === "implement:r1") { fs.writeFileSync(path.join(directory, "code.txt"), "fixed"); return { text: "", structured: { outcome: "completed", summary: "corrected", changedFiles: ["code.txt"], checks: [{ name: "code is corrected", passed: true, evidence: "observed fixed" }] } }; }
       if (input.node === "verify:r1") return { text: "", structured: { outcome: "fail", summary: "external service unavailable", findings: [{ regionId: "r1", criterionId: region.criterionIds[0], severity: "high", target: { kind: "environment", refs: [] }, problem: "required service is unavailable", regressionCriterion: "code is corrected", evidence: "connection refused", evidenceRefs: [], resolutionOwner: "service operator", requiredEvidence: ["successful service probe"] }], checks: [] } };
       throw new Error(`unexpected call ${input.node}`);
     } };
     const configured = solutionLodGraph({ agents, checkpointer: new MemorySaver() });
     const result = await configured.graph.invoke(configured.initial({ task: { id: "certified-fail", exactText: "Correct code.txt" }, authoritativeMessages: [], directory, worktree: directory, runId: "matrix-certified-fail" }), { recursionLimit: 16, configurable: { thread_id: "matrix-certified-fail", langgraphOpenCodeRuntime: runtime, ...changeHooks(directory), langgraphAcquireWorktree: async () => {}, langgraphSnapshotWorkspace: snapshot, langgraphReleaseVerifierWorkspace: async () => {} } });
-    expect(calls).toEqual(["inspect:r1", "implement:r1", "verify:r1"]);
+    expect(calls).toEqual(["inspect:r1", "challenge-leaf:r1", "implement:r1", "verify:r1"]);
     expect(configured.progress?.(result)?.phase).toBe("blocked");
     expect((result as SolutionLodState).network.regions[0]?.blockedDetails?.kind).toBe("blocked-external");
   });
@@ -177,6 +179,7 @@ describe("solution LOD executable task matrix", () => {
         outcome: "certified", region: { acceptanceCriteria: ["code is corrected"] }, evidence: observation.evidence, criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["observed-chunk"] }],
         certifiedVerdict: { proposition: "Correct code.txt", implementationScope: "Replace the incorrect value", evidenceRefs: ["observed-chunk"], mutationResources: ["code.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the focused code.txt test and assert it reads fixed." }] },
       } }; }
+      if (input.node === "challenge-leaf:r1") return { text: "", structured: { outcome: "accept-leaf", reason: "The correction and focused check form one file-owned change." } };
       if (input.node === "implement:r1") { fs.writeFileSync(path.join(directory, "code.txt"), "fixed"); return { text: "", structured: { outcome: "completed", summary: "corrected", changedFiles: ["code.txt"], checks: [{ name: "code is corrected", passed: true, evidence: "focused check ran" }] } }; }
       if (input.node === "verify:r1") return { text: "", structured: { outcome: "pass", summary: "verified", findings: [], checks: [{ name: "code is corrected", passed: true, evidence: "code.txt is fixed", criterionIds: [...region.criterionIds] }], completionEvidence: { implementation: "changed code.txt", directTest: "focused code test passed", correctnessReview: "reviewed corrected value", releaseGate: "matrix checks passed", changedFiles: ["code.txt"], focusedTests: ["code.txt focused"], fullChecks: ["matrix suite"] } } };
       throw new Error(`unexpected call ${input.node}`);
@@ -188,7 +191,7 @@ describe("solution LOD executable task matrix", () => {
     initial.network.regions[0]!.activationIds = [];
     initial.network = queueActivation(initial.network, "inspect", "r1", "Inspect code.txt", "inspect:r1", ["r1"]);
     const result = await configured.graph.invoke(initial, { recursionLimit: 32, configurable: { thread_id: "scope-expansion", langgraphOpenCodeRuntime: runtime, ...changeHooks(directory), langgraphAcquireWorktree: async () => {}, langgraphSnapshotWorkspace: snapshot, langgraphReleaseVerifierWorkspace: async () => {} } }) as SolutionLodState;
-    expect(calls).toEqual(["inspect:r1", "implement:r1", "verify:r1"]);
+    expect(calls).toEqual(["inspect:r1", "challenge-leaf:r1", "implement:r1", "verify:r1"]);
     expect(result.network.regions[0]!.certifiedLeaf?.mutationResources).toEqual(["code.txt"]);
     expect(result.result).toContain("completed");
   });
@@ -253,6 +256,7 @@ describe("solution LOD executable task matrix", () => {
         return { text: "", structured: { outcome: "selected", boundDomainFingerprint: region.boundDomainFingerprint, selectedCandidateId: "r1:native", comparisons: comparisons() } };
       }
       if (input.node === "refine:r1") return { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "Apply native approach", criterionIds: [...region.criterionIds], requirementIds: [...region.requirementIds], evidenceRefs: ["e1"], mutationResources: ["code.txt"], checks: [{ criterionId: region.criterionIds[0], commandOrObservation: "check approach" }] }, atomicityWitness: { outcome: "Apply native approach", criterionIds: [...region.criterionIds], requirementIds: [...region.requirementIds], mutationResources: ["code.txt"], whySplittingFails: "The code change and approach check are one change." } } };
+      if (input.node === "challenge-leaf:r1") return { text: "", structured: { outcome: "accept-leaf", reason: "The native change and approach check share one bounded file." } };
       if (input.node === "implement:r1") return { text: "", structured: { outcome: "already-satisfied", summary: "native approach is present", changedFiles: [], checks: [{ name: "approach is applied", passed: true, evidence: "native observed" }] } };
       if (input.node === "verify:r1") return { text: "", structured: { outcome: "pass", summary: "verified", findings: [], checks: [{ name: "approach is applied", passed: true, evidence: "native observed", criterionIds: [...region.criterionIds] }], completionEvidence: { implementationOutcome: "already-satisfied", implementation: "native approach was already present", directTest: "approach check passed", correctnessReview: "reviewed approach", releaseGate: "matrix passed", changedFiles: [], focusedTests: ["approach check"], fullChecks: ["matrix"], inspectionEvidenceRefs: ["e1"] } } };
       throw new Error(`unexpected call ${input.node}`);
@@ -262,7 +266,7 @@ describe("solution LOD executable task matrix", () => {
     expect(configured.progress?.(result)?.phase, JSON.stringify({ result: configured.result?.(result), calls, failed: (result as SolutionLodState).network.activations.filter((item) => item.status === "failed").map((item) => item.error) })).toBe("completed");
     expect(challenges).toBe(3);
     expect(selections).toBe(2);
-    expect(calls).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "challenge-domain:r1", "select-candidate:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "implement:r1", "verify:r1"]);
+    expect(calls).toEqual(["inspect:r1", "generate-domain:r1", "challenge-domain:r1", "challenge-domain:r1", "select-candidate:r1", "challenge-domain:r1", "select-candidate:r1", "refine:r1", "challenge-leaf:r1", "implement:r1", "verify:r1"]);
   });
 
   it("reopens an invalidated decision premise and re-verifies the rebuilt path", async () => {
@@ -278,6 +282,7 @@ describe("solution LOD executable task matrix", () => {
       if (input.node === "challenge-domain:r1") return { text: "", structured: { outcome: "accept", boundDomainFingerprint: region.boundDomainFingerprint, viableCandidateIds: region.candidateIds.filter((id) => network.candidates.find((candidate) => candidate.id === id)?.status !== "eliminated") } };
       if (input.node === "select-candidate:r1") return { text: "", structured: { outcome: "selected", boundDomainFingerprint: region.boundDomainFingerprint, selectedCandidateId: "r1:fixed", comparisons: [{ candidateId: "r1:fixed", userPreference: "neutral", repositoryCompatibility: "neutral", changeScope: "neutral", irreversibleRisk: "neutral", evidenceRefs: ["e1"] }] } };
       if (input.node === "refine:r1") return { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "Apply correction", criterionIds: [...region.criterionIds], requirementIds: [...region.requirementIds], evidenceRefs: ["e1"], mutationResources: ["code.txt"], checks: [{ criterionId: region.criterionIds[0], commandOrObservation: "check correction" }] }, atomicityWitness: { outcome: "Apply correction", criterionIds: [...region.criterionIds], requirementIds: [...region.requirementIds], mutationResources: ["code.txt"], whySplittingFails: "The correction and its focused check are one change." } } };
+      if (input.node === "challenge-leaf:r1") return { text: "", structured: { outcome: "accept-leaf", reason: "The correction and focused check share one bounded file." } };
       if (input.node === "implement:r1") return { text: "", structured: { outcome: "already-satisfied", summary: "correction present", changedFiles: [], checks: [{ name: "correction is valid", passed: true, evidence: "correction observed" }] } };
       if (input.node === "verify:r1") {
         verifications++;
