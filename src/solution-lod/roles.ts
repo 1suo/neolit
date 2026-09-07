@@ -1,6 +1,6 @@
 import type { AgentDefinition, SolutionExecutionCapability, SolutionPresetRole } from "../types.js";
 import { z, type ZodType } from "zod";
-import { CandidateSelectionOutputSchema, DEFAULT_SOLUTION_ROLE_LIMITS, DomainChallengeOutputSchema, DomainGenerationOutputSchema, ImplementationOutputSchema, InspectionOutputSchema, PresentationOutputSchema, RefinementOutputSchema, VerificationOutputSchema, type RoleOutcome, type SynthesisOperation } from "./types.js";
+import { CandidateSelectionOutputSchema, DEFAULT_SOLUTION_ROLE_LIMITS, DomainChallengeOutputSchema, DomainGenerationOutputSchema, ImplementationOutputSchema, InspectionOutputSchema, LeafChallengeOutputSchema, PresentationOutputSchema, RefinementOutputSchema, VerificationOutputSchema, type RoleOutcome, type SynthesisOperation } from "./types.js";
 
 export interface SolutionActionRequirements {
   producesObservation: boolean;
@@ -143,9 +143,13 @@ export const SYNTHESIS_OPERATION_CONTRACTS: Record<SynthesisOperation, Synthesis
     owner: "synthesize", outcomes: ["selected", "hard-constraint", "needs-fact"], outputSchema: CandidateSelectionOutputSchema,
     instruction: "Compare every viable approach in this order: user preference, repository compatibility, smaller change, then lower irreversible risk. A boundary with no variables is fixed: select its sole viable candidate unless one precise repository fact is still needed. Otherwise, select only a unique winner. A new evidence-backed hard conflict must be recorded without selecting, so the domain can be reviewed again.",
   },
+  "challenge-leaf": {
+    owner: "synthesize", outcomes: ["accept-leaf", "counterexample-leaf"], outputSchema: LeafChallengeOutputSchema,
+    instruction: "Adversarially review the supplied certified leaf's atomicity claim. Try to name exactly one concrete finer outcome hidden inside its scope that could be implemented and verified independently — a separate decision, deliverable, or mutation-support subset with its own file ownership. If you find one, return counterexample-leaf with that hidden outcome and the files it would own. Accept only when the leaf's own files genuinely execute and verify as one change; accept requires the exact supplied leaf fingerprint. Do not restate the leaf or propose execution sequencing.",
+  },
 };
 
-export type SolutionRoleNode = SolutionPresetRole | "generate-domain" | "challenge-domain" | "select-candidate" | "completed" | "blocked";
+export type SolutionRoleNode = SolutionPresetRole | "generate-domain" | "challenge-domain" | "select-candidate" | "challenge-leaf" | "completed" | "blocked";
 export interface SolutionRoleEdge { from: SolutionRoleNode; outcome: string; to: readonly SolutionRoleNode[] }
 
 /** Controller-observable role relationships, checked against the role output contracts. */
@@ -154,7 +158,7 @@ export const SOLUTION_ROLE_GRAPH = [
   { from: "inspect", outcome: "boundary", to: ["generate-domain"] },
   { from: "inspect", outcome: "need-fact", to: ["inspect", "blocked"] },
   { from: "inspect", outcome: "decompose", to: ["inspect"] },
-  { from: "inspect", outcome: "certified", to: ["implement"] },
+  { from: "inspect", outcome: "certified", to: ["challenge-leaf"] },
   { from: "inspect", outcome: "already-satisfied", to: ["verify"] },
   { from: "inspect", outcome: "answer", to: ["verify"] },
   { from: "generate-domain", outcome: "candidates", to: ["challenge-domain"] },
@@ -167,7 +171,9 @@ export const SOLUTION_ROLE_GRAPH = [
   { from: "select-candidate", outcome: "needs-fact", to: ["inspect", "blocked"] },
   { from: "refine", outcome: "boundary", to: ["generate-domain"] },
   { from: "refine", outcome: "need-fact", to: ["inspect"] },
-  { from: "refine", outcome: "leaf", to: ["implement", "present"] },
+  { from: "refine", outcome: "leaf", to: ["challenge-leaf", "present"] },
+  { from: "challenge-leaf", outcome: "accept-leaf", to: ["implement"] },
+  { from: "challenge-leaf", outcome: "counterexample-leaf", to: ["refine", "blocked"] },
   { from: "refine", outcome: "children", to: ["inspect"] },
   { from: "implement", outcome: "completed", to: ["verify"] },
   { from: "implement", outcome: "already-satisfied", to: ["verify"] },
@@ -251,14 +257,14 @@ export function validateSolutionRoleContracts(
 }
 
 const MERMAID_ALIASES = {
-  inspect: "I", "generate-domain": "G", "challenge-domain": "C", "select-candidate": "S", refine: "R", implement: "M", present: "P", verify: "V", completed: "Done", blocked: "Block",
+  inspect: "I", "generate-domain": "G", "challenge-domain": "C", "select-candidate": "S", refine: "R", implement: "M", present: "P", verify: "V", "challenge-leaf": "L", completed: "Done", blocked: "Block",
 };
 
 /** Stable, dependency-free Mermaid projection; routing remains controller-owned. */
 export function renderSolutionRoleMermaid(): string {
   const lines = [
     "flowchart LR",
-    "  I[inspect]", "  G[generate-domain]", "  C[challenge-domain]", "  S[select-candidate]", "  R[refine]", "  M[implement]", "  P[present]", "  V[verify]", "  Done((completed))", "  Block((blocked))", "",
+    "  I[inspect]", "  G[generate-domain]", "  C[challenge-domain]", "  S[select-candidate]", "  R[refine]", "  M[implement]", "  P[present]", "  V[verify]", "  L[challenge-leaf]", "  Done((completed))", "  Block((blocked))", "",
   ];
   for (const edge of SOLUTION_ROLE_GRAPH) for (const target of edge.to) lines.push(`  ${MERMAID_ALIASES[edge.from]} -->|${edge.outcome}| ${MERMAID_ALIASES[target]}`);
   return lines.join("\n");

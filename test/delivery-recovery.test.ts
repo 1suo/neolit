@@ -213,7 +213,7 @@ describe("delivery recovery", () => {
       expect(() => validateRefinementOutput(state, "r1", invalid), resource).toThrow(/outside|Unsafe/);
     }
     const leaf: RefinementOutput = { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "Fix both server contracts", criterionIds: root.criterionIds, requirementIds: [], evidenceRefs: [], mutationResources: ["client"], checks: root.criterionIds.map((criterionId) => ({ criterionId, commandOrObservation: "run contract test" })) }, atomicityWitness: { outcome: "Fix contracts", criterionIds: root.criterionIds, requirementIds: [], mutationResources: ["client"], whySplittingFails: "One coordinated contract update" } };
-    expect(() => validateRefinementOutput(state, "r1", leaf)).toThrow(/outside/);
+    expect(() => validateRefinementOutput(state, "r1", leaf)).toThrow(/concrete file paths/);
   });
 
   it.each([false, true])("rebuilds a challenged boundary without reopening settled criteria; persistent=%s", async (persistent) => {

@@ -384,9 +384,13 @@ multiply model degeneration, latency, and cost.
 
 ### Scheduling and ceremony — feedback items 2 and 5
 
-- [ ] Add a fast path for a small, repository-grounded correction whose supplied
+- [x] Add a fast path for a small, repository-grounded correction whose supplied
   verdict already fixes objective, criteria, and approach: focused inspect,
-  implement, and verify without a redundant broad synthesis call.
+  adversarial leaf challenge, implement, and verify without a redundant broad
+  synthesis call.
+- [x] Require a fresh adversarial leaf challenge before change implementation;
+  reject directory-scoped or oversized leaves and return independently file-owned
+  counterexamples to refinement.
 - [ ] Support grouping independent small corrections into one run while keeping
   separate regions and verification criteria.
 - [ ] Detect shared-file mutation dependencies during decomposition and serialize

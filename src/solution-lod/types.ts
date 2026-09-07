@@ -2,8 +2,18 @@ import { z } from "zod";
 import { SOLUTION_EXECUTION_CAPABILITIES, type ActivationContextTelemetry, type AgentCallLimits, type AgentPromptAttemptTrace, type AgentRetryTrace, type AgentToolTrace, type AgentUsage, type SolutionExecutionCapability } from "../types.js";
 
 export type Capability = "inspect" | "synthesize" | "refine" | "implement" | "verify" | "present";
-export type SynthesisOperation = "generate-domain" | "challenge-domain" | "select-candidate";
-export type RoleOutcome = "facts" | "boundary" | "need-fact" | "decompose" | "certified" | "answer" | "candidates" | "accept" | "counterexample" | "boundary-counterexample" | "needs-fact" | "selected" | "hard-constraint" | "children" | "leaf" | "completed" | "already-satisfied" | "blocked" | "pass" | "repair" | "reopen" | "fail";
+export type SynthesisOperation = "generate-domain" | "challenge-domain" | "select-candidate" | "challenge-leaf";
+export type RoleOutcome = "facts" | "boundary" | "need-fact" | "decompose" | "certified" | "answer" | "candidates" | "accept" | "counterexample" | "boundary-counterexample" | "needs-fact" | "selected" | "hard-constraint" | "children" | "leaf" | "accept-leaf" | "counterexample-leaf" | "completed" | "already-satisfied" | "blocked" | "pass" | "repair" | "reopen" | "fail";
+
+/** Thrown for state-dependent validation rejections that a same-session retry with the
+ * frozen activation prompt can never fix (for example a basis revision superseded by
+ * concurrent merges). Hosts must fail the activation immediately instead of repairing. */
+export class SupersededActivationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SupersededActivationError";
+  }
+}
 export type DomainPhase = "ungenerated" | "inspecting" | "challenging" | "selecting" | "selected" | "blocked";
 export type ChallengeVerdict = "accept" | "counterexample" | "boundary-counterexample" | "needs-fact";
 export type ScopeId = `scope:${string}`;
@@ -150,6 +160,18 @@ export interface SolutionRegion {
   convergenceCycles?: SemanticCycleRecord[];
   blockedDetails?: { kind: string; fingerprints?: string[]; unresolvedCriterionIds?: CriterionId[]; unresolvedScopeIds?: ScopeId[] };
   completionCertificateId?: string;
+  /** Pending fresh adversarial review of the current certified leaf before implementation. */
+  leafChallenge?: { fingerprint: string; attempts: number };
+  /** Hidden finer outcomes admitted by leaf challenges; each forces renewed refinement. */
+  leafCounterexamples?: Array<{ key: string; objective: string; whyIndependentlyVerifiable: string; mutationResources: string[] }>;
+  /** Leaf fingerprints already survived a fresh challenge; identical re-certification is not re-challenged. */
+  challengedLeafFingerprints?: string[];
+  /** Focused inspection passes granted beyond the two-pass discovery limit (needs-fact re-entry). */
+  focusedInspectionGrants?: number;
+  /** A challenge/selection needs-fact request is waiting for one focused inspection pass. */
+  focusedInspectionPending?: boolean;
+  /** Times acceptanceCriteria were semantically rewritten; each rewrite may reset inspection passes once at most. */
+  criteriaRewriteResets?: number;
   /** Repository delivery is controller-owned and does not change semantic verification state. */
   integration?: ChangeIntegration;
 }
@@ -599,8 +621,8 @@ export type RoleContextOutput = { referenceId: string; kind: SolutionArtifact["k
 
 export type RoleContextPacket =
   | (RoleContextPacketBase & { role: "inspect"; earlierChoices: RoleContextChoice[]; repositoryScopes: string[]; questionToAnswer: string; unresolvedCriteria: Array<{ criterionId: CriterionId; criterionIndex: number; criterion: string | undefined }>; permittedNextRequest: never[]; mustNotChooseSolution: true; rootOnly: string; outputRule: string })
-  | (RoleContextPacketBase & { role: "synthesize"; earlierChoices: RoleContextChoice[]; operation: SynthesisOperation; domainPhase: DomainPhase; decisionBoundary: DecisionBoundary | undefined; enumerationFingerprint: string | null | undefined; boundDomainFingerprint: string | null | undefined; acceptedFingerprint: string | null; cegarRound: number; choiceToMake: string; chooseOnly: string[]; alternativesAlreadyConsidered: Array<{ referenceId: string; approach: string; status: string; reasonsRejected: string[]; supportingFactIds: string[]; positionsOnSharedChoices: Array<{ choice: string; relation: string; option: string }> }>; permittedNextRequest: string[]; ifFactIsMissing: string })
-  | (RoleContextPacketBase & { role: "refine"; earlierChoices: RoleContextChoice[]; chosenApproach: RoleContextChoice[]; outputs: RoleContextOutput[]; approachToSettle: string; successCriteriaPositions: Array<{ position: number; criterionId: CriterionId | undefined; criterion: string }>; parentMutationResources: string[]; nextStepsContract: { split: string; certifiedLeaf: string }; ifFactIsMissing: string })
+  | (RoleContextPacketBase & { role: "synthesize"; earlierChoices: RoleContextChoice[]; operation: SynthesisOperation; domainPhase: DomainPhase; decisionBoundary: DecisionBoundary | undefined; enumerationFingerprint: string | null | undefined; boundDomainFingerprint: string | null | undefined; acceptedFingerprint: string | null; cegarRound: number; choiceToMake: string; chooseOnly: string[]; alternativesAlreadyConsidered: Array<{ referenceId: string; approach: string; status: string; reasonsRejected: string[]; supportingFactIds: string[]; positionsOnSharedChoices: Array<{ choice: string; relation: string; option: string }> }>; permittedNextRequest: string[]; ifFactIsMissing: string ; certifiedLeaf?: CertifiedLeaf; leafChallengeFingerprint?: string; leafCounterexamples?: Array<{ key: string; objective: string; whyIndependentlyVerifiable: string; mutationResources: string[] }> })
+  | (RoleContextPacketBase & { role: "refine"; earlierChoices: RoleContextChoice[]; chosenApproach: RoleContextChoice[]; outputs: RoleContextOutput[]; approachToSettle: string; successCriteriaPositions: Array<{ position: number; criterionId: CriterionId | undefined; criterion: string }>; parentMutationResources: string[]; nextStepsContract: { split: string; certifiedLeaf: string }; ifFactIsMissing: string ; leafCounterexamples?: Array<{ key: string; objective: string; whyIndependentlyVerifiable: string; mutationResources: string[] }> })
   | (RoleContextPacketBase & { role: "implement"; chosenApproach: RoleContextChoice[]; outputs: RoleContextOutput[]; findings: SolutionFinding[]; repositoryScopes: string[]; certifiedLeaf?: CertifiedLeaf; mutationResources?: string[]; permittedNextRequest: string[]; ifBlocked: { missingFact: string; wrongChoice: string } })
   | (RoleContextPacketBase & { role: "verify"; earlierChoices: RoleContextChoice[]; outputs: RoleContextOutput[]; findings: SolutionFinding[]; repositoryScopes: string[]; changeToCheck: string; certifiedLeaf?: CertifiedLeaf; mutationResources?: string[]; completionEvidenceRequired: string[]; measuredChangedFiles: Array<string | undefined> })
   | (RoleContextPacketBase & { role: "present"; earlierChoices: RoleContextChoice[]; outputs: RoleContextOutput[]; findings: SolutionFinding[]; answerToWrite: string });
@@ -790,7 +812,23 @@ export const CandidateSelectionOutputSchema = z.discriminatedUnion("outcome", [
   CandidateSelectionBaseSchema.extend({ outcome: z.literal("needs-fact"), inspectionRequest: z.object({ request: z.string().min(1), expectedDelta: z.string().min(1), contextRefs: z.array(z.string()).default([]), requiredCapabilities: z.array(z.enum(SOLUTION_EXECUTION_CAPABILITIES)).min(1) }).strict() }),
 ]);
 export type CandidateSelectionOutput = z.infer<typeof CandidateSelectionOutputSchema>;
-export type SynthesisOutput = DomainGenerationOutput | DomainChallengeOutput | CandidateSelectionOutput;
+
+/** Fresh adversarial review of a certified leaf's atomicity claim before implementation. */
+export const LeafChallengeOutputSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("accept-leaf"), leafFingerprint: z.string().default("").describe("The exact CERTIFIED LEAF FINGERPRINT supplied in this activation; the controller fills it from the activation."), reason: z.string().min(1) }).strict(),
+  z.object({
+    outcome: z.literal("counterexample-leaf"),
+    hiddenOutcome: z.object({
+      key: z.string().min(1).describe("Short stable name for the hidden finer outcome."),
+      objective: z.string().min(1).describe("What that finer outcome independently delivers or decides."),
+      whyIndependentlyVerifiable: z.string().min(1).describe("Why it can be implemented and verified separately from the rest of the leaf."),
+      mutationResources: z.array(z.string().min(1)).min(1).describe("Repository-relative files this hidden outcome would own."),
+    }).strict(),
+    reason: z.string().min(1),
+  }).strict(),
+]);
+export type LeafChallengeOutput = z.infer<typeof LeafChallengeOutputSchema>;
+export type SynthesisOutput = DomainGenerationOutput | DomainChallengeOutput | CandidateSelectionOutput | LeafChallengeOutput;
 
 export const SolutionDeltaSchema = z.object({
   decisionBoundary: DecisionBoundaryProposalSchema.optional(),
@@ -947,6 +985,8 @@ const AtomicityWitnessSchema = z.object({
     rightOutcome: z.string().min(1),
     leftCriterionIds: z.array(z.string().min(1)),
     rightCriterionIds: z.array(z.string().min(1)),
+    leftMutationResources: z.array(z.string().min(1)).min(1).describe("Repository-relative files the left outcome would own; the controller checks these against the parent scope and the right side."),
+    rightMutationResources: z.array(z.string().min(1)).min(1).describe("Repository-relative files the right outcome would own; the controller checks these against the parent scope and the left side."),
     dependencyEvidenceRefs: z.array(z.string()),
     whyNotIndependent: z.string().min(1),
   }).strict().optional(),
