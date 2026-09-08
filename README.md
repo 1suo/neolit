@@ -142,7 +142,7 @@ a repository lease and remain host-owned controller operations.
 Efficiency comes from bounded domains and counterexample rounds, MRV ordering,
 lazy refinement, dependency-projected prompts, normalized deduplication,
 semantic fingerprints, fixed-point propagation, no-progress limits, and
-grounded fast paths. Runs default to a 256-activation ceiling, with cumulative region inspection
+grounded fast paths. Runs have no activation ceiling unless their host configures one, with cumulative region inspection
 and recovery limits that survive checkpoint resume and pruning. Telemetry must demonstrate a concrete bottleneck before new
 reviewers, scoring layers, solver machinery, or learned scheduling are added.
 

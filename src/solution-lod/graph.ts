@@ -471,7 +471,7 @@ export function finalResult(state: SolutionLodState): string {
 export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<SolutionLodState, SolutionLodV11InitialInput | DefaultConnectorInitialInput> {
   const limits = Object.fromEntries((Object.keys(DEFAULT_SOLUTION_ROLE_LIMITS) as Capability[]).map((role) => [role, { ...DEFAULT_SOLUTION_ROLE_LIMITS[role], ...(options.roleLimits?.[role] ?? {}) }])) as unknown as SolutionRoleLimits;
   const width = Math.max(1, Math.floor(options.maxParallelActivations ?? DEFAULT_MAX_PARALLEL_ACTIVATIONS));
-  const maxActivations = Math.max(1, Math.floor(options.maxActivations ?? 256));
+  const maxActivations = options.maxActivations === undefined ? undefined : Math.max(1, Math.floor(options.maxActivations));
   const maxInspectionsPerRegion = Math.max(1, Math.floor(options.maxInspectionsPerRegion ?? Number.POSITIVE_INFINITY));
   const blockedLimit = (state: SolutionLodState): string | undefined => {
     const telemetry = state.network.telemetry;
@@ -496,8 +496,8 @@ export function solutionLodGraph(options: SolutionLodOptions): ConnectorGraph<So
       const limit = blockedLimit({ ...state, network: scheduled.network });
       if (limit) return { network: scheduled.network, activeActivationId: undefined, activeBatch: [] as ActiveBatchEntry[], phase: "blocked", result: limit };
       if (scheduled.blocked) return { network: scheduled.network, activeActivationId: undefined, activeBatch: [] as ActiveBatchEntry[], phase: "blocked", result: `The solution network is blocked: ${scheduled.blocked}` };
-      const remainingActivations = maxActivations - Math.max(state.callsUsed, scheduled.network.telemetry?.physicalActivations ?? 0);
-      const batch = selectActivationBatch(scheduled.network, Math.min(width, remainingActivations));
+      const remainingActivations = maxActivations === undefined ? width : Math.min(width, maxActivations - Math.max(state.callsUsed, scheduled.network.telemetry?.physicalActivations ?? 0));
+      const batch = selectActivationBatch(scheduled.network, remainingActivations);
       if (!batch.length) return { network: scheduled.network, activeActivationId: undefined, activeBatch: [] as ActiveBatchEntry[], phase: "blocked", result: "The solution network produced no runnable activation." };
       let network = scheduled.network;
       const manifest: ActiveBatchEntry[] = [];
