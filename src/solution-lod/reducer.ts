@@ -2517,7 +2517,7 @@ export function completeImplementation(networkInput: SolutionNetwork, activation
   network.revision++; return network;
 }
 
-function retainImplementationMutation(networkInput: SolutionNetwork, activationId: string, regionId: string, changedFiles: string[], message: string, sessionId?: string): SolutionNetwork {
+function retainImplementationMutation(networkInput: SolutionNetwork, activationId: string, regionId: string, changedFiles: string[], message: string, sessionId?: string, retryable = false): SolutionNetwork {
   const network = cloneNetwork(networkInput); const originalRegion = network.regions.find((item) => item.id === regionId); const region = originalRegion ?? network.regions.find((item) => item.edge === "root"); const activation = network.activations.find((item) => item.id === activationId);
   const ownershipMessage = originalRegion ? message : `${message} Original region ${regionId} no longer exists; ownership was retained at the root.`;
   if (!region) {
@@ -2527,8 +2527,12 @@ function retainImplementationMutation(networkInput: SolutionNetwork, activationI
   }
   for (const file of [...new Set(changedFiles)]) if (!network.artifacts.some((item) => item.activationId === activationId && item.kind === "file" && item.path === file)) addArtifact(network, region, activationId, { kind: "file", path: file, summary: `Changed ${file}` });
   if (activation) { activation.status = "failed"; activation.sessionId = sessionId ?? activation.sessionId; activation.error = ownershipMessage; }
-  const withinScope = region.certifiedLeaf && changedFiles.every((file) => region.certifiedLeaf!.mutationResources.some((resource) => pathWithin(file, resource)));
-  const canContinue = originalRegion && activation && !activation.historical && region.certifiedLeaf && hasSelectedImplementationFamily(network, region) && withinScope;
+  const scope = region.certifiedLeaf?.mutationResources ?? region.mutationResources ?? [];
+  const withinScope = scope.length > 0 && changedFiles.every((file) => scope.some((resource) => pathWithin(file, resource)));
+  // A certified leaf with a live selected family may resume after any retained
+  // in-scope failure; anything else resumes only when the failure itself was
+  // retryable, so invalid output never silently re-enters implementation.
+  const canContinue = originalRegion && activation && !activation.historical && withinScope && (retryable || (Boolean(region.certifiedLeaf) && hasSelectedImplementationFamily(network, region)));
   if (canContinue) {
     region.retainedImplementationActivationId = activationId;
     region.implementationRecoveryAttempts = (region.implementationRecoveryAttempts ?? 0) + 1;
@@ -3001,7 +3005,7 @@ export function applyBatchRecords(networkInput: SolutionNetwork, records: Activa
     if (!activationReadsCurrent(current, liveActivation)) {
       const changedFiles = record.networkDelta?.kind === "implementation" ? record.networkDelta.changedFiles : record.changedFiles ?? [];
       if (record.capability === "implement" && changedFiles.length) {
-        current = retainImplementationMutation(current, record.activationId, record.regionId, changedFiles, "Implementation context changed after workspace mutation.", record.sessionId);
+        current = retainImplementationMutation(current, record.activationId, record.regionId, changedFiles, "Implementation context changed after workspace mutation.", record.sessionId, record.retryable === true);
         application.failed.push(record.activationId);
       } else {
         application.superseded.push(record.activationId);
@@ -3024,7 +3028,7 @@ export function applyBatchRecords(networkInput: SolutionNetwork, records: Activa
           const changedFiles = record.changedFiles ?? [];
           if (changedFiles.length) {
             const summary = record.outcome === "deferred" ? message : `Implementation output failed but workspace mutation was retained: ${message}`;
-            current = retainImplementationMutation(current, record.activationId, record.regionId, changedFiles, summary, record.sessionId);
+            current = retainImplementationMutation(current, record.activationId, record.regionId, changedFiles, summary, record.sessionId, record.retryable === true);
           } else {
             const region = current.regions.find((item) => item.id === record.regionId);
             if (region) {

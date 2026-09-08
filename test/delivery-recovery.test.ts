@@ -333,6 +333,51 @@ describe("delivery recovery", () => {
     expect(pruned.telemetry?.recoveryEvents?.map((event) => event.kind)).toEqual(["implementation-retry", "prune"]);
   });
 
+  it("continues a retryable transport failure with in-scope retained edits and no certified leaf", () => {
+    const state = initial();
+    const region = state.network.regions[0]!;
+    region.delivery = "change";
+    region.mutationResources = ["code.txt"];
+    const network = queueActivation(state.network, "implement", "r1", "Fix the value", "value-fix");
+    const activation = network.activations.at(-1)!;
+    const failed = applyBatchRecords(network, [{ activationId: activation.id, regionId: "r1", capability: "implement", basisRevision: network.revision, startedAt: 1, finishedAt: 2, outcome: "error", networkDelta: null, changedFiles: ["code.txt"], error: "transport lost after edit", failureKind: "transport", retryable: true, sessionId: "child-1", usage: initial().usage }]).network;
+    expect(failed.regions[0]).toMatchObject({ status: "actionable", retainedImplementationActivationId: activation.id });
+    expect(failed.telemetry?.recoveryEvents?.map((event) => event.kind)).toEqual(["implementation-retry"]);
+  });
+
+  it("blocks a non-retryable implementation failure without a certified leaf", () => {
+    const state = initial();
+    const region = state.network.regions[0]!;
+    region.delivery = "change";
+    region.mutationResources = ["code.txt"];
+    const network = queueActivation(state.network, "implement", "r1", "Fix the value", "value-fix");
+    const activation = network.activations.at(-1)!;
+    const failed = applyBatchRecords(network, [{ activationId: activation.id, regionId: "r1", capability: "implement", basisRevision: network.revision, startedAt: 1, finishedAt: 2, outcome: "error", networkDelta: null, changedFiles: ["code.txt"], error: "invalid structured output after edit", usage: initial().usage }]).network;
+    expect(failed.regions[0]).toMatchObject({ status: "blocked" });
+    expect(failed.regions[0]!.retainedImplementationActivationId).toBeUndefined();
+  });
+
+  it("blocks retained edits outside the declared mutation scope even when retryable", () => {
+    const state = initial();
+    const region = state.network.regions[0]!;
+    region.delivery = "change";
+    region.mutationResources = ["code.txt"];
+    const network = queueActivation(state.network, "implement", "r1", "Fix the value", "value-fix");
+    const activation = network.activations.at(-1)!;
+    const failed = applyBatchRecords(network, [{ activationId: activation.id, regionId: "r1", capability: "implement", basisRevision: network.revision, startedAt: 1, finishedAt: 2, outcome: "error", networkDelta: null, changedFiles: ["outside/other.txt"], error: "transport lost after edit", failureKind: "transport", retryable: true, sessionId: "child-1", usage: initial().usage }]).network;
+    expect(failed.regions[0]).toMatchObject({ status: "blocked" });
+    expect(failed.regions[0]!.retainedImplementationActivationId).toBeUndefined();
+  });
+
+  it("blocks retained-edit continuation when the selected implementation family is gone", () => {
+    const network = certifiedNetwork();
+    network.regions[0]!.selectedCandidateIds = [];
+    const activation = network.activations.at(-1)!;
+    const failed = applyBatchRecords(network, [{ activationId: activation.id, regionId: "r1", capability: "implement", basisRevision: network.revision, startedAt: 1, finishedAt: 2, outcome: "error", networkDelta: null, changedFiles: ["code.txt"], error: "interrupted after edit", usage: initial().usage }]).network;
+    expect(failed.regions[0]).toMatchObject({ status: "blocked" });
+    expect(failed.regions[0]!.retainedImplementationActivationId).toBeUndefined();
+  });
+
   it("migrates prior admitted paths when the first post-upgrade verification lands", () => {
     let network = certifiedNetwork();
     const implement = network.activations.at(-1)!;
