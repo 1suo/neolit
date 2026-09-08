@@ -40,14 +40,14 @@ const NO_TOOLS = {
 };
 const SCOPED_READ_TOOLS = { ...NO_TOOLS, graph_discover: true, graph_request_scope: true, graph_search: true, graph_read: true };
 const INSPECT_TOOLS = { ...SCOPED_READ_TOOLS, graph_inspect_worktrees: true, graph_read_worktree_diff: true };
-const IMPLEMENT_TOOLS = { ...SCOPED_READ_TOOLS, edit: true, write: true, apply_patch: true, bash: true };
+const IMPLEMENT_TOOLS = { ...NO_TOOLS, edit: true, write: true, apply_patch: true };
 const VERIFY_TOOLS = { ...SCOPED_READ_TOOLS, bash: true };
 
 export const SOLUTION_ACTION_REQUIREMENTS: Record<SolutionPresetRole, SolutionActionRequirements> = {
   inspect: { producesObservation: true, consumesEvidence: false, mutatesWorkspace: false, executesChecks: false, presentsResult: false },
   synthesize: { producesObservation: false, consumesEvidence: true, mutatesWorkspace: false, executesChecks: false, presentsResult: false },
   refine: { producesObservation: false, consumesEvidence: true, mutatesWorkspace: false, executesChecks: false, presentsResult: false },
-  implement: { producesObservation: false, consumesEvidence: true, mutatesWorkspace: true, executesChecks: true, presentsResult: false },
+  implement: { producesObservation: false, consumesEvidence: true, mutatesWorkspace: true, executesChecks: false, presentsResult: false },
   verify: { producesObservation: false, consumesEvidence: true, mutatesWorkspace: false, executesChecks: true, presentsResult: false },
   present: { producesObservation: false, consumesEvidence: true, mutatesWorkspace: false, executesChecks: false, presentsResult: true },
 };
@@ -56,7 +56,7 @@ export const SOLUTION_ROLE_CAPABILITIES: Record<SolutionPresetRole, readonly Sol
   inspect: ["repository-observe", "external-worktree-observe"],
   synthesize: ["evidence-reason"],
   refine: ["evidence-reason"],
-  implement: ["repository-observe", "workspace-mutate", "check-execute"],
+  implement: ["workspace-mutate"],
   verify: ["repository-observe", "check-execute"],
   present: ["evidence-reason", "result-present"],
 };
@@ -114,7 +114,7 @@ export const SOLUTION_ROLE_CONTRACTS: Record<SolutionPresetRole, SolutionRoleCon
     defaultModel: "inherit", agent: "langgraph-implementer", tools: IMPLEMENT_TOOLS, maxSteps: DEFAULT_SOLUTION_ROLE_LIMITS.implement.maxTurns!,
     actions: SOLUTION_ACTION_REQUIREMENTS.implement, capabilities: SOLUTION_ROLE_CAPABILITIES.implement,
     outcomes: ["completed", "already-satisfied", "blocked"], outputSchema: ImplementationOutputSchema,
-    systemPrompt: prompt("Bounded implementer.", "Make the certified change with the smallest repository-consistent diff and run its certified focused checks.", "Only certified checks gate this implementation; do not treat extra or global checks outside the certified scope as blockers. Change only allowed paths; preserve unrelated work; do not delegate or replace earlier decisions."),
+    systemPrompt: prompt("Bounded implementer.", "Apply the certified change to the frozen packet's exact target chunks with the smallest repository-consistent diff. All source context you need is in the FROZEN IMPLEMENTATION PACKET; repository read access is disabled for this role.", "Do not run tests, install dependencies, or execute checks: the controller executes the certified checks during verification. Do not report executed-check results. Change only allowed paths; preserve unrelated work; do not delegate or replace earlier decisions. If the packet lacks context required to apply the change, return outcome=blocked naming the missing fact."),
   },
   verify: {
     defaultModel: "inherit", agent: "langgraph-verifier", tools: VERIFY_TOOLS, maxSteps: DEFAULT_SOLUTION_ROLE_LIMITS.verify.maxTurns!,
@@ -145,7 +145,7 @@ export const SYNTHESIS_OPERATION_CONTRACTS: Record<SynthesisOperation, Synthesis
   },
   "challenge-leaf": {
     owner: "synthesize", outcomes: ["accept-leaf", "counterexample-leaf"], outputSchema: LeafChallengeOutputSchema,
-    instruction: "Adversarially review the supplied certified leaf's atomicity claim. Try to name exactly one concrete finer outcome hidden inside its scope that could be implemented and verified independently — a separate decision, deliverable, or mutation-support subset with its own file ownership. If you find one, return counterexample-leaf with that hidden outcome and a complete covering child partition: exact parent-criterion and requirement ownership, concrete child files, and child acceptance criteria. The controller materializes this partition directly; do not ask another refiner to rediscover it. Accept only when the leaf's own files genuinely execute and verify as one change; accept requires the exact supplied leaf fingerprint. Do not restate the leaf or propose execution sequencing.",
+    instruction: "Adversarially review the supplied certified leaf's atomicity claim. Try to name exactly one concrete finer outcome hidden inside its scope that could be implemented and verified independently — a separate decision, deliverable, or mutation-support subset with its own file ownership. If you find one, return counterexample-leaf with that hidden outcome and a complete covering child partition: exact parent-criterion and requirement ownership, concrete child files, and child acceptance criteria. The controller materializes this partition directly; do not ask another refiner to rediscover it. Also reject a leaf whose frozen packet omits any mutation path or lacks the exact content an implementer with no repository access would need. Accept only when the leaf's own files genuinely execute and verify as one change; accept requires the exact supplied leaf fingerprint. Do not restate the leaf or propose execution sequencing.",
   },
 };
 
@@ -188,7 +188,7 @@ export const SOLUTION_ROLE_GRAPH = [
 const ROLE_TOOLS: Record<SolutionPresetRole, readonly string[]> = {
   inspect: ["graph_discover", "graph_request_scope", "graph_search", "graph_read", "graph_inspect_worktrees", "graph_read_worktree_diff"],
   synthesize: [], refine: [],
-  implement: ["graph_discover", "graph_request_scope", "graph_search", "graph_read", "edit", "write", "apply_patch", "bash"],
+  implement: ["edit", "write", "apply_patch"],
   verify: ["graph_discover", "graph_request_scope", "graph_search", "graph_read", "bash"],
   present: [],
 };

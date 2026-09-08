@@ -13,7 +13,7 @@ const ready = () => {
   region.status = "implemented";
   region.acceptanceCriteria = ["behavior works"];
   region.criterionIds = ["criterion:scope:r1:0"];
-  region.certifiedLeaf = { criterionIds: [...region.criterionIds], implementationScope: "change src/x.ts", evidenceRefs: [] };
+  region.certifiedLeaf = { criterionIds: [...region.criterionIds], requirementIds: [], implementationScope: "change src/x.ts", evidenceRefs: [], mutationResources: ["src/x.ts"], checks: [], packet: [{ path: "src/x.ts", startLine: 1, endLine: 1, content: "export const behavior = \"works\";", note: "edit target" }] };
   region.candidateIds = ["r1:chosen"];
   region.selectedCandidateIds = ["r1:chosen"];
   network.candidates.push({ id: "r1:chosen", regionId: "r1", key: "chosen", proposition: "change it", status: "selected", declaredStatus: "selected", evidenceIds: [], eliminationReasons: [], stances: [] });

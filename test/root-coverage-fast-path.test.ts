@@ -176,7 +176,7 @@ describe("root coverage and certified fast path", () => {
     network.activations[0]!.status = "running";
     const location = { canonicalPath: "src/x.ts", range: [4, 4] as [number, number], fileDigest: "digest", snapshotEpoch: 0 };
     const tools = [{ tool: "graph_read", status: "completed" as const, metadata: { repositoryDescriptor: location } }];
-    const delta = SolutionDeltaSchema.parse({ region: { acceptanceCriteria: ["exact text is corrected"] }, evidence: [{ text: "the literal is misspelled", source: "src/x.ts:4", kind: "repository", location }], candidates: [], constraints: [], select: [], activations: [], materialRequirements: [{ key: "typo", text: "Correct the literal", criterion: "exact text is corrected", evidenceRefs: ["src/x.ts:4"] }], certifiedVerdict: { proposition: "Correct the misspelled literal", implementationScope: "Edit the literal in src/x.ts", evidenceRefs: ["src/x.ts:4"], mutationResources: ["src/x.ts"], checks: [{ criterionIndex: 0, commandOrObservation: "Read src/x.ts and assert the corrected literal is present." }] } });
+    const delta = SolutionDeltaSchema.parse({ region: { acceptanceCriteria: ["exact text is corrected"] }, evidence: [{ text: "the literal is misspelled", source: "src/x.ts:4", kind: "repository", location }], candidates: [], constraints: [], select: [], activations: [], materialRequirements: [{ key: "typo", text: "Correct the literal", criterion: "exact text is corrected", evidenceRefs: ["src/x.ts:4"] }], certifiedVerdict: { proposition: "Correct the misspelled literal", implementationScope: "Edit the literal in src/x.ts", evidenceRefs: ["src/x.ts:4"], mutationResources: ["src/x.ts"], checks: [{ criterionIndex: 0, commandOrObservation: "Read src/x.ts and assert the corrected literal is present." }], packet: [{ path: "src/x.ts", startLine: 4, endLine: 4, content: "const literal = \"misspelt\";", note: "edit target" }] } });
     validateSolutionDelta(state(network), "r1", "inspect", delta, tools);
     const merged = mergeSolutionDelta(state(network), "a1", delta, tools);
     expect(merged.regions[0]).toMatchObject({ status: "actionable", mutationResources: ["src/x.ts"] });
@@ -212,7 +212,7 @@ describe("root coverage and certified fast path", () => {
 
   it("rejects request-only certification and unrequested estimate language", () => {
     const network = initialNetwork("fix typo");
-    const candidate = SolutionDeltaSchema.parse({ region: { acceptanceCriteria: ["fixed"] }, evidence: [], candidates: [], constraints: [], select: [], activations: [], certifiedVerdict: { proposition: "Fix it", implementationScope: "Do it in two hours", evidenceRefs: ["task"], mutationResources: ["src/x.ts"], checks: [{ criterionIndex: 0, commandOrObservation: "Read src/x.ts and assert it is fixed." }] } });
+    const candidate = SolutionDeltaSchema.parse({ region: { acceptanceCriteria: ["fixed"] }, evidence: [], candidates: [], constraints: [], select: [], activations: [], certifiedVerdict: { proposition: "Fix it", implementationScope: "Do it in two hours", evidenceRefs: ["task"], mutationResources: ["src/x.ts"], checks: [{ criterionIndex: 0, commandOrObservation: "Read src/x.ts and assert it is fixed." }], packet: [{ path: "src/x.ts", startLine: 1, endLine: 1, content: "const fixed = false;", note: "edit target" }] } });
     expect(() => validateSolutionDelta(state(network), "r1", "inspect", candidate)).toThrow();
   });
 
@@ -236,7 +236,7 @@ describe("root coverage and certified fast path", () => {
     network.activations = [];
     network.regions[0]!.status = "collapsed";
     const root = network.regions[0]!;
-    const actionable = { ...structuredClone(root), id: "r2", key: "ready", scopeId: "scope:r2" as const, parentId: "r1", edge: "partOf" as const, status: "actionable" as const, domainPhase: "selected" as const, activationIds: [], selectionAge: 0 };
+    const actionable = { ...structuredClone(root), id: "r2", key: "ready", scopeId: "scope:r2" as const, parentId: "r1", edge: "partOf" as const, status: "actionable" as const, domainPhase: "selected" as const, activationIds: [], selectionAge: 0, certifiedLeaf: { criterionIds: [], requirementIds: [], implementationScope: "ready change", evidenceRefs: [], mutationResources: [], checks: [], packet: [{ path: "src/ready.ts", startLine: 1, endLine: 1, content: "ready", note: "edit target" }] } };
     const waiting = { ...structuredClone(root), id: "r3", key: "waiting", scopeId: "scope:r3" as const, parentId: "r1", edge: "partOf" as const, status: "unformed" as const, domainPhase: "inspecting" as const, activationIds: [], selectionAge: 0 };
     network.regions.push(actionable, waiting);
     let scheduled = ensureRunnableWork(network, 1).network;

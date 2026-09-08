@@ -9,6 +9,9 @@ describe("solution role relationship graph", () => {
     expect(validateSolutionRoleContracts()).toEqual([]);
     expect(SYNTHESIS_OPERATION_CONTRACTS["generate-domain"]).toMatchObject({ owner: "synthesize", outcomes: ["candidates"] });
     expect(SOLUTION_ROLE_CONTRACTS.verify.actions).toMatchObject({ consumesEvidence: true, executesChecks: true, mutatesWorkspace: false });
+    expect(SOLUTION_ROLE_CONTRACTS.implement.actions).toMatchObject({ consumesEvidence: true, executesChecks: false, mutatesWorkspace: true });
+    expect(SOLUTION_ROLE_CONTRACTS.implement.capabilities).toEqual(["workspace-mutate"]);
+    expect(Object.entries(SOLUTION_ROLE_CONTRACTS.implement.tools).filter(([, enabled]) => enabled).map(([tool]) => tool).sort()).toEqual(["apply_patch", "edit", "write"]);
 
     const badRoles = { ...SOLUTION_ROLE_CONTRACTS, verify: { ...SOLUTION_ROLE_CONTRACTS.verify, maxSteps: 0, tools: { ...SOLUTION_ROLE_CONTRACTS.verify.tools, edit: true } } };
     expect(validateSolutionRoleContracts(badRoles)).toEqual(expect.arrayContaining([expect.stringContaining("maxSteps"), expect.stringContaining("tool edit")]));

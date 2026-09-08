@@ -33,7 +33,7 @@ function certifiedNetwork() {
   const seen = observation();
   const output = InspectionOutputSchema.parse({ outcome: "certified", region: { acceptanceCriteria: ["both values are fixed"] }, evidence: seen.evidence,
     criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["code-observation"] }],
-    certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set both values to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the delivery fixture and assert both files read fixed." }] },
+    certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set both values to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the delivery fixture and assert both files read fixed." }], packet: [{ path: "code.txt", startLine: 1, endLine: 1, content: "before", note: "edit target" }, { path: "helper.txt", startLine: 1, endLine: 1, content: "before", note: "edit target" }] },
   });
   const network = applyActivationOutput(state, state.network.activations[0]!, inspectionOutputToDelta(output, seen.tools), [], seen.tools);
   return queueActivation(network, "implement", "r1", "Fix both values", "fixed-values");
@@ -87,7 +87,7 @@ describe("delivery recovery", () => {
         return { text: "", tools: seen.tools, structured: {
           outcome: "certified", region: { acceptanceCriteria: ["both values are fixed"] }, evidence: seen.evidence,
           criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["code-observation"] }],
-          certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set code and helper to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the delivery fixture and assert both files read fixed." }] },
+          certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set code and helper to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the delivery fixture and assert both files read fixed." }], packet: [{ path: "code.txt", startLine: 1, endLine: 1, content: "before", note: "edit target" }, { path: "helper.txt", startLine: 1, endLine: 1, content: "before", note: "edit target" }] },
         } };
       }
       if (input.node === "challenge-leaf:r2") return { text: "", structured: { outcome: "accept-leaf", reason: "The two owned value edits and shared check form one bounded delivery." } };
@@ -272,7 +272,7 @@ describe("delivery recovery", () => {
         return { text: "", structured: { outcome: "accept", boundDomainFingerprint: region.boundDomainFingerprint, viableCandidateIds: region.candidateIds } };
       }
       if (input.node === "select-candidate:r1") return { text: "", structured: { outcome: "selected", boundDomainFingerprint: region.boundDomainFingerprint, selectedCandidateId: "r1:array", comparisons: region.candidateIds.map((candidateId: string) => ({ candidateId, userPreference: "neutral", repositoryCompatibility: "neutral", changeScope: candidateId === "r1:array" ? "preferred" : "neutral", irreversibleRisk: "neutral", evidenceRefs: ["e1"] })) } };
-      if (input.node === "refine:r1") return { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "Implement array representation", criterionIds: region.criterionIds, requirementIds: region.requirementIds, evidenceRefs: ["e1"], mutationResources: ["code.txt"], checks: [{ criterionId: region.criterionIds[0], commandOrObservation: "check array implementation" }] }, atomicityWitness: { outcome: "Implement array representation", criterionIds: region.criterionIds, requirementIds: region.requirementIds, mutationResources: ["code.txt"], whySplittingFails: "One bounded collection implementation and its behavior check" } } };
+      if (input.node === "refine:r1") return { text: "", structured: { outcome: "leaf", evidence: [], certifiedLeaf: { implementationScope: "Implement array representation", criterionIds: region.criterionIds, requirementIds: region.requirementIds, evidenceRefs: ["e1"], mutationResources: ["code.txt"], checks: [{ criterionId: region.criterionIds[0], commandOrObservation: "check array implementation" }], packet: [{ path: "code.txt", startLine: 1, endLine: 1, content: "before", note: "edit target" }] }, atomicityWitness: { outcome: "Implement array representation", criterionIds: region.criterionIds, requirementIds: region.requirementIds, mutationResources: ["code.txt"], whySplittingFails: "One bounded collection implementation and its behavior check" } } };
       if (input.node === "challenge-leaf:r1") return { text: "", structured: { outcome: "accept-leaf", reason: "The collection implementation and check share one bounded file." } };
       if (input.node === "implement:r1") {
         fs.writeFileSync(path.join(input.worktree, "code.txt"), "array implementation");
@@ -378,6 +378,27 @@ describe("delivery recovery", () => {
     expect(failed.regions[0]!.retainedImplementationActivationId).toBeUndefined();
   });
 
+  it("re-issues refinement when a legacy leaf lacks its frozen packet", () => {
+    const network = certifiedNetwork();
+    network.regions[0]!.certifiedLeaf!.packet = undefined;
+    const scheduled = ensureRunnableWork(network, 1, Number.POSITIVE_INFINITY);
+    const region = scheduled.network.regions[0]!;
+    expect(region.status).toBe("unrefined");
+    const queued = scheduled.network.activations.filter((item) => item.status === "queued");
+    expect(queued.map((item) => item.capability)).toEqual(["refine"]);
+    expect(queued[0]!.request).toContain("frozen implementation packet");
+  });
+
+  it("rejects a certified verdict whose packet omits a mutation path", () => {
+    const state = initial();
+    const seen = observation();
+    const output = InspectionOutputSchema.parse({ outcome: "certified", region: { acceptanceCriteria: ["both values are fixed"] }, evidence: seen.evidence,
+      criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["code-observation"] }],
+      certifiedVerdict: { proposition: "Correct both values", implementationScope: "Set both values to fixed", evidenceRefs: ["code-observation"], mutationResources: ["code.txt", "helper.txt"], checks: [{ criterionIndex: 0, commandOrObservation: "Run the delivery fixture and assert both files read fixed." }], packet: [{ path: "code.txt", startLine: 1, endLine: 1, content: "before", note: "edit target" }] },
+    });
+    expect(() => applyActivationOutput(state, state.network.activations[0]!, inspectionOutputToDelta(output, seen.tools), [], seen.tools)).toThrow(/frozen packet.*helper\.txt/);
+  });
+
   it("migrates prior admitted paths when the first post-upgrade verification lands", () => {
     let network = certifiedNetwork();
     const implement = network.activations.at(-1)!;
@@ -413,7 +434,7 @@ describe("delivery recovery", () => {
     const seen = observation();
     const output = InspectionOutputSchema.parse({ outcome: "certified", region: { acceptanceCriteria: ["value fixed"] }, evidence: seen.evidence,
       criterionEvidence: [{ criterionIndex: 0, evidenceRefs: ["code-observation"] }],
-      certifiedVerdict: { proposition: "Correct value", implementationScope: "Set value to fixed", evidenceRefs: ["code-observation"], mutationResources: [resource], checks: [{ criterionIndex: 0, commandOrObservation: "Run the value fixture and assert it reads fixed." }] },
+      certifiedVerdict: { proposition: "Correct value", implementationScope: "Set value to fixed", evidenceRefs: ["code-observation"], mutationResources: [resource], checks: [{ criterionIndex: 0, commandOrObservation: "Run the value fixture and assert it reads fixed." }], packet: [{ path: resource, startLine: 1, endLine: 1, content: "before", note: "edit target" }] },
     });
     expect(() => validateSolutionDelta(state, "r1", "inspect", inspectionOutputToDelta(output, seen.tools), seen.tools)).toThrow(/outside|Unsafe/);
   });

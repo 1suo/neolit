@@ -127,9 +127,12 @@ Each prompt is locally exhaustive but globally small: one operation, one local
 goal, relevant authority and criteria, fixed choices, applicable facts and
 constraints, legal mutations, forbidden overreach, and one narrow output
 schema. Tool permissions follow the same separation: inspectors observe,
-synthesizers and refiners reason over supplied evidence, implementers mutate a
-certified scope, verifiers observe and test without editing, and presenters
-render supported results.
+synthesizers and refiners reason over supplied evidence, implementers apply a
+frozen certified packet — exact source chunks with line ranges and verbatim
+content — using edit tools only, with no repository discovery and no check
+execution (the controller executes the certified checks during verification),
+verifiers observe and test without editing, and presenters render supported
+results.
 
 ### Make efficiency and termination controller properties
 

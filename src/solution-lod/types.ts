@@ -80,6 +80,14 @@ export interface InspectionCriterionResult {
   reason?: string;
 }
 
+export interface FrozenChunk {
+  path: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+  note: string;
+}
+
 export interface CertifiedLeaf {
   criterionIds: CriterionId[];
   requirementIds: RequirementId[];
@@ -87,6 +95,8 @@ export interface CertifiedLeaf {
   evidenceRefs: string[];
   mutationResources: string[];
   checks: LeafCheck[];
+  /** Frozen source context: every mutation path covered; implement reads this, not the repository. Required for change leaves created by refinement or certified inspection. */
+  packet?: FrozenChunk[];
 }
 
 export interface SolutionCandidate {
@@ -831,6 +841,13 @@ export const LeafChallengeOutputSchema = z.discriminatedUnion("outcome", [
 export type LeafChallengeOutput = z.infer<typeof LeafChallengeOutputSchema>;
 export type SynthesisOutput = DomainGenerationOutput | DomainChallengeOutput | CandidateSelectionOutput | LeafChallengeOutput;
 
+const FrozenChunkSchema = z.object({
+    path: z.string().min(1).describe("Repository-relative file path exactly as in mutationResources or a read-only dependency needed to apply the change."),
+    startLine: z.number().int().min(1),
+    endLine: z.number().int().min(1),
+    content: z.string().min(1).max(16000).describe("Exact current file content for this line range, verbatim, from the certified inspection."),
+    note: z.string().default("").describe("One clause: why this chunk is needed (edit target, check target, or surrounding contract)."),
+  }).strict();
 export const SolutionDeltaSchema = z.object({
   decisionBoundary: DecisionBoundaryProposalSchema.optional(),
   region: z.object({
@@ -900,7 +917,7 @@ export const SolutionDeltaSchema = z.object({
     requirementId: z.string().min(1).describe("Exact supplied material requirement ID whose evidence is being refreshed."),
     evidenceRefs: z.array(z.string().min(1)).min(1).describe("Current confirmed facts or same-result repository chunks establishing this requirement."),
   }).strict()).optional().describe("Evidence-only refresh for established material requirements. Never repeat their key, text, scope, or criterion."),
-  certifiedVerdict: z.object({ proposition: z.string().min(1), implementationScope: z.string().min(1), evidenceRefs: z.array(z.string()).min(1), mutationResources: z.array(z.string().min(1)).min(1), checks: z.array(z.object({ criterionIndex: z.number().int().nonnegative(), commandOrObservation: z.string().min(1) }).strict()).min(1) }).strict().optional().describe("Mechanically fixed small correction whose exact repository evidence, implementation scope, mutation paths, and one executable behavioral check per criterion leave no genuine solution choice."),
+  certifiedVerdict: z.object({ proposition: z.string().min(1), implementationScope: z.string().min(1), evidenceRefs: z.array(z.string()).min(1), mutationResources: z.array(z.string().min(1)).min(1), checks: z.array(z.object({ criterionIndex: z.number().int().nonnegative(), commandOrObservation: z.string().min(1) }).strict()).min(1), packet: z.array(FrozenChunkSchema).min(1) }).strict().optional().describe("Mechanically fixed small correction whose exact repository evidence, implementation scope, mutation paths, frozen source packet covering every mutation path, and one executable behavioral check per criterion leave no genuine solution choice."),
   alreadySatisfied: z.object({
     proposition: z.string().min(1),
     criterionEvidence: z.array(z.object({ criterionIndex: z.number().int().nonnegative(), evidenceRefs: z.array(z.string().min(1)).min(1) }).strict()).min(1),
@@ -974,7 +991,8 @@ const CertifiedLeafSchema = z.object({
     evidenceRefs: z.array(z.string()).default([]),
     mutationResources: z.array(z.string().min(1)).default([]),
     checks: z.array(z.object({ criterionId: z.string().min(1), commandOrObservation: z.string().min(1) }).strict()).min(1),
-}).strict();
+    packet: z.array(FrozenChunkSchema).min(1).describe("Frozen implementation packet: exact source chunks covering every mutation path. Implementation receives only this context and has no repository read access."),
+  }).strict();
 const AtomicityWitnessSchema = z.object({
   outcome: z.string().min(1).describe("The single coherent behavioral outcome delivered by this leaf."),
   criterionIds: z.array(z.string().min(1)),

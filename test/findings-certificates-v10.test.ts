@@ -12,7 +12,7 @@ function prepareRegion(network: SolutionNetwork, region: SolutionRegion, selecte
   region.criterionIds = [`criterion:${region.scopeId}:0`];
   region.status = "implemented";
   region.domainPhase = "selected";
-  region.certifiedLeaf = { criterionIds: [...region.criterionIds], implementationScope: "change source", evidenceRefs: [], mutationResources: [`src/${region.id}.ts`], checks: [{ criterionId: region.criterionIds[0]!, commandOrObservation: "run focused test" }] };
+  region.certifiedLeaf = { criterionIds: [...region.criterionIds], requirementIds: [], implementationScope: "change source", evidenceRefs: [], mutationResources: [`src/${region.id}.ts`], checks: [{ criterionId: region.criterionIds[0]!, commandOrObservation: "run focused test" }], packet: [{ path: `src/${region.id}.ts`, startLine: 1, endLine: 1, content: "export const source = \"before\";", note: "edit target" }] };
   region.mutationResources = [...region.certifiedLeaf.mutationResources];
   region.candidateIds = [...selectedFamilyIds];
   region.selectedCandidateIds = [...selectedFamilyIds];
@@ -54,7 +54,7 @@ describe("v10 findings and completion certificates", () => {
 
   it("records failed attempts, supplies exact repair context, and resolves only after re-verification", () => {
     let network = initialNetwork("fix behavior");
-    const region = network.regions[0]!; prepareRegion(network, region); region.mutationResources = ["src/x.ts"]; region.certifiedLeaf!.mutationResources = ["src/x.ts"];
+    const region = network.regions[0]!; prepareRegion(network, region); region.mutationResources = ["src/x.ts"]; region.certifiedLeaf!.mutationResources = ["src/x.ts"]; region.certifiedLeaf!.packet = [{ path: "src/x.ts", startLine: 1, endLine: 1, content: "export const source = \"before\";", note: "edit target" }];
     network.activations[0]!.status = "completed";
     network = completeVerification(network, addVerifier(network, "r1").id, { outcome: "repair", summary: "repair", findings: [finding], checks: [] });
     let scheduled = ensureRunnableWork(network);

@@ -151,6 +151,7 @@ describe("activation context", () => {
     const region = network.regions[0]!;
     region.status = "implementing";
     region.domainPhase = "selected";
+    region.certifiedLeaf = { criterionIds: [], requirementIds: [], implementationScope: "bounded change", evidenceRefs: [], mutationResources: [], checks: [], packet: [{ path: "src/x.ts", startLine: 1, endLine: 1, content: "old", note: "edit target" }] };
     network.activations = [{ id: "a2", capability: "implement", regionId: "r1", request: "implement", expectedDelta: "implementation", contextRefs: ["r1"], status: "running", basisRevision: network.revision }];
     const record: ActivationTaskResult = { activationId: "a2", regionId: "r1", capability: "implement", basisRevision: network.revision, startedAt: 0, finishedAt: 1, usage, outcome: "applied", networkDelta: { kind: "implementation", changedFiles: [], output: { outcome: "blocked", summary: "need fact", changedFiles: [], checks: [], blocker: "need fact" } } };
     const rejected = applyBatchRecords(network, [record]);
@@ -261,6 +262,7 @@ describe("activation context", () => {
     let network = initialNetwork("implement");
     network.regions[0]!.status = "actionable";
     network.regions[0]!.domainPhase = "selected";
+    network.regions[0]!.certifiedLeaf = { criterionIds: [], requirementIds: [], implementationScope: "bounded change", evidenceRefs: [], mutationResources: [], checks: [], packet: [{ path: "src/x.ts", startLine: 1, endLine: 1, content: "old", note: "edit target" }] };
     for (let attempt = 0; attempt < 3; attempt++) {
       network = ensureRunnableWork(network).network;
       const activation = network.activations.findLast((item) => item.status === "queued")!;
