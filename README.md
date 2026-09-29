@@ -115,7 +115,7 @@ JSON
 
 The executable uses an unavailable model runtime by default so pure task/tree
 operations work without provider credentials. A host that needs
-`crystallize`/`refine` embeds `createAugmentServer({ runtime })` and injects
+`crystallize`/`refine` embeds `new AugmentServer({ runtime })` and injects
 its own OpenCode, Codex, or direct-provider adapter.
 
 Operations include:
