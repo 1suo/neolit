@@ -1,0 +1,91 @@
+import { describe, expect, it } from "vitest";
+import { crystallizeNode, draftPatchWithModel, refineWithModel, selectCandidate } from "../src/augment/kernel.js";
+import { acceptDomain, createPlanTask } from "../src/augment/state.js";
+import type { ModelCallRequest, ModelRuntime, PlanTask } from "../src/augment/types.js";
+
+function runtime(responses: Array<(request: ModelCallRequest) => unknown>): ModelRuntime {
+  let calls = 0;
+  return {
+    async call(request) {
+      const responder = responses[calls++] ?? (() => {
+        throw new Error(`unexpected model call ${request.operation}`);
+      });
+      return { value: responder(request) };
+    },
+  };
+}
+
+function task(): PlanTask {
+  return createPlanTask({ id: "task:kernel", objective: "make retries bounded", basisRevision: "commit:1" });
+}
+
+describe("augment kernel", () => {
+  it("generates, challenges, adds one missing candidate, and accepts a domain", async () => {
+    const model = runtime([
+      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest change", touchedPaths: ["src/auth/session.ts"] }] }),
+      () => ({ kind: "missing-candidate", candidate: { label: "Deadline", rationale: "honor deadline", touchedPaths: ["src/auth/deadline.ts"] }, reason: "fixed count ignores cancellation" }),
+      () => ({ kind: "accept" }),
+    ]);
+    const result = await crystallizeNode(model, task(), { taskId: "task:kernel", nodeId: "node:root", temperature: "normal", lod: "architecture" });
+    const root = result.nodes[result.rootNodeId]!;
+    expect(root.acceptedDomain).toBe(true);
+    expect(root.candidateIds).toHaveLength(2);
+    expect(root.challengeRound).toBe(2);
+    expect(root.candidateIds.map((id) => result.candidates[id]!.label)).toEqual(["Fixed count", "Deadline"]);
+  });
+
+  it("does not collapse during crystallization", async () => {
+    const model = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one materially distinct family", touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]);
+    const result = await crystallizeNode(model, task(), { taskId: "task:kernel", nodeId: "node:root", temperature: "low", lod: "architecture" });
+    expect(result.nodes[result.rootNodeId]!.status).toBe("domain");
+  });
+
+  it("allows explicit controller selection only after challenge acceptance", async () => {
+    const initial = task();
+    const model = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one family", touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]);
+    const generated = await crystallizeNode(model, initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "architecture" });
+    const selected = selectCandidate(generated, { taskId: generated.id, expectedRevision: generated.revision, nodeId: generated.rootNodeId, candidateId: generated.nodes[generated.rootNodeId]!.candidateIds[0]! });
+    expect(selected.nodes[selected.rootNodeId]).toMatchObject({ status: "collapsed", selectedCandidateId: generated.nodes[generated.rootNodeId]!.candidateIds[0] });
+  });
+
+  it("refines selected nodes through typed model output", async () => {
+    const initial = task();
+    const generated = await crystallizeNode(runtime([
+      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest", touchedPaths: ["src/auth/session.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]), initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "file" });
+    const selected = selectCandidate(generated, { taskId: generated.id, expectedRevision: generated.revision, nodeId: generated.rootNodeId, candidateId: generated.nodes[generated.rootNodeId]!.candidateIds[0]! });
+    const refined = await refineWithModel(runtime([
+      () => ({ children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "retry cutoff", obligations: [{ kind: "test", description: "focused retry test" }] }] }),
+    ]), selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "hunk" });
+    expect(Object.values(refined.nodes).filter((node) => node.parent === refined.rootNodeId).map((node) => node.path)).toEqual(["src/auth/session.ts"]);
+  });
+
+  it("attaches a model patch to a refined file node", async () => {
+    const initial = task();
+    const generated = await crystallizeNode(runtime([
+      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest", touchedPaths: ["src/auth/session.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]), initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "file" });
+    const selected = selectCandidate(generated, { taskId: generated.id, expectedRevision: generated.revision, nodeId: generated.rootNodeId, candidateId: generated.nodes[generated.rootNodeId]!.candidateIds[0]! });
+    const refined = await refineWithModel(runtime([
+      () => ({ children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "retry cutoff" }] }),
+    ]), selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "hunk" });
+    const child = Object.values(refined.nodes).find((node) => node.path === "src/auth/session.ts")!;
+    const patched = await draftPatchWithModel(runtime([() => ({ patch: "@@ -1 +1 @@\n-bounded\n+bounded", assumptions: [] })]), refined, { taskId: refined.id, nodeId: child.id, temperature: "low" });
+    expect(Object.values(patched.diffs)[0]).toMatchObject({ nodeId: child.id, patch: "@@ -1 +1 @@\n-bounded\n+bounded", basisRevision: "commit:1" });
+  });
+
+  it("leaves state unchanged when model output violates its schema", async () => {
+    const initial = task();
+    const model: ModelRuntime = { call: async () => ({ value: { candidates: [] } }) };
+    await expect(crystallizeNode(model, initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "architecture" })).rejects.toThrow(/invalid/u);
+    expect(initial.revision).toBe(1);
+  });
+});

@@ -1,0 +1,603 @@
+import {
+  type LOD,
+  type PathPattern,
+  type PlanCandidate,
+  type PlanCandidateId,
+  type PlanConstraint,
+  type PlanConstraintId,
+  type PlanDiffId,
+  type PlanEvent,
+  type PlanEvidence,
+  type PlanEvidenceId,
+  type PlanNode,
+  type PlanNodeId,
+  type PlanObligation,
+  type PlanObligationId,
+  type PlanRevision,
+  type PlanTask,
+  type PlanTreeEntry,
+  type PlannedDiff,
+} from "./types.js";
+
+export const MAX_CANDIDATES_PER_NODE = 7;
+export const MAX_CHILDREN_PER_NODE = 16;
+const ROOT_PATH = ".";
+
+export class PlanStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlanStateError";
+  }
+}
+
+export interface CreatePlanTaskInput {
+  id: string;
+  objective: string;
+  basisRevision: string;
+}
+
+export interface DomainCandidateInput {
+  label: string;
+  rationale: string;
+  touchedPaths: PathPattern[];
+}
+
+export interface GenerateDomainInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId: PlanNodeId;
+  candidates: DomainCandidateInput[];
+  replace?: boolean;
+}
+
+export interface AddCandidateInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId: PlanNodeId;
+  candidate: DomainCandidateInput;
+  reason: string;
+}
+
+export interface AddConstraintInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId?: PlanNodeId;
+  path?: PathPattern;
+  text: string;
+}
+
+export interface CollapseInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId: PlanNodeId;
+  candidateId: PlanCandidateId;
+}
+
+export interface RejectCandidateInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  candidateId: PlanCandidateId;
+  reason: string;
+}
+
+export interface RefinementChildInput {
+  path?: PathPattern;
+  kind: "dir" | "file" | "hunk" | "virtual";
+  lod: LOD;
+  reason: string;
+  obligations?: Array<{ kind: PlanObligation["kind"]; description: string }>;
+  diff?: { patch: string };
+}
+
+export interface RefineNodeInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId: PlanNodeId;
+  children: RefinementChildInput[];
+}
+
+export interface AttachPatchInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId: PlanNodeId;
+  patch: string;
+}
+
+export interface MarkStaleInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  path: string;
+}
+
+function clone<T extends PlanTask>(task: T): T {
+  return structuredClone(task);
+}
+
+function nextRevision(task: PlanTask): number {
+  return task.revision + 1;
+}
+
+function nextId(prefix: string, existing: Iterable<string>): string {
+  let max = 0;
+  for (const id of existing) {
+    const match = id.match(new RegExp(`^${prefix}(\\d+)$`));
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return `${prefix}${max + 1}`;
+}
+
+export function normalizePath(input: string): string {
+  if (input === "" || input === ROOT_PATH) return ROOT_PATH;
+  if (input.includes("\\") || input.includes("\0")) throw new PlanStateError(`Plan path must use POSIX separators: ${input}`);
+  const parts: string[] = [];
+  for (const part of input.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") throw new PlanStateError(`Plan path may not contain '..': ${input}`);
+    parts.push(part);
+  }
+  if (!parts.length) return ROOT_PATH;
+  return parts.join("/");
+}
+
+function validateConcretePath(input: string | undefined, kind: PlanNode["kind"]): string | undefined {
+  if (kind === "virtual") {
+    if (input !== undefined) throw new PlanStateError("A virtual node may not declare a repository path.");
+    return undefined;
+  }
+  if (input === undefined) throw new PlanStateError(`A ${kind} node requires a path.`);
+  const normalized = normalizePath(input);
+  if (normalized.includes("*") || normalized.includes("?") || normalized.includes("[")) throw new PlanStateError(`Node paths must be concrete: ${input}`);
+  if (kind === "hunk" && normalized === ROOT_PATH) throw new PlanStateError("A hunk node requires a file path.");
+  return normalized;
+}
+
+function validatePathPattern(input: string): PathPattern {
+  const normalized = normalizePath(input);
+  if (normalized === ROOT_PATH) throw new PlanStateError("A touched path may not be the repository root.");
+  return normalized;
+}
+
+function pathInside(parent: PathPattern | undefined, child: string): boolean {
+  if (!parent || parent === ROOT_PATH) return true;
+  if (child === parent) return true;
+  return child.startsWith(`${parent}/`);
+}
+
+export function createPlanTask(input: CreatePlanTaskInput): PlanTask {
+  if (!input.id.trim()) throw new PlanStateError("Task ID is required.");
+  if (!input.objective.trim()) throw new PlanStateError("Task objective is required.");
+  if (!input.basisRevision.trim()) throw new PlanStateError("Task basis revision is required.");
+  const root: PlanNode = {
+    id: "node:root",
+    kind: "root",
+    path: ROOT_PATH,
+    status: "unresolved",
+    lod: "architecture",
+    reason: input.objective,
+    candidateIds: [],
+    acceptedDomain: false,
+    challengeRound: 0,
+    constraintIds: [],
+    evidenceIds: [],
+    obligationIds: [],
+    diffIds: [],
+  };
+  return {
+    version: 1,
+    id: input.id,
+    objective: input.objective,
+    basisRevision: input.basisRevision,
+    revision: 1,
+    rootNodeId: root.id,
+    nodes: { [root.id]: root },
+    candidates: {},
+    constraints: {},
+    evidence: {},
+    obligations: {},
+    diffs: {},
+    events: [{ type: "task-created", revision: 1, objective: input.objective }],
+  };
+}
+
+function requireTask(task: PlanTask | undefined, taskId: string): PlanTask {
+  if (!task || task.id !== taskId) throw new PlanStateError(`Unknown task: ${taskId}`);
+  return task;
+}
+
+function requireRevision(task: PlanTask, expectedRevision: PlanRevision): void {
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) throw new PlanStateError("Expected revision must be a positive integer.");
+  if (task.revision !== expectedRevision) throw new PlanStateError(`Stale task revision: expected ${expectedRevision}, current ${task.revision}.`);
+}
+
+function requireNode(task: PlanTask, nodeId: PlanNodeId): PlanNode {
+  const node = task.nodes[nodeId];
+  if (!node) throw new PlanStateError(`Unknown plan node: ${nodeId}`);
+  return node;
+}
+
+function candidateInputsValid(candidates: DomainCandidateInput[]): void {
+  if (!candidates.length) throw new PlanStateError("A candidate domain requires at least one candidate.");
+  if (candidates.length > MAX_CANDIDATES_PER_NODE) throw new PlanStateError(`A candidate domain may contain at most ${MAX_CANDIDATES_PER_NODE} candidates.`);
+  const labels = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate.label.trim()) throw new PlanStateError("Every candidate requires a label.");
+    const key = candidate.label.trim().toLowerCase();
+    if (labels.has(key)) throw new PlanStateError(`Duplicate candidate label: ${candidate.label}`);
+    labels.add(key);
+    if (!candidate.rationale.trim()) throw new PlanStateError(`Candidate ${candidate.label} requires a rationale.`);
+    if (!candidate.touchedPaths.length) throw new PlanStateError(`Candidate ${candidate.label} must touch at least one path.`);
+    for (const path of candidate.touchedPaths) validatePathPattern(path);
+  }
+}
+
+function addCandidateRecord(task: PlanTask, node: PlanNode, input: DomainCandidateInput): PlanCandidate {
+  const id = nextId(`candidate:${node.id}:`, Object.keys(task.candidates));
+  const candidate: PlanCandidate = {
+    id,
+    nodeId: node.id,
+    label: input.label.trim(),
+    rationale: input.rationale.trim(),
+    touchedPaths: [...new Set(input.touchedPaths.map(validatePathPattern))].sort(),
+    status: "possible",
+  };
+  task.candidates[id] = candidate;
+  node.candidateIds.push(id);
+  return candidate;
+}
+
+function emit(task: PlanTask, event: PlanEvent): void {
+  task.events.push(event);
+}
+
+function propagateReadiness(task: PlanTask, nodeId: PlanNodeId): void {
+  const node = task.nodes[nodeId];
+  if (!node || node.status === "stale" || node.status === "blocked") return;
+  if (node.diffIds.length) {
+    const obligations = node.obligationIds.map((id) => task.obligations[id]!);
+    if (obligations.every((obligation) => obligation.status === "satisfied")) node.status = "ready";
+    return;
+  }
+  const children = Object.values(task.nodes).filter((child) => child.parent === node.id);
+  if (children.length) {
+    if (children.every((child) => child.status === "ready")) node.status = "ready";
+    else if (node.status === "ready") node.status = node.selectedCandidateId ? "refined" : "collapsed";
+  }
+}
+
+export function generateDomain(task: PlanTask, input: GenerateDomainInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const node = requireNode(next, input.nodeId);
+  candidateInputsValid(input.candidates);
+  if (node.status === "stale" || node.status === "blocked") throw new PlanStateError(`Cannot generate a domain for ${node.id} while it is ${node.status}.`);
+  if (node.selectedCandidateId) throw new PlanStateError(`Cannot replace the collapsed domain for ${node.id}; reopen it first.`);
+  const existingPossible = node.candidateIds.map((id) => next.candidates[id]!).filter((candidate) => candidate.status === "possible");
+  if (existingPossible.length && !input.replace) throw new PlanStateError(`Node ${node.id} already has a live candidate domain.`);
+  for (const candidate of existingPossible) {
+    candidate.status = "eliminated";
+    candidate.eliminationReason = "superseded by domain regeneration";
+  }
+  const added = input.candidates.map((candidate) => addCandidateRecord(next, node, candidate));
+  node.acceptedDomain = false;
+  node.challengeRound = 0;
+  node.status = "domain";
+  next.revision = nextRevision(next);
+  emit(next, { type: "domain-generated", revision: next.revision, nodeId: node.id, candidateIds: added.map((candidate) => candidate.id) });
+  return next;
+}
+
+export function acceptDomain(task: PlanTask, input: { taskId: string; expectedRevision: PlanRevision; nodeId: PlanNodeId; challengeRound: number }): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const node = requireNode(next, input.nodeId);
+  const possible = node.candidateIds.map((id) => next.candidates[id]!).filter((candidate) => candidate.status === "possible");
+  if (!possible.length) throw new PlanStateError(`Cannot accept an empty domain for ${node.id}.`);
+  if (!Number.isSafeInteger(input.challengeRound) || input.challengeRound < 1) throw new PlanStateError("Domain acceptance requires a positive challenge round.");
+  node.acceptedDomain = true;
+  node.challengeRound = input.challengeRound;
+  if (node.status === "unresolved" || node.status === "stale") node.status = "domain";
+  next.revision = nextRevision(next);
+  emit(next, { type: "domain-accepted", revision: next.revision, nodeId: node.id, challengeRound: input.challengeRound });
+  return next;
+}
+
+export function addCandidate(task: PlanTask, input: AddCandidateInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const node = requireNode(next, input.nodeId);
+  candidateInputsValid([input.candidate]);
+  if (node.selectedCandidateId) throw new PlanStateError(`Cannot add a candidate to collapsed node ${node.id}.`);
+  const count = node.candidateIds.map((id) => next.candidates[id]!).filter((candidate) => candidate.status === "possible").length;
+  if (count >= MAX_CANDIDATES_PER_NODE) throw new PlanStateError(`Node ${node.id} already has the maximum ${MAX_CANDIDATES_PER_NODE} live candidates.`);
+  const candidate = addCandidateRecord(next, node, input.candidate);
+  node.acceptedDomain = false;
+  if (node.status === "unresolved") node.status = "domain";
+  next.revision = nextRevision(next);
+  emit(next, { type: "candidate-added", revision: next.revision, nodeId: node.id, candidateId: candidate.id, reason: input.reason });
+  return next;
+}
+
+export function addConstraint(task: PlanTask, input: AddConstraintInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  if (!input.text.trim()) throw new PlanStateError("Constraint text is required.");
+  if (input.nodeId) requireNode(next, input.nodeId);
+  const path = input.path === undefined ? undefined : validatePathPattern(input.path);
+  const id = nextId("constraint:", Object.keys(next.constraints));
+  const constraint: PlanConstraint = {
+    id,
+    nodeId: input.nodeId,
+    path,
+    text: input.text.trim(),
+    source: "user",
+    createdRevision: next.revision + 1,
+  };
+  next.constraints[id] = constraint;
+  if (input.nodeId) next.nodes[input.nodeId]!.constraintIds.push(id);
+  next.revision = nextRevision(next);
+  emit(next, { type: "constraint-added", revision: next.revision, constraintId: id });
+  return next;
+}
+
+export function rejectCandidate(task: PlanTask, input: RejectCandidateInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const candidate = next.candidates[input.candidateId];
+  if (!candidate) throw new PlanStateError(`Unknown plan candidate: ${input.candidateId}`);
+  if (!input.reason.trim()) throw new PlanStateError("Rejecting a candidate requires a reason.");
+  if (candidate.status === "selected") throw new PlanStateError("Cannot reject the selected candidate; reopen the node first.");
+  candidate.status = "eliminated";
+  candidate.eliminationReason = input.reason;
+  next.revision = nextRevision(next);
+  emit(next, { type: "candidate-rejected", revision: next.revision, candidateId: candidate.id, reason: input.reason });
+  return next;
+}
+
+export function collapseNode(task: PlanTask, input: CollapseInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const node = requireNode(next, input.nodeId);
+  const candidate = next.candidates[input.candidateId];
+  if (!candidate || candidate.nodeId !== node.id) throw new PlanStateError(`Candidate ${input.candidateId} does not belong to ${node.id}.`);
+  if (candidate.status !== "possible") throw new PlanStateError(`Only a possible candidate can collapse ${node.id}; ${candidate.id} is ${candidate.status}.`);
+  if (!node.acceptedDomain) throw new PlanStateError(`Domain for ${node.id} must be challenged and accepted before collapse.`);
+  for (const siblingId of node.candidateIds) {
+    const sibling = next.candidates[siblingId]!;
+    if (sibling.id === candidate.id) continue;
+    if (sibling.status === "possible") {
+      sibling.status = "eliminated";
+      sibling.eliminationReason = `superseded by selected candidate ${candidate.id}`;
+    }
+  }
+  candidate.status = "selected";
+  node.selectedCandidateId = candidate.id;
+  node.status = "collapsed";
+  next.revision = nextRevision(next);
+  emit(next, { type: "node-collapsed", revision: next.revision, nodeId: node.id, candidateId: candidate.id });
+  return next;
+}
+
+function createRefinementChild(task: PlanTask, parent: PlanNode, input: RefinementChildInput, ordinal: number): PlanNode {
+  const path = validateConcretePath(input.path, input.kind);
+  if (!pathInside(parent.path, path ?? ROOT_PATH) && input.kind !== "virtual") throw new PlanStateError(`Refined path ${path} escapes parent scope ${parent.path}.`);
+  if (input.kind !== "virtual") {
+    const duplicate = Object.values(task.nodes).some((node) => node.path === path && node.kind === input.kind && node.parent === parent.id);
+    if (duplicate) throw new PlanStateError(`Refinement already contains ${input.kind} ${path}.`);
+  }
+  const id = `node:${parent.id}/${input.kind}:${ordinal}:${nextId("seq", Object.keys(task.nodes).map((key) => key.split(":").at(-1) ?? "0"))}`;
+  const child: PlanNode = {
+    id,
+    parent: parent.id,
+    kind: input.kind,
+    path,
+    status: "unresolved",
+    lod: input.lod,
+    reason: input.reason,
+    candidateIds: [],
+    acceptedDomain: false,
+    challengeRound: 0,
+    constraintIds: [],
+    evidenceIds: [],
+    obligationIds: [],
+    diffIds: [],
+  };
+  task.nodes[id] = child;
+  for (const obligation of input.obligations ?? []) {
+    if (!obligation.description.trim()) throw new PlanStateError("Every refinement obligation requires a description.");
+    const obligationId = nextId("obligation:", Object.keys(task.obligations));
+    task.obligations[obligationId] = { id: obligationId, nodeId: id, kind: obligation.kind, description: obligation.description, status: "open" };
+    child.obligationIds.push(obligationId);
+  }
+  if (input.diff) {
+    const diffId = nextId("diff:", Object.keys(task.diffs));
+    task.diffs[diffId] = { id: diffId, nodeId: id, path: path ?? "", patch: input.diff.patch, basisRevision: task.basisRevision };
+    child.diffIds.push(diffId);
+  }
+  return child;
+}
+
+export function refineNode(task: PlanTask, input: RefineNodeInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const node = requireNode(next, input.nodeId);
+  if (!node.selectedCandidateId) throw new PlanStateError(`Node ${node.id} must be collapsed before refinement.`);
+  if (node.status === "stale" || node.status === "blocked") throw new PlanStateError(`Cannot refine ${node.id} while it is ${node.status}.`);
+  if (!input.children.length) throw new PlanStateError("Refinement requires at least one child.");
+  if (input.children.length > MAX_CHILDREN_PER_NODE) throw new PlanStateError(`Refinement may contain at most ${MAX_CHILDREN_PER_NODE} children.`);
+  if (Object.values(next.nodes).some((child) => child.parent === node.id)) throw new PlanStateError(`Node ${node.id} already has a refinement; reopen it before refining again.`);
+  const children = input.children.map((child, index) => createRefinementChild(next, node, child, index + 1));
+  node.status = "refined";
+  next.revision = nextRevision(next);
+  emit(next, { type: "node-refined", revision: next.revision, nodeId: node.id, childIds: children.map((child) => child.id) });
+  for (const child of children) propagateReadiness(next, child.id);
+  propagateReadiness(next, node.id);
+  return next;
+}
+
+export interface ReplacePatchInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  diffId: PlanDiffId;
+  patch: string;
+  failedCheck?: string;
+}
+
+export function replacePatch(task: PlanTask, input: ReplacePatchInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const diff = next.diffs[input.diffId];
+  if (!diff) throw new PlanStateError(`Unknown planned diff: ${input.diffId}`);
+  const node = requireNode(next, diff.nodeId);
+  if (node.status === "stale" || node.status === "blocked") throw new PlanStateError(`Cannot repair a patch on ${node.id} while it is ${node.status}.`);
+  if (!input.patch.trim()) throw new PlanStateError("A replacement patch may not be empty.");
+  diff.patch = input.patch;
+  diff.failedCheck = input.failedCheck;
+  next.revision = nextRevision(next);
+  emit(next, { type: "patch-attached", revision: next.revision, nodeId: node.id, diffId: diff.id });
+  return next;
+}
+
+export function attachPatch(task: PlanTask, input: AttachPatchInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const node = requireNode(next, input.nodeId);
+  if (node.status === "stale" || node.status === "blocked") throw new PlanStateError(`Cannot attach a patch to ${node.id} while it is ${node.status}.`);
+  if (node.kind === "dir" || node.kind === "root") throw new PlanStateError(`A patch must target a file, hunk, or virtual node, not ${node.kind}.`);
+  if (!input.patch.trim()) throw new PlanStateError("A planned patch may not be empty.");
+  const id = nextId("diff:", Object.keys(next.diffs));
+  const diff: PlannedDiff = { id, nodeId: node.id, path: node.path ?? "", patch: input.patch, basisRevision: next.basisRevision };
+  next.diffs[id] = diff;
+  node.diffIds.push(id);
+  next.revision = nextRevision(next);
+  emit(next, { type: "patch-attached", revision: next.revision, nodeId: node.id, diffId: id });
+  propagateReadiness(next, node.id);
+  let current: PlanNode | undefined = node.parent ? next.nodes[node.parent] : undefined;
+  while (current) {
+    propagateReadiness(next, current.id);
+    current = current.parent ? next.nodes[current.parent] : undefined;
+  }
+  return next;
+}
+
+function markSubtreeStale(task: PlanTask, nodeId: PlanNodeId, path: string): PlanNode[] {
+  const affected: PlanNode[] = [];
+  const visit = (id: PlanNodeId) => {
+    const node = task.nodes[id];
+    if (!node) return;
+    affected.push(node);
+    if (node.status !== "stale") {
+      node.status = "stale";
+      node.acceptedDomain = false;
+      emit(task, { type: "node-staled", revision: task.revision, nodeId: node.id, path });
+    }
+    for (const child of Object.values(task.nodes).filter((candidate) => candidate.parent === node.id)) visit(child.id);
+  };
+  visit(nodeId);
+  return affected;
+}
+
+export function markPathStale(task: PlanTask, input: MarkStaleInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const changed = normalizePath(input.path);
+  const affectedRoots = Object.values(next.nodes).filter((node) => {
+    if (!node.path || node.kind === "root") return false;
+    return node.path === changed || changed.startsWith(`${node.path}/`) || node.path.startsWith(`${changed}/`);
+  });
+  if (!affectedRoots.length) return next;
+  let mutated = false;
+  for (const root of affectedRoots) {
+    if (root.status !== "stale") mutated = true;
+  }
+  if (!mutated) return next;
+  next.revision = nextRevision(next);
+  for (const root of affectedRoots) markSubtreeStale(next, root.id, changed);
+  return next;
+}
+
+interface TreeBuildState {
+  entries: Map<string, PlanTreeEntry>;
+}
+
+function ensureEntry(state: TreeBuildState, path: string, kind: PlanTreeEntry["kind"]): PlanTreeEntry {
+  const existing = state.entries.get(path);
+  if (existing) {
+    if (kind !== "root" && kind !== "dir" && existing.kind === "dir") existing.kind = kind;
+    return existing;
+  }
+  const parentPath = path === ROOT_PATH ? undefined : path.includes("/") ? path.slice(0, path.lastIndexOf("/")) || ROOT_PATH : ROOT_PATH;
+  const entry: PlanTreeEntry = {
+    path,
+    name: path === ROOT_PATH ? "/" : path.slice(path.lastIndexOf("/") + 1),
+    kind: path === ROOT_PATH ? "root" : kind,
+    status: "unresolved",
+    nodeIds: [],
+    candidateIds: [],
+    diffIds: [],
+    obligationIds: [],
+    children: [],
+  };
+  state.entries.set(path, entry);
+  if (parentPath) {
+    const parent = ensureEntry(state, parentPath, "dir");
+    if (!parent.children.some((child) => child.path === path)) parent.children.push(entry);
+  }
+  return entry;
+}
+
+function entryStatus(current: PlanTreeEntry["status"], next: PlanNode["status"]): PlanTreeEntry["status"] {
+  if (current === "stale" || next === "stale") return "stale";
+  if (current === "blocked" || next === "blocked") return "blocked";
+  if (next === "ready") return current === "unresolved" ? "ready" : current;
+  if (current === "ready") return current;
+  if (next === "unresolved") return current;
+  return next;
+}
+
+function addNodeToEntry(state: TreeBuildState, node: PlanNode, task: PlanTask): void {
+  const path = node.kind === "virtual" ? ROOT_PATH : node.path ?? ROOT_PATH;
+  const entry = ensureEntry(state, path, node.kind === "root" ? "root" : node.kind === "dir" ? "dir" : node.kind === "file" ? "file" : "hunk");
+  entry.nodeIds.push(node.id);
+  entry.candidateIds.push(...node.candidateIds);
+  if (node.selectedCandidateId) entry.selectedCandidateId = node.selectedCandidateId;
+  entry.diffIds.push(...node.diffIds);
+  entry.obligationIds.push(...node.obligationIds);
+  entry.status = entryStatus(entry.status, node.status);
+  if (node.kind === "virtual") {
+    const virtualEntry = ensureEntry(state, `${ROOT_PATH}/virtual/${node.id.replaceAll("/", ":")}`, "virtual");
+    virtualEntry.nodeIds.push(node.id);
+    virtualEntry.candidateIds.push(...node.candidateIds);
+    virtualEntry.status = entryStatus(virtualEntry.status, node.status);
+    virtualEntry.diffIds.push(...node.diffIds);
+    virtualEntry.obligationIds.push(...node.obligationIds);
+    const root = state.entries.get(ROOT_PATH)!;
+    if (!root.children.some((child) => child.path === virtualEntry.path)) root.children.push(virtualEntry);
+  }
+  void task;
+}
+
+export function planTree(task: PlanTask): PlanTreeEntry {
+  const state: TreeBuildState = { entries: new Map() };
+  for (const node of Object.values(task.nodes)) addNodeToEntry(state, node, task);
+  for (const candidate of Object.values(task.candidates)) {
+    if (candidate.status === "eliminated") continue;
+    for (const path of candidate.touchedPaths) {
+      const normalized = normalizePath(path);
+      const entry = ensureEntry(state, normalized, normalized.endsWith("/") ? "dir" : "file");
+      if (!entry.candidateIds.includes(candidate.id)) entry.candidateIds.push(candidate.id);
+    }
+  }
+  for (const diff of Object.values(task.diffs)) {
+    const path = diff.path || ROOT_PATH;
+    const entry = ensureEntry(state, path, path === ROOT_PATH ? "root" : "file");
+    if (!entry.diffIds.includes(diff.id)) entry.diffIds.push(diff.id);
+  }
+  const root = state.entries.get(ROOT_PATH) ?? ensureEntry(state, ROOT_PATH, "root");
+  root.status = entryStatus(root.status, task.nodes[task.rootNodeId]!.status);
+  const sortChildren = (entry: PlanTreeEntry) => {
+    entry.children.sort((left, right) => left.path.localeCompare(right.path));
+    entry.children.forEach(sortChildren);
+  };
+  sortChildren(root);
+  return root;
+}
