@@ -38,7 +38,7 @@ Every mutating request carries `taskId` and `expectedRevision`; the server rejec
 
 ## Model runtime
 
-`new AugmentServer({ runtime })` accepts any implementation of `ModelRuntime`. The executable `augmentd` uses `UnavailableModelRuntime`, so pure tree operations work while crystallize/refine report that the host did not inject a model backend. OpenCode and Codex adapters belong in their host packages, not in this package.
+`new AugmentServer({ runtime })` accepts any implementation of `ModelRuntime`. The executable `augmentd` uses `UnavailableModelRuntime`, so pure tree operations work while crystallize/refine report that the host did not inject a model backend. The standalone TUI supplies its local OpenCode CLI adapter; native OpenCode-plugin and Codex adapters belong in their host packages.
 
 ## Validation
 

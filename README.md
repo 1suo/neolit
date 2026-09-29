@@ -142,6 +142,39 @@ shutdown
 Mutating requests carry `expectedRevision`; stale requests are rejected before
 state changes.
 
+## TUI
+
+The standalone `augment` executable embeds `AugmentServer`, renders the planned
+diff tree with Ink/React, and (when `opencode` is available) routes bounded
+model operations through the OpenCode CLI:
+
+```sh
+npm run build
+./dist/bin/augment.js "make retries bounded"
+
+# browse without model calls
+AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
+```
+
+Keyboard operations:
+
+```text
+N new task
+C crystallize
+R refine
+P draft patch
+A add constraint
+O reopen node
+S mark path stale
+Enter collapse selected candidate
+Tab switch pane
+Q quit
+```
+
+The TUI changes planned state only; it does not apply patches to the repository.
+Its layout and interaction conventions are documented in
+[`src/tui/README.md`](./src/tui/README.md).
+
 ## Documentation
 
 - [`src/augment/README.md`](./src/augment/README.md) — current planned-diff
@@ -149,6 +182,8 @@ state changes.
 - [`src/augment/SPEC.md`](./src/augment/SPEC.md) — desired planned-diff behavior.
 - [`src/augmentd/README.md`](./src/augmentd/README.md) — current protocol and
   server responsibilities.
+- [`src/tui/README.md`](./src/tui/README.md) — standalone TUI layout,
+  operations, and OpenCode CLI runtime.
 - `TODO-augment.md` — known gaps, including persistence, repository watching,
   apply/verify transactions, and host adapters.
 
@@ -168,4 +203,5 @@ npm run build   # emit dist/
 npx vitest run test/augment-state.test.ts
 npx vitest run test/augment-kernel.test.ts
 npx vitest run test/augment-server.test.ts
+npx vitest run test/augment-tui.test.ts
 ```

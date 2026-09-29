@@ -6,7 +6,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "augmentd": "./dist/bin/augmentd.js"
+    "augmentd": "./dist/bin/augmentd.js",
+    "augment": "./dist/bin/augment.js"
   },
   "exports": {
     ".": {
@@ -20,11 +21,12 @@
     "README.md",
     "src/augment/README.md",
     "src/augment/SPEC.md",
-    "src/augmentd/README.md"
+    "src/augmentd/README.md",
+    "src/tui/README.md"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npm run clean && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/bin/augmentd.js', 0o755)\"",
+    "build": "npm run clean && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/bin/augmentd.js', 0o755); require('node:fs').chmodSync('dist/bin/augment.js', 0o755)\"",
     "test": "vitest run",
     "check": "tsc -p tsconfig.json --noEmit && vitest run",
     "prepack": "npm run check && npm run build"
@@ -44,10 +46,14 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
+    "ink": "^7.1.1",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "@types/react": "^19.3.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"

@@ -25,7 +25,7 @@ host operation
   -> updated task snapshot
 ```
 
-Model runtimes execute outside this module. `crystallize` and `refine` in `kernel.ts` call the injected `ModelRuntime` port, validate typed proposals with Zod, challenge the candidate domain, and then merge only legal deltas.
+Model runtimes execute outside this module. `crystallize` and `refine` in `kernel.ts` call the injected `ModelRuntime` port, validate typed proposals with Zod, challenge the candidate domain, and then merge only legal deltas. The standalone OpenCode CLI adapter lives with the TUI host in `src/tui/opencode-runtime.ts`; it is not part of the pure core.
 
 ## Public surface
 
