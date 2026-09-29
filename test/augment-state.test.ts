@@ -10,6 +10,7 @@ import {
   planTree,
   refineNode,
   rejectCandidate,
+  reopenNode,
 } from "../src/augment/state.js";
 
 function task() {
@@ -84,6 +85,23 @@ describe("planned diff state", () => {
     const children = Object.values(refined.nodes).filter((node) => node.parent === refined.rootNodeId);
     expect(children.map((node) => node.path).sort()).toEqual(["src/auth/session.ts", "test/auth/retry.test.ts"]);
     expect(() => refineNode(refined, { taskId: refined.id, expectedRevision: refined.revision, nodeId: refined.rootNodeId, children: [{ kind: "file", path: "src/other.ts", lod: "hunk", reason: "duplicate" }] })).toThrow(/already has a refinement/u);
+  });
+
+  it("reopens a collapsed subtree while retaining rejected alternatives", () => {
+    const current = collapsed();
+    const refined = refineNode(current, {
+      taskId: current.id,
+      expectedRevision: current.revision,
+      nodeId: current.rootNodeId,
+      children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "implementation" }],
+    });
+    const child = Object.values(refined.nodes).find((node) => node.path === "src/auth/session.ts")!;
+    const reopened = reopenNode(refined, { taskId: refined.id, expectedRevision: refined.revision, nodeId: refined.rootNodeId, reason: "Deadline policy is better." });
+    expect(reopened.nodes[child.id]).toBeUndefined();
+    expect(reopened.nodes[reopened.rootNodeId]).toMatchObject({ status: "unresolved", selectedCandidateId: undefined, acceptedDomain: false });
+    const candidates = reopened.nodes[reopened.rootNodeId]!.candidateIds.map((id) => reopened.candidates[id]!);
+    expect(candidates.find((candidate) => candidate.label === "Fixed retry count")?.status).toBe("possible");
+    expect(candidates.find((candidate) => candidate.label === "Deadline cutoff")?.status).toBe("eliminated");
   });
 
   it("marks only the smallest overlapping planned subtree stale", () => {

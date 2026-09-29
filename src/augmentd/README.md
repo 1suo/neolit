@@ -25,6 +25,7 @@ node/get
 node/constrain
 node/select
 node/reject
+node/reopen
 node/stale
 crystallize
 refine

@@ -96,6 +96,13 @@ export interface RefineNodeInput {
   children: RefinementChildInput[];
 }
 
+export interface ReopenNodeInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId: PlanNodeId;
+  reason: string;
+}
+
 export interface AttachPatchInput {
   taskId: string;
   expectedRevision: PlanRevision;
@@ -414,6 +421,49 @@ function createRefinementChild(task: PlanTask, parent: PlanNode, input: Refineme
     child.diffIds.push(diffId);
   }
   return child;
+}
+
+export function reopenNode(task: PlanTask, input: ReopenNodeInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const node = requireNode(next, input.nodeId);
+  if (!input.reason.trim()) throw new PlanStateError("Reopening a node requires a reason.");
+  if (!node.selectedCandidateId && !Object.values(next.nodes).some((child) => child.parent === node.id)) {
+    throw new PlanStateError(`Node ${node.id} has no committed refinement to reopen.`);
+  }
+
+  const descendants: PlanNode[] = [];
+  const visit = (current: PlanNodeId) => {
+    for (const child of Object.values(next.nodes).filter((candidate) => candidate.parent === current)) {
+      descendants.push(child);
+      visit(child.id);
+    }
+  };
+  visit(node.id);
+  for (const descendant of descendants) {
+    for (const candidateId of descendant.candidateIds) delete next.candidates[candidateId];
+    for (const constraintId of descendant.constraintIds) delete next.constraints[constraintId];
+    for (const evidenceId of descendant.evidenceIds) delete next.evidence[evidenceId];
+    for (const obligationId of descendant.obligationIds) delete next.obligations[obligationId];
+    for (const diffId of descendant.diffIds) delete next.diffs[diffId];
+    delete next.nodes[descendant.id];
+  }
+  for (const candidateId of node.candidateIds) {
+    const candidate = next.candidates[candidateId];
+    if (candidate?.status === "selected") {
+      candidate.status = "possible";
+      delete candidate.eliminationReason;
+    }
+  }
+  node.status = "unresolved";
+  node.selectedCandidateId = undefined;
+  node.acceptedDomain = false;
+  node.challengeRound = 0;
+  node.diffIds = [];
+  node.obligationIds = node.obligationIds.filter((id) => next.obligations[id] !== undefined);
+  next.revision = nextRevision(next);
+  emit(next, { type: "node-reopened", revision: next.revision, nodeId: node.id, reason: input.reason });
+  return next;
 }
 
 export function refineNode(task: PlanTask, input: RefineNodeInput): PlanTask {

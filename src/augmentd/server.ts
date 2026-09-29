@@ -1,4 +1,4 @@
-import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate } from "../augment/state.js";
+import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode } from "../augment/state.js";
 import { crystallizeNode, draftPatchWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
 import type { LOD, ModelRuntime, PlanTask, Temperature } from "../augment/types.js";
 
@@ -158,6 +158,13 @@ export class AugmentServer {
         const base = taskMutation(params);
         const input = object(params);
         const updated = rejectCandidate(this.requireTask(base.taskId), { ...base, candidateId: string(input.candidateId, "candidateId"), reason: string(input.reason, "reason") });
+        this.tasks.set(updated.id, updated);
+        return updated;
+      }
+      case "node/reopen": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const updated = reopenNode(this.requireTask(base.taskId), { ...base, nodeId: string(input.nodeId, "nodeId"), reason: string(input.reason, "reason") });
         this.tasks.set(updated.id, updated);
         return updated;
       }

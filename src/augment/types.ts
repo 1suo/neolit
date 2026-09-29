@@ -108,6 +108,7 @@ export type PlanEvent =
   | { type: "candidate-rejected"; revision: PlanRevision; candidateId: PlanCandidateId; reason: string }
   | { type: "node-collapsed"; revision: PlanRevision; nodeId: PlanNodeId; candidateId: PlanCandidateId }
   | { type: "node-refined"; revision: PlanRevision; nodeId: PlanNodeId; childIds: PlanNodeId[] }
+  | { type: "node-reopened"; revision: PlanRevision; nodeId: PlanNodeId; reason: string }
   | { type: "patch-attached"; revision: PlanRevision; nodeId: PlanNodeId; diffId: PlanDiffId }
   | { type: "constraint-added"; revision: PlanRevision; constraintId: PlanConstraintId }
   | { type: "node-staled"; revision: PlanRevision; nodeId: PlanNodeId; path: string }
