@@ -1,13 +1,13 @@
 {
   "name": "neolit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Planned-diff augmentation core and host-neutral JSON-RPC server",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "augmentd": "./dist/bin/augmentd.js",
-    "augment": "./dist/bin/augment.js"
+    "augmentd": "dist/bin/augmentd.js",
+    "augment": "dist/bin/augment.js"
   },
   "exports": {
     ".": {
