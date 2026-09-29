@@ -56,7 +56,6 @@ describe("augment TUI controller", () => {
     let state = controller.snapshot();
     expect(state.rows.map((row) => row.id)).toContain("candidate:candidate:node:root:1");
 
-    controller.move(1);
     expect(controller.selectedRow()?.kind).toBe("candidate");
     await controller.selectCandidate();
     expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "collapsed" });
@@ -71,7 +70,7 @@ describe("augment TUI controller", () => {
     const patched = controller.snapshot();
     expect(Object.values(patched.task?.diffs ?? {})).toHaveLength(1);
     expect(patched.error).toBeUndefined();
-    expect(patched.message).toContain("Patch drafted");
+    expect(patched.message).toContain("Draft change ready");
   });
 
   it("keeps selection stable when possible and reports action errors", async () => {
@@ -90,11 +89,11 @@ describe("augment TUI controller", () => {
     await controller.start("bounded retries", "commit:1");
     await controller.crystallize();
     const crystallized = controller.snapshot().task!;
-    controller.move(1);
     await controller.selectCandidate();
     await controller.refine();
     controller.select("entry:src/auth/session.ts");
     await controller.draftPatch();
+    expect(controller.snapshot().error).toBeUndefined();
     const rows = plannedTreeRows(controller.snapshot().task!);
     const rootIndex = rows.findIndex((row) => row.id === "entry:.");
     const candidateIndex = rows.findIndex((row) => row.id.startsWith("candidate:"));
@@ -112,14 +111,14 @@ describe("augment TUI rendering", () => {
   it("reports a running operation immediately instead of appearing idle", async () => {
     const runtime: ModelRuntime = {
       call: async () => {
-        expect(controller.snapshot()).toMatchObject({ busy: true, operation: "Crystallizing node" });
+        expect(controller.snapshot()).toMatchObject({ busy: true, operation: "Generating approaches" });
         return { value: { candidates: [{ label: "Only", rationale: "one", touchedPaths: ["src/a.ts"] }] } };
       },
     };
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
     await controller.start("objective", "commit:1");
     const operation = controller.crystallize();
-    expect(controller.snapshot()).toMatchObject({ busy: true, operation: "Crystallizing node" });
+    expect(controller.snapshot()).toMatchObject({ busy: true, operation: "Generating approaches" });
     await operation;
     expect(controller.snapshot()).toMatchObject({ busy: false, operation: undefined });
   });
@@ -128,10 +127,10 @@ describe("augment TUI rendering", () => {
     const controller = new AugmentTuiController({ directory: process.cwd() });
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: false }));
     expect(output).toContain("NEOLIT");
-    expect(output).toContain("PLANNED TREE");
+    expect(output).toContain("PLANNED CHANGES");
     expect(output).toContain("DETAILS");
     expect(output).toContain("NO MODEL");
-    expect(output).toContain("Press [N] to start a planned task.");
+    expect(output).toContain("Press [N] to describe a change.");
   });
 });
 

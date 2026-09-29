@@ -21,30 +21,43 @@ The interface adapts the proven OpenCode connector TUI conventions rather than i
 └───────────────────────┘ └───────────────────────────────┘
 ```
 
+## Flow
+
+After a task is entered and a model is configured, the TUI automatically generates approaches. The intended flow is:
+
+```text
+1. describe the change
+2. review generated approaches
+3. Enter to use one
+4. F expands it into planned files
+5. D drafts the selected file change
+6. review the planned patch
+```
+
 ## Operations
 
 ```text
-N  start a task
-C  crystallize selected node
-R  refine selected node
-P  draft a patch
-A  add a constraint
-O  reopen selected node
-S  mark a path stale
-Enter  collapse selected candidate / inspect detail
+N  start a new plan
+G  generate approaches again
+Enter  use selected approach / inspect detail
+F  expand approach into files
+D  draft selected file change
+A  add rule
+O  rework selected choice
+S  mark real file changed
 Tab   switch pane
 Q     quit
 ```
 
 ## Model runtime
 
-By default the executable uses `OpenCodeCliRuntime`, which invokes:
+The executable uses `OpenCodeCliRuntime`, which invokes:
 
 ```text
 opencode run --format json --auto
 ```
 
-It uses OpenCode authentication and model routing, but returns only a JSON object matching the requested Neolit operation. Configure it with:
+Select a working model explicitly with `--model provider/model` or `AUGMENT_OPENCODE_MODEL`. OpenCode's implicit default may point at an unavailable paid model and fail with a quota/authentication error. Configure the runtime with:
 
 ```text
 AUGMENT_OPENCODE_COMMAND

@@ -150,25 +150,24 @@ model operations through the OpenCode CLI:
 
 ```sh
 npm run build
-./dist/bin/augment.js "make retries bounded"
+./dist/bin/augment.js --model opencode/space-bunny-free "make retries bounded"
 
 # browse without model calls
 AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
-Keyboard operations:
+After a task is entered, the TUI automatically generates approaches. Then:
 
 ```text
-N new task
-C crystallize
-R refine
-P draft patch
-A add constraint
-O reopen node
-S mark path stale
-Enter collapse selected candidate
-Tab switch pane
-Q quit
+Enter use selected approach
+F    expand approach into files
+D    draft selected file change
+G    generate approaches again
+A    add rule
+O    rework selected choice
+S    mark real file changed
+Tab  switch pane
+Q    quit
 ```
 
 The TUI changes planned state only; it does not apply patches to the repository.

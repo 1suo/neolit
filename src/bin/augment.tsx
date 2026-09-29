@@ -6,6 +6,14 @@ import { AugmentTuiController, currentRevision } from "../tui/controller.js";
 import { runAugmentTui } from "../tui/augment.js";
 
 function commandAvailable(command: string): boolean {
+  if (command.includes("/")) {
+    try {
+      accessSync(command, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
   return (process.env.PATH ?? "").split(path.delimiter).some((directory) => {
     try {
       accessSync(path.join(directory, command), constants.X_OK);
@@ -21,13 +29,34 @@ if (!process.stdin.isTTY) {
   process.exit(1);
 }
 
-const objective = process.argv.slice(2).join(" ").trim();
+const rawArguments = process.argv.slice(2);
+const objectiveArguments: string[] = [];
+let model = process.env.AUGMENT_OPENCODE_MODEL;
+let disableModel = process.env.AUGMENT_TUI_NO_MODEL === "1";
+for (let index = 0; index < rawArguments.length; index++) {
+  const argument = rawArguments[index]!;
+  if (argument === "--model" || argument === "-m") {
+    model = rawArguments[++index];
+    if (!model) throw new Error("--model requires a provider/model identifier.");
+    continue;
+  }
+  if (argument === "--no-model") {
+    disableModel = true;
+    continue;
+  }
+  if (argument === "--help" || argument === "-h") {
+    process.stdout.write(`augment [--model provider/model] [--no-model] [objective]\n`);
+    process.exit(0);
+  }
+  objectiveArguments.push(argument);
+}
+const objective = objectiveArguments.join(" ").trim();
 const directory = process.cwd();
 const requested = process.env.AUGMENT_OPENCODE_COMMAND ?? "opencode";
-const modelAvailable = process.env.AUGMENT_TUI_NO_MODEL !== "1" && commandAvailable(requested);
+const modelAvailable = !disableModel && commandAvailable(requested);
 const controller = new AugmentTuiController({
   directory,
-  runtime: modelAvailable ? new OpenCodeCliRuntime({ directory, command: requested }) : undefined,
+  runtime: modelAvailable ? new OpenCodeCliRuntime({ directory, command: requested, model }) : undefined,
 });
 
 if (objective) {
@@ -40,7 +69,7 @@ if (objective) {
 }
 
 try {
-  await runAugmentTui(controller, modelAvailable);
+  await runAugmentTui(controller, modelAvailable, model ?? "OPENCODE DEFAULT");
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
   process.exitCode = 1;

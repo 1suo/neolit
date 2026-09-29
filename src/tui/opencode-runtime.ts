@@ -1,5 +1,12 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import type { ModelCallRequest, ModelRuntime } from "../augment/types.js";
+
+const activeChildren = new Set<ChildProcess>();
+process.on("exit", () => {
+  for (const child of activeChildren) {
+    if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
+  }
+});
 
 export interface OpenCodeCliRuntimeOptions {
   directory: string;
@@ -24,6 +31,11 @@ interface OpenCodeCliResult {
  * routing while the planned-diff core remains host-neutral.
  */
 export class OpenCodeCliRuntime implements ModelRuntime {
+  cancel(): void {
+    for (const child of activeChildren) {
+      if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
+    }
+  }
   readonly directory: string;
   private readonly command: string;
   private readonly model?: string;
@@ -35,7 +47,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     this.directory = options.directory;
     this.command = options.command ?? process.env.AUGMENT_OPENCODE_COMMAND ?? "opencode";
     this.model = options.model ?? (process.env.AUGMENT_OPENCODE_MODEL || undefined);
-    this.agent = options.agent ?? (process.env.AUGMENT_OPENCODE_AGENT || undefined);
+    this.agent = options.agent ?? (process.env.AUGMENT_OPENCODE_AGENT || "plan");
     this.timeoutMs = options.timeoutMs ?? Number(process.env.AUGMENT_OPENCODE_TIMEOUT_MS ?? 180_000);
     this.autoApprove = options.autoApprove ?? process.env.AUGMENT_OPENCODE_AUTO !== "0";
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("OpenCode runtime timeout must be a positive integer.");
@@ -57,29 +69,35 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
       `Context packet (JSON):\n${JSON.stringify(request.context, null, 2)}`,
     ].join("\n\n");
-    const args = ["run", "--format", "json", ...(this.model ? ["--model", this.model] : []), ...(this.agent ? ["--agent", this.agent] : []), ...(this.autoApprove ? ["--auto"] : []), "--title", `augment ${request.operation}`, "--", prompt];
+    const args = ["run", "--format", "json", ...(this.model ? ["--model", this.model] : []), ...(this.agent ? ["--agent", this.agent] : []), ...(this.autoApprove ? ["--auto"] : []), "--title", `augment-${request.operation}`, "--", prompt];
     const stdout = await this.run(args);
     return extractAssistantText(stdout);
   }
 
   private run(args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.command, args, { cwd: this.directory });
+      const child = spawn(this.command, args, { cwd: this.directory, stdio: ["ignore", "pipe", "pipe"] });
+      activeChildren.add(child);
       let stdout = "";
       let stderr = "";
       const timer = setTimeout(() => {
         child.kill("SIGTERM");
         reject(new Error(`OpenCode runtime timed out after ${this.timeoutMs}ms.`));
       }, this.timeoutMs);
+      const finish = () => {
+        clearTimeout(timer);
+        activeChildren.delete(child);
+      };
       child.stdout?.on("data", (chunk: string) => { stdout += chunk; });
       child.stderr?.on("data", (chunk: string) => { stderr += chunk; });
       child.on("error", (error) => {
-        clearTimeout(timer);
+        finish();
         reject(new Error(`Could not start OpenCode runtime ${this.command}: ${error.message}`));
       });
       child.on("close", (code) => {
-        clearTimeout(timer);
+        finish();
         if (code === 0) return resolve(stdout);
+        if (child.killed) return reject(new Error("OpenCode model call was cancelled."));
         const message = extractOpenCodeError(stdout) ?? (stderr.trim() || `OpenCode runtime exited with code ${code}.`);
         reject(new Error(message));
       });
@@ -108,10 +126,6 @@ export function extractAssistantText(stdout: string): string {
   const texts: string[] = [];
   const visit = (value: unknown): void => {
     if (value === undefined || value === null) return;
-    if (typeof value === "string") {
-      texts.push(value);
-      return;
-    }
     if (Array.isArray(value)) {
       value.forEach(visit);
       return;
@@ -125,9 +139,23 @@ export function extractAssistantText(stdout: string): string {
         : typeof failure === "string" ? failure : "OpenCode runtime error.";
       throw new Error(message);
     }
-    if ((record.type === "text" || record.role === "assistant") && typeof record.text === "string") texts.push(record.text);
-    const nested = ["parts", "message", "messages", "data", "output", "response", "content", "choices"];
-    for (const key of nested) visit(record[key]);
+
+    // OpenCode run --format json emits terminal text events. Tool output also
+    // contains text-shaped content; only assistant text events are model output.
+    const directPart = record.part as Record<string, unknown> | undefined;
+    if (record.type === "text" && typeof directPart?.text === "string") {
+      texts.push(directPart.text);
+      return;
+    }
+    if ((record.type === "text" || record.type === "message" || record.role === "assistant") && typeof record.text === "string") {
+      texts.push(record.text);
+      return;
+    }
+
+    const message = record.message as Record<string, unknown> | undefined;
+    if (message && Array.isArray(message.parts)) visit(message.parts);
+    if (Array.isArray(record.parts)) visit(record.parts);
+    if (Array.isArray(record.messages)) visit(record.messages);
   };
   visit(parsed);
   if (texts.length) return texts.join("\n");
@@ -150,13 +178,33 @@ function parseJsonStream(value: string): unknown {
 }
 
 function extractOpenCodeError(stdout: string): string | undefined {
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(stdout) as { type?: string; error?: { message?: string }; message?: string };
-    if (parsed.type === "error") return parsed.error?.message ?? parsed.message;
-    return undefined;
+    parsed = parseJsonStream(stdout.trim());
   } catch {
     return undefined;
   }
+  const errors: string[] = [];
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    if (record.type === "error") {
+      const failure = record.error;
+      const message = typeof record.message === "string" ? record.message
+        : failure && typeof failure === "object" && typeof (failure as { message?: unknown }).message === "string" ? (failure as { message: string }).message
+        : typeof failure === "string" ? failure : "OpenCode runtime error.";
+      errors.push(message);
+      return;
+    }
+    visit(record.part);
+    visit(record.message);
+  };
+  visit(parsed);
+  return errors.at(-1);
 }
 
 export function extractJsonOnly(text: string): unknown | undefined {
