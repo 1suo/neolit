@@ -77,6 +77,12 @@ function context(task: PlanTask, node: PlanNode): ModelContextPacket {
   const rejected = Object.values(task.candidates)
     .filter((candidate) => candidate.status === "eliminated")
     .map((candidate) => ({ label: candidate.label, reason: candidate.eliminationReason ?? "eliminated" }));
+  const constraintIds = new Set(node.constraintIds);
+  let ancestorId = node.parent;
+  while (ancestorId) {
+    for (const constraintId of task.nodes[ancestorId]?.constraintIds ?? []) constraintIds.add(constraintId);
+    ancestorId = task.nodes[ancestorId]?.parent;
+  }
   return {
     taskId: task.id,
     taskRevision: task.revision,
@@ -85,7 +91,7 @@ function context(task: PlanTask, node: PlanNode): ModelContextPacket {
     node,
     parentNode: parent,
     candidates: live,
-    constraints: node.constraintIds.map((id) => task.constraints[id]!).filter(Boolean),
+    constraints: [...constraintIds].map((id) => task.constraints[id]!).filter(Boolean),
     obligations: node.obligationIds.map((id) => task.obligations[id]!).filter(Boolean),
     diffs: node.diffIds.map((id) => task.diffs[id]!).filter(Boolean),
     rejectedCandidates: rejected,

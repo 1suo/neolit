@@ -156,18 +156,17 @@ npm run build
 AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
-After a task is entered, the TUI automatically generates approaches. Then:
+After a task is entered, the TUI automatically generates a filesystem-shaped plan. Then:
 
 ```text
-Enter use selected approach
-F    expand approach into files
-D    draft selected file change
-G    generate approaches again
-A    add rule
-O    rework selected choice
-S    mark real file changed
-Tab  switch pane
-Q    quit
+Enter  message about selected path
+1-7    choose numbered approach
+F      expand approach into files
+D      draft selected file change
+G      rethink selected path
+N      new plan
+Tab    switch pane
+Q      quit
 ```
 
 The TUI changes planned state only; it does not apply patches to the repository.

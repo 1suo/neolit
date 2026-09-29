@@ -1,12 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
 import { planTree } from "../augment/state.js";
-import type { LOD, ModelRuntime, PlanCandidate, PlanTask, PlanTreeEntry, PlannedDiff, Temperature } from "../augment/types.js";
+import type { LOD, ModelRuntime, PlanCandidate, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
 
-export type PlannedTreeRow =
-  | { kind: "entry"; id: string; depth: number; entry: PlanTreeEntry }
-  | { kind: "candidate"; id: string; depth: number; entry: PlanTreeEntry; candidate: PlanCandidate }
-  | { kind: "diff"; id: string; depth: number; entry: PlanTreeEntry; diff: PlannedDiff };
+export type PlannedTreeRow = {
+  kind: "entry";
+  id: string;
+  depth: number;
+  branch: string;
+  entry: PlanTreeEntry;
+};
 
 export interface TuiActionState {
   task?: PlanTask;
@@ -26,28 +29,20 @@ export interface AugmentTuiControllerOptions {
 
 export function plannedTreeRows(task: PlanTask): PlannedTreeRow[] {
   const rows: PlannedTreeRow[] = [];
-  const seenCandidates = new Set<string>();
-  const seenDiffs = new Set<string>();
-  const visit = (entry: PlanTreeEntry, depth: number) => {
-    rows.push({ kind: "entry", id: `entry:${entry.path}`, depth, entry });
-    for (const candidateId of entry.candidateIds) {
-      if (seenCandidates.has(candidateId)) continue;
-      const candidate = task.candidates[candidateId];
-      if (!candidate) continue;
-      seenCandidates.add(candidateId);
-      rows.push({ kind: "candidate", id: `candidate:${candidate.id}`, depth: depth + 1, entry, candidate });
-    }
-    for (const diffId of entry.diffIds) {
-      if (seenDiffs.has(diffId)) continue;
-      const diff = task.diffs[diffId];
-      if (!diff) continue;
-      seenDiffs.add(diffId);
-      rows.push({ kind: "diff", id: `diff:${diff.id}`, depth: depth + 1, entry, diff });
-    }
-    for (const child of entry.children) visit(child, depth + 1);
+  const visit = (entry: PlanTreeEntry, depth: number, branch: string, prefix: string) => {
+    rows.push({ kind: "entry", id: `entry:${entry.path}`, depth, branch, entry });
+    entry.children.forEach((child, index) => {
+      const last = index === entry.children.length - 1;
+      visit(child, depth + 1, `${prefix}${last ? "└─ " : "├─ "}`, `${prefix}${last ? "   " : "│  "}`);
+    });
   };
-  visit(planTree(task), 0);
+  visit(planTree(task), 0, "", "");
   return rows;
+}
+
+export function candidatesForEntry(task: PlanTask | undefined, entry: PlanTreeEntry | undefined): PlanCandidate[] {
+  if (!task || !entry) return [];
+  return entry.candidateIds.map((id) => task.candidates[id]).filter(Boolean);
 }
 
 export class AugmentTuiController {
@@ -121,17 +116,16 @@ export class AugmentTuiController {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
-      this.message = "Approaches ready. Select one and press Enter.";
-      this.selectFirstPossibleCandidate(nodeId);
+      this.message = "Approaches ready. Choose one with keys 1-7.";
+      this.selectNodeEntry(nodeId);
     });
   }
 
   async selectCandidate(candidateId?: string): Promise<void> {
     const task = this.requireTask();
-    const row = this.selectedRow();
-    const chosen = candidateId ?? (row?.kind === "candidate" ? row.candidate.id : undefined);
+    const chosen = candidateId;
     if (!chosen) {
-      this.error = "Select a candidate row first.";
+      this.error = "Choose an approach with its number.";
       return;
     }
     const candidate = task.candidates[chosen];
@@ -179,15 +173,48 @@ export class AugmentTuiController {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId();
     if (!text.trim()) {
-      this.error = "Constraint text is required.";
+      this.error = "Message text is required.";
       return;
     }
-    await this.dispatch("Adding rule", async () => {
+    if (!nodeId) {
+      this.error = "Select a path first.";
+      return;
+    }
+    await this.dispatch("Attaching message", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 6, method: "node/constrain", params: { taskId: task.id, expectedRevision: task.revision, nodeId, text: text.trim() } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
-      this.message = "Rule added. It will constrain the next generation.";
+      const node = nodeId ? this.task?.nodes[nodeId] : undefined;
+      this.message = node && ["unresolved", "domain"].includes(node.status)
+        ? "Message attached. Rethinking approaches..."
+        : `Message attached to ${node?.path ?? "plan"}. It will constrain the next draft.`;
       if (nodeId) this.selectNodeEntry(nodeId);
+      if (node && ["unresolved", "domain"].includes(node.status)) {
+        const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 9, method: "crystallize", params: { taskId: this.task!.id, expectedRevision: this.task!.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true } });
+        this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
+        this.refresh();
+        this.selectNodeEntry(nodeId);
+        this.message = "Approaches updated from your message. Choose one with keys 1-7.";
+      }
+    });
+  }
+
+  async rethink(): Promise<void> {
+    const task = this.requireTask();
+    const nodeId = this.selectedNodeId() ?? task.rootNodeId;
+    const node = task.nodes[nodeId];
+    if (!node) return;
+    await this.dispatch("Rethinking selected path", async () => {
+      let current = task;
+      if (node.selectedCandidateId || Object.values(current.nodes).some((child) => child.parent === nodeId)) {
+        const reopened = await this.server.handle({ jsonrpc: "2.0", id: 10, method: "node/reopen", params: { taskId: current.id, expectedRevision: current.revision, nodeId, reason: "Operator requested a rethink" } });
+        current = expectResult(reopened, PlanTaskLike.is) as PlanTask;
+      }
+      const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 11, method: "crystallize", params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true } });
+      this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
+      this.refresh();
+      this.selectNodeEntry(nodeId);
+      this.message = "Approaches regenerated. Choose one with keys 1-7.";
     });
   }
 
@@ -223,12 +250,6 @@ export class AugmentTuiController {
   private requireTask(): PlanTask {
     if (!this.task) throw new Error("No task is active. Press [N] first.");
     return this.task;
-  }
-
-  private selectFirstPossibleCandidate(nodeId: string): void {
-    const candidateId = this.task?.nodes[nodeId]?.candidateIds.find((id) => this.task?.candidates[id]?.status === "possible");
-    if (candidateId) this.selectedRowId = `candidate:${candidateId}`;
-    else this.selectNodeEntry(nodeId);
   }
 
   private selectFirstChild(nodeId: string): void {

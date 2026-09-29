@@ -4,22 +4,30 @@
 
 ## Layout
 
-The interface adapts the proven OpenCode connector TUI conventions rather than inventing a new visual language:
-
-- a compact status header;
-- a 42% planned-tree pane and 58% detail pane;
-- bordered focus states;
-- keyboard-first navigation;
-- a footer of available operations;
-- inline prompt input instead of chat.
+The left pane is a filesystem tree, not a graph or status board. Only paths that are candidates for change, planned nodes, or drafted patches appear.
 
 ```text
-┌ PLANNED TREE ─────────┐ ┌ DETAILS ─────────────────────┐
-│ src/auth              │ │ selected path/status         │
-│   session.ts          │ │ candidates and constraints   │
-│     fixed retries ◇   │ │ patch text                   │
-└───────────────────────┘ └───────────────────────────────┘
+FILES
+◆ repo/                 chosen: fixed retries
+└─ src/                 planned
+   └─ auth/             planned
+      └─ session.ts     draft patch
+      └─ retry.test.ts  planned
+└─ README.md            planned
 ```
+
+Indicators:
+
+```text
+◇ N choices  paths suggested by possible approaches
+◆ chosen     selected approach
+~ planned    concrete path in the current plan
+▤ draft      patch text exists
+! stale      repository basis changed
+● ready      path and obligations are complete
+```
+
+The right pane explains the selected path: why it is included, available approaches, user messages, and patch text.
 
 ## Flow
 
@@ -27,26 +35,26 @@ After a task is entered and a model is configured, the TUI automatically generat
 
 ```text
 1. describe the change
-2. review generated approaches
-3. Enter to use one
-4. F expands it into planned files
-5. D drafts the selected file change
-6. review the planned patch
+2. inspect the suggested file tree
+3. choose an approach with 1-7
+4. press F to expand it into concrete files
+5. select a file and press D to draft its patch
+6. press Enter on any path to attach a message/constraint
 ```
 
 ## Operations
 
 ```text
 N  start a new plan
-G  generate approaches again
-Enter  use selected approach / inspect detail
-F  expand approach into files
-D  draft selected file change
-A  add rule
-O  rework selected choice
-S  mark real file changed
-Tab   switch pane
-Q     quit
+Enter  attach a message to the selected path
+1-7  choose the numbered approach
+F  expand the chosen approach into files
+D  draft the selected file patch
+G  rethink the selected path
+O  reopen selected node with a reason
+S  mark a real path changed outside the plan
+Tab  switch pane
+Q  quit
 ```
 
 ## Model runtime

@@ -54,10 +54,12 @@ describe("augment TUI controller", () => {
 
     await controller.crystallize();
     let state = controller.snapshot();
-    expect(state.rows.map((row) => row.id)).toContain("candidate:candidate:node:root:1");
+    expect(state.rows.map((row) => row.id)).toContain("entry:src/auth/session.ts");
+    expect(state.rows.every((row) => row.kind === "entry")).toBe(true);
 
-    expect(controller.selectedRow()?.kind).toBe("candidate");
-    await controller.selectCandidate();
+    expect(controller.selectedRow()?.kind).toBe("entry");
+    const candidateId = state.task!.nodes[state.task!.rootNodeId]!.candidateIds[0]!;
+    await controller.selectCandidate(candidateId);
     expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "collapsed" });
 
     await controller.refine();
@@ -84,25 +86,48 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().error).toContain("A patch must target a file, hunk, or virtual node");
   });
 
+  it("carries path messages into descendant patch context", async () => {
+    const patchConstraints: unknown[] = [];
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "draft-patch") patchConstraints.push(request.context.constraints);
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.constrain("Preserve the public API.");
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+    expect(patchConstraints.at(-1)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: "Preserve the public API." }),
+    ]));
+  });
+
   it("projects candidates and patches under their filesystem entries", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");
     await controller.crystallize();
     const crystallized = controller.snapshot().task!;
-    await controller.selectCandidate();
+    const candidateId = crystallized.nodes[crystallized.rootNodeId]!.candidateIds[0]!;
+    await controller.selectCandidate(candidateId);
     await controller.refine();
     controller.select("entry:src/auth/session.ts");
     await controller.draftPatch();
     expect(controller.snapshot().error).toBeUndefined();
     const rows = plannedTreeRows(controller.snapshot().task!);
     const rootIndex = rows.findIndex((row) => row.id === "entry:.");
-    const candidateIndex = rows.findIndex((row) => row.id.startsWith("candidate:"));
+    const dirIndex = rows.findIndex((row) => row.id === "entry:src/auth");
     const fileIndex = rows.findIndex((row) => row.id === "entry:src/auth/session.ts");
-    const diffIndex = rows.findIndex((row) => row.id.startsWith("diff:"));
     expect(rootIndex).toBeGreaterThanOrEqual(0);
-    expect(candidateIndex).toBeGreaterThan(rootIndex);
-    expect(fileIndex).toBeGreaterThan(candidateIndex);
-    expect(diffIndex).toBeGreaterThan(fileIndex);
+    expect(dirIndex).toBeGreaterThan(rootIndex);
+    expect(fileIndex).toBeGreaterThan(dirIndex);
+    expect(rows.every((row) => row.kind === "entry")).toBe(true);
+    expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(1);
     void crystallized;
   });
 });
@@ -127,8 +152,8 @@ describe("augment TUI rendering", () => {
     const controller = new AugmentTuiController({ directory: process.cwd() });
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: false }));
     expect(output).toContain("NEOLIT");
-    expect(output).toContain("PLANNED CHANGES");
-    expect(output).toContain("DETAILS");
+    expect(output).toContain("FILES");
+    expect(output).toContain("SELECTED PATH");
     expect(output).toContain("NO MODEL");
     expect(output).toContain("Press [N] to describe a change.");
   });
