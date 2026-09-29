@@ -109,6 +109,21 @@ describe("augment TUI controller", () => {
 });
 
 describe("augment TUI rendering", () => {
+  it("reports a running operation immediately instead of appearing idle", async () => {
+    const runtime: ModelRuntime = {
+      call: async () => {
+        expect(controller.snapshot()).toMatchObject({ busy: true, operation: "Crystallizing node" });
+        return { value: { candidates: [{ label: "Only", rationale: "one", touchedPaths: ["src/a.ts"] }] } };
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("objective", "commit:1");
+    const operation = controller.crystallize();
+    expect(controller.snapshot()).toMatchObject({ busy: true, operation: "Crystallizing node" });
+    await operation;
+    expect(controller.snapshot()).toMatchObject({ busy: false, operation: undefined });
+  });
+
   it("renders the initial planned-tree layout without a model runtime", () => {
     const controller = new AugmentTuiController({ directory: process.cwd() });
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: false }));

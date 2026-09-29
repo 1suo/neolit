@@ -13,6 +13,7 @@ export interface TuiActionState {
   rows: PlannedTreeRow[];
   selectedRowId?: string;
   busy: boolean;
+  operation?: string;
   message: string;
   error?: string;
 }
@@ -57,6 +58,7 @@ export class AugmentTuiController {
   private rows: PlannedTreeRow[] = [];
   private selectedRowId?: string;
   private busy = false;
+  private operation?: string;
   private message = "Press [N] to start a planned task.";
   private error?: string;
 
@@ -67,7 +69,7 @@ export class AugmentTuiController {
   }
 
   snapshot(): TuiActionState {
-    return { task: this.task, rows: this.rows, selectedRowId: this.selectedRowId, busy: this.busy, message: this.message, error: this.error };
+    return { task: this.task, rows: this.rows, selectedRowId: this.selectedRowId, busy: this.busy, operation: this.operation, message: this.message, error: this.error };
   }
 
   selectedRow(): PlannedTreeRow | undefined {
@@ -97,7 +99,7 @@ export class AugmentTuiController {
       this.error = "Task objective is required.";
       return;
     }
-    await this.dispatch(async () => {
+    await this.dispatch("Starting task", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
@@ -108,7 +110,7 @@ export class AugmentTuiController {
   async crystallize(temperature: Temperature = "normal", lod: LOD = this.defaultLod): Promise<void> {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
-    await this.dispatch(async () => {
+    await this.dispatch("Crystallizing node", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
@@ -129,7 +131,7 @@ export class AugmentTuiController {
       this.error = `Unknown candidate: ${chosen}`;
       return;
     }
-    await this.dispatch(async () => {
+    await this.dispatch("Collapsing candidate", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 3, method: "node/select", params: { taskId: task.id, expectedRevision: task.revision, nodeId: candidate.nodeId, candidateId: chosen } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
@@ -140,7 +142,7 @@ export class AugmentTuiController {
   async refine(temperature: Temperature = "normal", lod: LOD = this.defaultLod): Promise<void> {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
-    await this.dispatch(async () => {
+    await this.dispatch("Refining node", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 4, method: "refine", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
@@ -156,7 +158,7 @@ export class AugmentTuiController {
       this.error = "Select a file, hunk, or virtual node.";
       return;
     }
-    await this.dispatch(async () => {
+    await this.dispatch("Drafting patch", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 5, method: "patch/draft", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature: "low" } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
@@ -171,7 +173,7 @@ export class AugmentTuiController {
       this.error = "Constraint text is required.";
       return;
     }
-    await this.dispatch(async () => {
+    await this.dispatch("Adding constraint", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 6, method: "node/constrain", params: { taskId: task.id, expectedRevision: task.revision, nodeId, text: text.trim() } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
@@ -186,7 +188,7 @@ export class AugmentTuiController {
       this.error = "Reopen requires a selected node and a reason.";
       return;
     }
-    await this.dispatch(async () => {
+    await this.dispatch("Reopening node", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 7, method: "node/reopen", params: { taskId: task.id, expectedRevision: task.revision, nodeId, reason: reason.trim() } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
@@ -200,7 +202,7 @@ export class AugmentTuiController {
       this.error = "A changed repository path is required.";
       return;
     }
-    await this.dispatch(async () => {
+    await this.dispatch("Marking path stale", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 8, method: "node/stale", params: { taskId: task.id, expectedRevision: task.revision, path: path.trim() } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
@@ -223,16 +225,23 @@ export class AugmentTuiController {
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
   }
 
-  private async dispatch(operation: () => Promise<void>): Promise<void> {
+  private async dispatch(operation: string, action: () => Promise<void>): Promise<void> {
+    if (this.busy) {
+      this.error = `Another operation is already running: ${this.operation ?? "unknown"}.`;
+      return;
+    }
     this.busy = true;
+    this.operation = operation;
     this.error = undefined;
+    this.message = `${operation}...`;
     try {
-      await operation();
+      await action();
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
-      this.message = "Action failed.";
+      this.message = `${operation} failed.`;
     } finally {
       this.busy = false;
+      this.operation = undefined;
     }
   }
 }

@@ -36,7 +36,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     this.command = options.command ?? process.env.AUGMENT_OPENCODE_COMMAND ?? "opencode";
     this.model = options.model ?? (process.env.AUGMENT_OPENCODE_MODEL || undefined);
     this.agent = options.agent ?? (process.env.AUGMENT_OPENCODE_AGENT || undefined);
-    this.timeoutMs = options.timeoutMs ?? Number(process.env.AUGMENT_OPENCODE_TIMEOUT_MS ?? 600_000);
+    this.timeoutMs = options.timeoutMs ?? Number(process.env.AUGMENT_OPENCODE_TIMEOUT_MS ?? 180_000);
     this.autoApprove = options.autoApprove ?? process.env.AUGMENT_OPENCODE_AUTO !== "0";
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("OpenCode runtime timeout must be a positive integer.");
   }

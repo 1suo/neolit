@@ -177,6 +177,12 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     setState(props.controller.snapshot());
   };
 
+  const run = (action: Promise<void>) => {
+    // Controller dispatch marks itself busy synchronously before its first await.
+    sync();
+    void action.then(sync);
+  };
+
   const beginInput = (next: InputMode) => {
     setMode(next);
     setInputValue("");
@@ -191,10 +197,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     const value = inputValue;
     const activeMode = mode;
     cancelInput();
-    if (activeMode === "objective") void props.controller.start(value).then(sync);
-    else if (activeMode === "constraint") void props.controller.constrain(value).then(sync);
-    else if (activeMode === "reopen") void props.controller.reopen(value).then(sync);
-    else if (activeMode === "stale") void props.controller.markStale(value).then(sync);
+    if (activeMode === "objective") run(props.controller.start(value));
+    else if (activeMode === "constraint") run(props.controller.constrain(value));
+    else if (activeMode === "reopen") run(props.controller.reopen(value));
+    else if (activeMode === "stale") run(props.controller.markStale(value));
   };
 
   useInput((input, key) => {
@@ -223,7 +229,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
     if (key.return) {
       const row = props.controller.selectedRow();
-      if (row?.kind === "candidate") void props.controller.selectCandidate(row.candidate.id).then(sync);
+      if (row?.kind === "candidate") run(props.controller.selectCandidate(row.candidate.id));
       else setPane("detail");
       return;
     }
@@ -231,9 +237,9 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     const command = input.toLowerCase();
     if (command === "q") exit();
     else if (command === "n") beginInput("objective");
-    else if (command === "c") void props.controller.crystallize().then(sync);
-    else if (command === "r") void props.controller.refine().then(sync);
-    else if (command === "p") void props.controller.draftPatch().then(sync);
+    else if (command === "c") run(props.controller.crystallize());
+    else if (command === "r") run(props.controller.refine());
+    else if (command === "p") run(props.controller.draftPatch());
     else if (command === "a") beginInput("constraint");
     else if (command === "o") beginInput("reopen");
     else if (command === "s") beginInput("stale");
@@ -244,6 +250,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const treeWidth = Math.max(30, Math.floor(windowSize.columns * 0.42) - 6);
   const rootStatus = state.task?.nodes[state.task.rootNodeId]?.status;
   const status = state.busy ? "BUSY" : rootStatus ? rootStatus.toUpperCase() : "IDLE";
+  const statusMessage = state.busy ? `${state.operation ?? "Working"}...` : state.error ?? state.message;
 
   return (
     <Box flexDirection="column" height={windowSize.rows} width={windowSize.columns} padding={1}>
@@ -308,7 +315,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         state.error ? (
           <Text color={theme.error}>{state.error}</Text>
         ) : (
-          <Text color={theme.muted}>{state.message}</Text>
+          <Text color={state.busy ? theme.warning : theme.muted}>{statusMessage}</Text>
         )
       ) : (
         <Box borderStyle="round" borderColor={theme.borderActive} paddingX={1} flexShrink={0}>
