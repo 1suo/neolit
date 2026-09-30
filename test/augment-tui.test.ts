@@ -656,6 +656,78 @@ describe("OpenCode CLI runtime parsing", () => {
     expect(captured).toContain("must create it as a new file");
   });
 
+  it("retries once with a correction when a draft comes back with an empty patch", async () => {
+    const marker = path.join(os.tmpdir(), `augment-retried-${process.pid}-${temporaryFiles.length}.flag`);
+    const log = path.join(os.tmpdir(), `augment-retry-log-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(marker, log);
+    const empty = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"\",\"assumptions\":[]}" }] });
+    const valid = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"--- a/package.json\",\"assumptions\":[]}" }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nif [ -f ${JSON.stringify(marker)} ]; then cat <<'JSON'\n${valid}\nJSON\nelse touch ${JSON.stringify(marker)}; cat <<'JSON'\n${empty}\nJSON\nfi\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
+    const result = await runtime.call({
+      operation: "draft-patch",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: { path: "package.json", kind: "file" } as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "low",
+      lod: "hunk",
+    });
+    expect(result.value).toEqual({ patch: "--- a/package.json", assumptions: [] });
+    const logged = fs.readFileSync(log, "utf8");
+    expect(logged).toContain("patch field must be a non-empty string");
+    expect(logged.match(/draft-patch/g)?.length).toBe(2);
+  });
+
+  it("embeds head and tail when the draft target exceeds the embed limit", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "augment-embed-"));
+    temporaryDirectories.push(directory);
+    fs.writeFileSync(path.join(directory, "big.ts"), `HEADMARK\n${"x".repeat(70_000)}\nTAILMARK\n`);
+    const capture = path.join(os.tmpdir(), `augment-capture-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(capture);
+    const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"--- a/big.ts\"}" }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory, command: file, timeoutMs: 5_000 });
+    await runtime.call({
+      operation: "draft-patch",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: { path: "big.ts", kind: "file" } as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "low",
+      lod: "hunk",
+    });
+    const captured = fs.readFileSync(capture, "utf8");
+    expect(captured).toContain("HEADMARK");
+    expect(captured).toContain("TAILMARK");
+    expect(captured).toContain("characters are omitted");
+    expect(captured).toContain("first 44800 and the last 19200");
+  });
+
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {
     const file = path.join(os.tmpdir(), `augment-opencode-slow-${process.pid}-${temporaryFiles.length}.sh`);
     fs.writeFileSync(file, "#!/bin/sh\nsleep 5\n");

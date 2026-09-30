@@ -3,13 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ModelCallRequest, ModelRuntime } from "../augment/types.js";
 
-const DRAFT_FILE_LIMIT = 24_000;
+const DRAFT_FILE_EMBED_LIMIT = 64_000;
 const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch"]);
 
 /**
  * Drafts should behave like auto-complete, not exploration: embed the target
  * file's exact content so the model answers in one shot without tool rounds.
  * The host owns repository access, so this lives here rather than in the core.
+ * Oversized files embed head and tail: changes concentrate at the top and the
+ * bottom of real source files, and a blind head cut once hid the only region
+ * the model needed, producing an honest refusal instead of a patch.
  */
 function draftFileSection(request: ModelCallRequest, directory: string): string | undefined {
   if (!DRAFT_OPERATIONS.has(request.operation)) return undefined;
@@ -25,15 +28,24 @@ function draftFileSection(request: ModelCallRequest, directory: string): string 
   } catch {
     return `Target path ${target} does not exist in the repository; the patch must create it as a new file. Do not read any file or run any tool.`;
   }
-  const truncated = content.length > DRAFT_FILE_LIMIT;
-  const visible = truncated ? content.slice(0, DRAFT_FILE_LIMIT) : content;
+  const header = `The exact current content of ${target} is embedded below. Do NOT read any file, run any tool, or verify anything — answer from this packet alone in one shot.`;
+  if (content.length <= DRAFT_FILE_EMBED_LIMIT) {
+    return [header, "```", content, "```"].join("\n");
+  }
+  const head = Math.floor(DRAFT_FILE_EMBED_LIMIT * 0.7);
+  const tail = DRAFT_FILE_EMBED_LIMIT - head;
+  const omitted = content.length - DRAFT_FILE_EMBED_LIMIT;
   return [
-    `The exact current content of ${target} is embedded below. Do NOT read any file, run any tool, or verify anything — answer from this packet alone in one shot.`,
-    truncated ? `(showing the first ${DRAFT_FILE_LIMIT} of ${content.length} characters)` : "",
+    header,
+    `This file is ${content.length} characters, so the middle ${omitted} characters are omitted: the first ${head} and the last ${tail} are shown. If the change you need falls inside the omitted middle, anchor the hunk's context lines to the nearest shown region and estimate the @@ line numbers from it.`,
     "```",
-    visible,
+    content.slice(0, head),
     "```",
-  ].filter(Boolean).join("\n");
+    `${omitted} characters omitted`,
+    "```",
+    content.slice(content.length - tail),
+    "```",
+  ].join("\n");
 }
 
 const activeChildren = new Set<ChildProcess>();
@@ -92,8 +104,12 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   }
 
   async call(request: ModelCallRequest): Promise<OpenCodeCliResult> {
-    const text = await this.prompt(request);
-    const value = extractJsonOnly(text);
+    let text = await this.prompt(request);
+    let value = extractJsonOnly(text);
+    if (DRAFT_OPERATIONS.has(request.operation) && isEmptyDraft(value)) {
+      text = await this.prompt(request, "Your previous answer is unusable: the patch field must be a non-empty string holding the complete single-file unified diff with JSON-escaped line breaks. Return the full JSON object again with the real patch.");
+      value = extractJsonOnly(text);
+    }
     if (value === undefined) {
       const trimmed = text.trim();
       const truncated = trimmed && !trimmed.endsWith("}") && !trimmed.endsWith("```")
@@ -104,7 +120,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     return { value, text, stdout: text };
   }
 
-  private async prompt(request: ModelCallRequest): Promise<string> {
+  private async prompt(request: ModelCallRequest, correction?: string): Promise<string> {
     const operation = operationContract(request);
     const fileSection = draftFileSection(request, this.directory);
     const model = DRAFT_OPERATIONS.has(request.operation) && this.draftModel ? this.draftModel : this.model;
@@ -114,6 +130,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       `JSON contract:\n${operation}`,
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
       ...(fileSection ? [fileSection] : []),
+      ...(correction ? [correction] : []),
       `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed:\n${JSON.stringify(request.context, null, 2)}`,
     ].join("\n\n");
     const args = ["run", "--format", "json", ...(model ? ["--model", model] : []), ...(this.agent ? ["--agent", this.agent] : []), ...(this.autoApprove ? ["--auto"] : []), "--title", `augment-${request.operation}`, "--", prompt];
@@ -150,6 +167,12 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       });
     });
   }
+}
+
+function isEmptyDraft(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const patch = (value as { patch?: unknown }).patch;
+  return typeof patch !== "string" || patch.trim().length === 0;
 }
 
 function operationContract(request: ModelCallRequest): string {
