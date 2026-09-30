@@ -819,6 +819,81 @@ describe("OpenCode CLI runtime parsing", () => {
     expect(logged.match(/--title augment-draft-patch/g)?.length).toBe(2);
   });
 
+  it("continues the previous OpenCode session per task", async () => {
+    const log = path.join(os.tmpdir(), `augment-session-log-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(log);
+    const output = JSON.stringify({ type: "message", sessionID: "ses_cont1", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
+    const request = (taskId: string): ModelCallRequest => ({
+      operation: "challenge-domain",
+      context: {
+        taskId,
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: {} as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "normal",
+      lod: "file",
+    });
+    await runtime.call(request("task:a"));
+    await runtime.call(request("task:a"));
+    await runtime.call(request("task:b"));
+    const logged = fs.readFileSync(log, "utf8");
+    expect(logged.match(/--session ses_cont1/g)?.length).toBe(1);
+    expect(logged.match(/--title augment-challenge-domain/g)?.length).toBe(2);
+    expect(logged).toContain("CURRENT authoritative state");
+  });
+
+  it("starts fresh sessions per call when continuation is disabled", async () => {
+    process.env.AUGMENT_OPENCODE_SESSIONS = "0";
+    try {
+      const log = path.join(os.tmpdir(), `augment-session-log-${process.pid}-${temporaryFiles.length}.txt`);
+      temporaryFiles.push(log);
+      const output = JSON.stringify({ type: "message", sessionID: "ses_cont2", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
+      const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+      fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+      fs.chmodSync(file, 0o755);
+      temporaryFiles.push(file);
+      const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
+      const request = {
+        operation: "challenge-domain" as const,
+        context: {
+          taskId: "task:a",
+          taskRevision: 1,
+          objective: "objective",
+          basisRevision: "commit:1",
+          node: {} as never,
+          candidates: [],
+          constraints: [],
+          obligations: [],
+          diffs: [],
+          lockedPaths: [],
+          rejectedCandidates: [],
+        },
+        temperature: "normal" as const,
+        lod: "file" as const,
+      };
+      await runtime.call(request);
+      await runtime.call(request);
+      const logged = fs.readFileSync(log, "utf8");
+      expect(logged).not.toContain("--session");
+      expect(logged.match(/--title augment-challenge-domain/g)?.length).toBe(2);
+    } finally {
+      delete process.env.AUGMENT_OPENCODE_SESSIONS;
+    }
+  });
+
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {
     const file = path.join(os.tmpdir(), `augment-opencode-slow-${process.pid}-${temporaryFiles.length}.sh`);
     fs.writeFileSync(file, "#!/bin/sh\nsleep 5\n");

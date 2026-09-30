@@ -93,8 +93,15 @@ AUGMENT_OPENCODE_MODEL
 AUGMENT_OPENCODE_DRAFT_MODEL
 AUGMENT_OPENCODE_AGENT
 AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after this budget)
+AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh OpenCode session for every call)
 AUGMENT_TUI_NO_MODEL=1
 ```
+
+Model calls reuse one OpenCode session per task — the session id is captured
+from the run's event stream and continued with `--session`, with a fresh
+session as fallback when continuation fails — so repeat operations keep the
+model's earlier exploration instead of cold-starting each call. Each prompt
+still states that its context packet is the current authoritative state.
 
 `AUGMENT_OPENCODE_DRAFT_MODEL` optionally routes only `draft-patch` and
 `repair-patch` to a faster model. Draft and repair calls embed the target

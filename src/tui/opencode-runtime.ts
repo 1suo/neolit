@@ -49,6 +49,9 @@ function draftFileSection(request: ModelCallRequest, directory: string): string 
   ].join("\n");
 }
 
+const SESSION_ID_PATTERN = /"sessionID":"(ses_[^"]+)"/;
+const CONTINUATION_NOTE = "This conversation continues an earlier session for the same task. Earlier context packets in its history are stale: the packet below is the CURRENT authoritative state.";
+
 const activeChildren = new Set<ChildProcess>();
 process.on("exit", () => {
   for (const child of activeChildren) {
@@ -92,6 +95,8 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   private readonly agent?: string;
   private readonly timeoutMs: number;
   private readonly autoApprove: boolean;
+  private readonly continueSessions: boolean;
+  private readonly sessions = new Map<string, string>();
 
   constructor(options: OpenCodeCliRuntimeOptions) {
     this.directory = options.directory;
@@ -101,6 +106,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     this.agent = options.agent ?? (process.env.AUGMENT_OPENCODE_AGENT || "plan");
     this.timeoutMs = options.timeoutMs ?? Number(process.env.AUGMENT_OPENCODE_TIMEOUT_MS ?? 600_000);
     this.autoApprove = options.autoApprove ?? process.env.AUGMENT_OPENCODE_AUTO !== "0";
+    this.continueSessions = process.env.AUGMENT_OPENCODE_SESSIONS !== "0";
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("OpenCode runtime timeout must be a positive integer.");
   }
 
@@ -123,21 +129,50 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   }
 
   private async prompt(request: ModelCallRequest, correction?: string): Promise<string> {
-    const operation = operationContract(request);
-    const fileSection = draftFileSection(request, this.directory);
-    const model = DRAFT_OPERATIONS.has(request.operation) && this.draftModel ? this.draftModel : this.model;
-    const prompt = [
+    const taskId = request.context.taskId;
+    const previous = this.continueSessions ? this.sessions.get(taskId) : undefined;
+    const baseParts = [
       `You are executing exactly one Neolit planned-diff operation: ${request.operation}.`,
       `Return ONE valid JSON object and no prose, Markdown, or code fence.`,
-      `JSON contract:\n${operation}`,
+      `JSON contract:\n${operationContract(request)}`,
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
-      ...(fileSection ? [fileSection] : []),
+      ...(draftFileSection(request, this.directory) ? [draftFileSection(request, this.directory)] : []),
       ...(correction ? [correction] : []),
       `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed; diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context, null, 2)}`,
-    ].join("\n\n");
-    const args = ["run", "--format", "json", ...(model ? ["--model", model] : []), ...(this.agent ? ["--agent", this.agent] : []), ...(this.autoApprove ? ["--auto"] : []), "--title", `augment-${request.operation}`, "--", prompt];
-    const stdout = await this.run(args);
+    ];
+    if (previous) {
+      try {
+        const stdout = await this.run(this.invocation(request, [CONTINUATION_NOTE, ...baseParts].join("\n\n"), previous));
+        this.rememberSession(taskId, stdout);
+        return extractAssistantText(stdout);
+      } catch {
+        this.sessions.delete(taskId);
+      }
+    }
+    const stdout = await this.run(this.invocation(request, baseParts.join("\n\n")));
+    this.rememberSession(taskId, stdout);
     return extractAssistantText(stdout);
+  }
+
+  private invocation(request: ModelCallRequest, prompt: string, session?: string): string[] {
+    const model = DRAFT_OPERATIONS.has(request.operation) && this.draftModel ? this.draftModel : this.model;
+    return [
+      "run",
+      "--format",
+      "json",
+      ...(session ? ["--session", session] : []),
+      ...(model ? ["--model", model] : []),
+      ...(this.agent ? ["--agent", this.agent] : []),
+      ...(this.autoApprove ? ["--auto"] : []),
+      ...(!session ? ["--title", `augment-${request.operation}`] : []),
+      "--",
+      prompt,
+    ];
+  }
+
+  private rememberSession(taskId: string, stdout: string): void {
+    const session = stdout.match(SESSION_ID_PATTERN)?.[1];
+    if (session) this.sessions.set(taskId, session);
   }
 
   private run(args: string[]): Promise<string> {
