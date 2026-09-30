@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput, useWindowSize } from "ink";
-import type { PlanTask, PlannedDiff } from "../augment/types.js";
+import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
 import { pathIsLocked } from "../augment/state.js";
-import { AugmentTuiController, candidatesForEntry, type PlannedTreeRow, type TuiActionState } from "./controller.js";
+import { AugmentTuiController, candidatesForEntry, entryHasPlan, type PlannedTreeRow, type TuiActionState } from "./controller.js";
 
 const theme = {
   primary: "#7aa2f7",
@@ -19,7 +19,6 @@ const theme = {
 };
 
 type InputMode = "idle" | "objective" | "explanation" | "message" | "reopen" | "stale";
-type ViewMode = "plan" | "diff";
 
 function crop(value: string, width: number): string {
   const chars = [...value];
@@ -135,24 +134,6 @@ function changeSummary(diffs: PlannedDiff[]): string {
   return parts.join(" · ") || "no drafted changes";
 }
 
-function DiffPreview(props: { diff: PlannedDiff; description?: string; lines?: number }) {
-  const patchLines = props.diff.patch.split(/\r?\n/);
-  const visible = patchLines.slice(0, props.lines ?? 8);
-  return (
-    <Box flexDirection="column">
-      <Box gap={1}>
-        <Text color={props.diff.kind === "delete" ? theme.error : theme.success} bold>{diffIndicator(props.diff.kind)} {props.diff.path || props.diff.id}</Text>
-        <Text color={theme.muted}>{diffLabel(props.diff.kind)}</Text>
-      </Box>
-      {props.description ? <Text color={theme.text}>  {props.description}</Text> : null}
-      {visible.map((line, index) => (
-        <Text key={`${index}:${line}`} wrap="truncate-end" color={diffColor(line)}>{line || " "}</Text>
-      ))}
-      {patchLines.length > visible.length ? <Text color={theme.muted}>  … {patchLines.length - visible.length} more diff lines</Text> : null}
-    </Box>
-  );
-}
-
 function constraintsForEntry(task: PlanTask | undefined, entry: PlannedTreeRow["entry"] | undefined) {
   if (!task || !entry) return [];
   const ids = new Set(entry.nodeIds);
@@ -177,99 +158,137 @@ function explanationsForEntry(task: PlanTask | undefined, entry: PlannedTreeRow[
     });
 }
 
-function EntryDetail(props: { state: TuiActionState; row?: PlannedTreeRow }) {
-  const task = props.state.task;
-  const row = props.row;
-  const nodes = useMemo(() => row?.entry.nodeIds.map((id) => task?.nodes[id]).filter(Boolean) ?? [], [row, task]);
-  const candidates = useMemo(() => candidatesForEntry(task, row?.entry), [row, task]);
-  const diffs = useMemo(() => row?.entry.diffIds.flatMap((id) => {
-    const diff = task?.diffs[id];
-    return diff ? [diff] : [];
-  }) ?? [], [row, task]);
-  const notes = useMemo(() => constraintsForEntry(task, row?.entry), [row, task]);
-  const explanations = useMemo(() => explanationsForEntry(task, row?.entry), [row, task]);
-
-  if (!row) return <Text color={theme.muted}>  Describe a change to see affected files.</Text>;
-  const state = entryState(task, row);
-  const isDirectory = row.entry.kind === "dir" || row.entry.kind === "root";
-  const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
-
-  return (
-    <Box flexDirection="column" gap={1} paddingX={1}>
-      <Box gap={1}>
-        <Text color={state.color} bold>{state.indicator} {entryName(row.entry)}</Text>
-        <Text color={theme.muted}>{state.state}</Text>
-      </Box>
-
-      {diffs.length ? (
-        <>
-          <Text color={theme.muted}>{isDirectory ? "FOLDER CHANGE SUMMARY" : "FILE CHANGE"}</Text>
-          <Text color={state.color} bold>{changeSummary(diffs)}</Text>
-          {diffs.map((diff) => (
-            <Box key={diff.id} flexDirection="column">
-              <Text color={diff.kind === "delete" ? theme.error : theme.success}>
-                {diffIndicator(diff.kind)} {diff.path} · {diffLabel(diff.kind)}
-              </Text>
-              {descriptionFor(diff) ? <Text color={theme.text}>  {descriptionFor(diff)}</Text> : null}
-            </Box>
-          ))}
-          <Text color={theme.muted}>EXACT DIFF</Text>
-          {diffs.slice(0, 3).map((diff) => (
-            <DiffPreview key={diff.id} diff={diff} description={descriptionFor(diff)} lines={isDirectory ? 6 : 10} />
-          ))}
-          {diffs.length > 3 ? <Text color={theme.muted}>  + {diffs.length - 3} more patches</Text> : null}
-        </>
-      ) : nodes.length ? (
-        <>
-          <Text color={theme.muted}>{isDirectory ? "FOLDER PLAN" : "FILE PLAN"}</Text>
-          {nodes.map((node) => (
-            <Box key={node!.id} flexDirection="column">
-              <Text color={theme.text}>  {node!.reason}</Text>
-              {node!.blockedReason ? <Text color={theme.error}>  {node!.blockedReason}</Text> : null}
-            </Box>
-          ))}
-        </>
-      ) : null}
-
-      {nodes.some((node) => node!.challengeExhausted) ? (
-        <Text color={theme.warning}>BOUNDED CHALLENGE · omissions were found; coverage is not proven</Text>
-      ) : null}
-      {candidates.length ? <Text color={theme.muted}>APPROACHES</Text> : null}
-      {candidates.map((candidate, index) => (
-        <Box key={candidate.id} flexDirection="column">
-          <Text color={statusColor(candidate.status)}>
-            {candidate.status === "possible" ? `${index + 1}` : " "} {candidate.status === "selected" ? "◆" : candidate.status === "eliminated" ? "×" : "◇"} {candidate.label} · {candidate.confidence}%
-          </Text>
-          <Text color={theme.muted}>  {candidate.rationale}</Text>
-          <Text color={theme.accent}>  {candidate.touchedPaths.join(", ")}</Text>
-        </Box>
-      ))}
-
-      {explanations.length ? <Text color={theme.muted}>EXPLANATION</Text> : null}
-      {explanations.slice(0, 8).map((explanation) => (
-        <Box key={explanation.id} flexDirection="column">
-          <Text color={explanation.role === "primary" ? theme.warning : theme.accent}>
-            ? {explanation.path} · {explanation.role} · {explanation.confidence}%
-          </Text>
-          <Text color={theme.text}>  {explanation.summary}</Text>
-          <Text color={theme.muted}>  {explanation.detail}</Text>
-        </Box>
-      ))}
-      {explanations.length > 8 ? <Text color={theme.muted}>  + {explanations.length - 8} more related paths</Text> : null}
-
-      {notes.length ? <Text color={theme.muted}>MESSAGES</Text> : null}
-      {notes.map((note) => (
-        <Text key={note.id} color={theme.warning}>  {note.text}</Text>
-      ))}
-
-      <Text color={theme.primary}>[Enter] message/regenerate · [L] lock</Text>
-    </Box>
-  );
+function diffColor(line: string): string {
+  if (line.startsWith("+++")) return theme.success;
+  if (line.startsWith("---")) return theme.error;
+  if (line.startsWith("@@")) return theme.accent;
+  if (line.startsWith("+")) return theme.success;
+  if (line.startsWith("-")) return theme.error;
+  return theme.text;
 }
 
-function DetailView(props: { state: TuiActionState }) {
-  const row = props.state.rows.find((item) => item.id === props.state.selectedRowId);
-  return <EntryDetail state={props.state} row={row} />;
+export type DetailLine = { text: string; color: string; bold?: boolean };
+
+const FOLDER_CONTENT_PREVIEW = 8;
+const FOLDER_PATCH_PREVIEW = 4;
+
+/**
+ * Builds the right-pane content for the selected tree row as one flat list of
+ * colored lines the pane can scroll. File rows render their full exact patch;
+ * directory rows render a summary derived from their immediate contents plus
+ * aggregated descendant changes.
+ */
+export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined): DetailLine[] {
+  if (!row) return [{ text: "  Describe a change to see affected files.", color: theme.muted }];
+  const entry = row.entry;
+  const nodes = entry.nodeIds.map((id) => task?.nodes[id]).filter(Boolean) as PlanNode[];
+  const candidates = candidatesForEntry(task, entry);
+  const diffs = entry.diffIds.flatMap((id) => {
+    const diff = task?.diffs[id];
+    return diff ? [diff] : [];
+  });
+  const notes = constraintsForEntry(task, entry);
+  const explanations = explanationsForEntry(task, entry);
+  const state = entryState(task, row);
+  const isDirectory = entry.kind === "dir" || entry.kind === "root";
+  const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
+  const lines: DetailLine[] = [];
+  const add = (text: string, color: string, bold = false) => lines.push({ text: text.length ? text : " ", color, bold });
+  const label = (text: string) => add(text, theme.muted);
+
+  add(`${state.indicator} ${entryName(entry)}`, state.color, true);
+  label(state.state);
+
+  if (isDirectory) {
+    label(`CONTENTS · ${entry.children.length} ${entry.children.length === 1 ? "entry" : "entries"}`);
+    for (const child of entry.children.slice(0, FOLDER_CONTENT_PREVIEW)) {
+      const childState = entryState(task, {
+        kind: "entry",
+        id: `entry:${child.path}`,
+        depth: row.depth + 1,
+        branch: "",
+        entry: child,
+        repositoryOnly: !entryHasPlan(child),
+      });
+      add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}`, childState.color);
+    }
+    if (entry.children.length > FOLDER_CONTENT_PREVIEW) {
+      add(`  + ${entry.children.length - FOLDER_CONTENT_PREVIEW} more entries`, theme.muted);
+    }
+  }
+
+  if (diffs.length) {
+    label(isDirectory ? "FOLDER CHANGE SUMMARY" : "FILE CHANGE");
+    add(changeSummary(diffs), state.color, true);
+    if (isDirectory) {
+      label("EXACT DIFF");
+      for (const diff of diffs.slice(0, 3)) {
+        add(`  ${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}`, diff.kind === "delete" ? theme.error : theme.success);
+        if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
+        const patchLines = diff.patch.split(/\r?\n/);
+        for (const line of patchLines.slice(0, FOLDER_PATCH_PREVIEW)) add(`  ${line}`, diffColor(line));
+        if (patchLines.length > FOLDER_PATCH_PREVIEW) add(`  … ${patchLines.length - FOLDER_PATCH_PREVIEW} more diff lines`, theme.muted);
+      }
+      if (diffs.length > 3) add(`  + ${diffs.length - 3} more patches`, theme.muted);
+    }
+    else {
+      const totalLines = diffs.reduce((count, diff) => count + diff.patch.split(/\r?\n/).length, 0);
+      label(`EXACT DIFF · ${totalLines} lines · basis ${diffs[0]!.basisRevision.slice(0, 12)}`);
+      for (const diff of diffs) {
+        add(`${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}`, diff.kind === "delete" ? theme.error : theme.success);
+        if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
+        for (const line of diff.patch.split(/\r?\n/)) add(line, diffColor(line));
+      }
+    }
+  }
+  else if (nodes.length) {
+    label(isDirectory ? "FOLDER PLAN" : "FILE PLAN");
+    for (const node of nodes) {
+      add(`  ${node.reason}`, theme.text);
+      if (node.blockedReason) add(`  ${node.blockedReason}`, theme.error);
+    }
+  }
+
+  if (nodes.some((node) => node.challengeExhausted)) {
+    add("BOUNDED CHALLENGE · omissions were found; coverage is not proven", theme.warning);
+  }
+
+  if (candidates.length) label("APPROACHES");
+  candidates.forEach((candidate, index) => {
+    add(
+      `${candidate.status === "possible" ? `${index + 1}` : " "} ${candidate.status === "selected" ? "◆" : candidate.status === "eliminated" ? "×" : "◇"} ${candidate.label} · ${candidate.confidence}%`,
+      statusColor(candidate.status),
+    );
+    add(`  ${candidate.rationale}`, theme.muted);
+    add(`  ${candidate.touchedPaths.join(", ")}`, theme.accent);
+  });
+
+  if (explanations.length) label("EXPLANATION");
+  for (const explanation of explanations.slice(0, 8)) {
+    add(`? ${explanation.path} · ${explanation.role} · ${explanation.confidence}%`, explanation.role === "primary" ? theme.warning : theme.accent);
+    add(`  ${explanation.summary}`, theme.text);
+    add(`  ${explanation.detail}`, theme.muted);
+  }
+  if (explanations.length > 8) add(`  + ${explanations.length - 8} more related paths`, theme.muted);
+
+  if (notes.length) label("MESSAGES");
+  for (const note of notes) add(`  ${note.text}`, theme.warning);
+
+  add("[Enter] message/regenerate · [L] lock", theme.primary);
+  return lines;
+}
+
+function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number }) {
+  const lines = useMemo(() => detailLines(props.state.task, props.row), [props.state.task, props.row]);
+  const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
+  const visible = lines.slice(clamped, clamped + props.limit);
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      {visible.map((line, index) => (
+        <Text key={`${clamped + index}:${line.text}`} wrap="truncate-end" color={line.color} bold={line.bold}>{line.text}</Text>
+      ))}
+    </Box>
+  );
 }
 
 function inputTitle(mode: InputMode): string {
@@ -287,54 +306,12 @@ function visibleWindow<T>(items: T[], selected: number, limit: number): T[] {
   return items.slice(start, start + limit);
 }
 
-function diffColor(line: string): string {
-  if (line.startsWith("+++")) return theme.success;
-  if (line.startsWith("---")) return theme.error;
-  if (line.startsWith("@@")) return theme.accent;
-  if (line.startsWith("+")) return theme.success;
-  if (line.startsWith("-")) return theme.error;
-  return theme.text;
-}
-
-function DiffView(props: { task: PlanTask | undefined; row?: PlannedTreeRow; offset: number; height: number }) {
-  const diffs = props.row?.entry.diffIds.flatMap((id) => {
-    const diff = props.task?.diffs[id];
-    return diff ? [diff] : [];
-  }) ?? [];
-  if (!diffs.length) return <Box flexGrow={1} padding={1}><Text color={theme.muted}>Select a drafted path and press V to view its exact diff.</Text></Box>;
-
-  const lines = diffs.flatMap((diff) => [
-    `${diff.kind.toUpperCase()} ${diff.path}`,
-    ...diff.patch.split(/\r?\n/),
-    "",
-  ]);
-  const limit = Math.max(4, props.height - 6);
-  const visible = lines.slice(props.offset, props.offset + limit);
-  return (
-    <Box flexGrow={1} flexDirection="column" borderStyle="round" borderColor={theme.borderActive} paddingX={1} overflow="hidden">
-      <Box gap={1} flexShrink={0}>
-        <Text color={theme.primary} bold>EXACT DIFF</Text>
-        <Text color={theme.muted}>{diffs[0]!.basisRevision}</Text>
-        <Box flexGrow={1} />
-        <Text color={theme.muted}>{props.offset + 1}-{Math.min(lines.length, props.offset + visible.length)} / {lines.length}</Text>
-      </Box>
-      {visible.map((line, index) => (
-        <Text key={`${props.offset + index}:${line}`} wrap="truncate-end" color={diffColor(line)}>{line || " "}</Text>
-      ))}
-      <Box flexShrink={0}>
-        <Text color={theme.muted}>j/k scroll · V or Esc back</Text>
-      </Box>
-    </Box>
-  );
-}
-
 export function AugmentTui(props: { controller: AugmentTuiController; modelAvailable: boolean; modelLabel?: string }) {
   const { exit } = useApp();
   const windowSize = useWindowSize();
   const [state, setState] = useState<TuiActionState>(() => props.controller.snapshot());
   const [pane, setPane] = useState<"tree" | "detail">("tree");
-  const [view, setView] = useState<ViewMode>("plan");
-  const [diffOffset, setDiffOffset] = useState(0);
+  const [detailOffset, setDetailOffset] = useState(0);
   const [mode, setMode] = useState<InputMode>("idle");
   const [inputValue, setInputValue] = useState("");
   const autoGenerated = useRef(new Set<string>());
@@ -364,6 +341,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     autoGenerated.current.add(task.id);
     run(props.controller.crystallize());
   }, [props.controller, props.modelAvailable, initialSnapshot]);
+
+  useEffect(() => {
+    setDetailOffset(0);
+  }, [state.selectedRowId]);
 
   const beginInput = (next: InputMode) => {
     setMode(next);
@@ -401,22 +382,14 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       return;
     }
 
-    if (view === "diff") {
-      if (key.escape || input === "v") {
-        setView("plan");
-        return;
-      }
-      if (key.upArrow || input === "k") {
-        setDiffOffset((current) => Math.max(0, current - 1));
-        return;
-      }
-      if (key.downArrow || input === "j") {
-        setDiffOffset((current) => current + 1);
-        return;
-      }
+    if (pane === "detail" && (key.upArrow || input === "k")) {
+      setDetailOffset((current) => Math.max(0, current - 1));
       return;
     }
-
+    if (pane === "detail" && (key.downArrow || input === "j")) {
+      setDetailOffset((current) => current + 1);
+      return;
+    }
     if (key.upArrow || input === "k") {
       props.controller.move(-1);
       sync();
@@ -459,10 +432,6 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
     else if (command === "n") beginInput("objective");
     else if (command === "e") beginInput("explanation");
-    else if (command === "v") {
-      setDiffOffset(0);
-      setView("diff");
-    }
     else if (command === "g") run(props.controller.rethink());
     else if (command === "f") run(props.controller.refine());
     else if (command === "d") run(props.controller.draftPatch());
@@ -474,6 +443,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const selectedIndex = state.rows.findIndex((row) => row.id === state.selectedRowId);
   const treeRows = visibleWindow(state.rows, selectedIndex, Math.max(6, windowSize.rows - 12));
   const treeWidth = Math.max(30, Math.floor(windowSize.columns * 0.42) - 6);
+  const detailLimit = Math.max(6, (windowSize.rows || 0) - 9);
   const rootStatus = state.task?.nodes[state.task.rootNodeId]?.status;
   const status = state.busy
     ? "BUSY"
@@ -496,9 +466,6 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         <Text color={props.modelAvailable ? theme.success : theme.warning}>{props.modelAvailable ? props.modelLabel ?? "OPENCODE" : "NO MODEL"}</Text>
       </Box>
 
-      {view === "diff" ? (
-        <DiffView task={state.task} row={selectedRow} offset={diffOffset} height={windowSize.rows} />
-      ) : (
       <Box flexGrow={1} minHeight={0} gap={1}>
         <Box width="42%" flexShrink={0} borderStyle="round" borderColor={pane === "tree" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingX={1}>
           <Text color={pane === "tree" ? theme.primary : theme.muted} bold>FILES</Text>
@@ -519,10 +486,9 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Box paddingLeft={1}>
             <Text color={pane === "detail" ? theme.primary : theme.muted} bold>SELECTED PATH</Text>
           </Box>
-          <DetailView state={state} />
+          <DetailView state={state} row={selectedRow} offset={detailOffset} limit={detailLimit} />
         </Box>
       </Box>
-      )}
 
       <Box paddingTop={1} flexShrink={0}>
         <Text wrap="truncate-end">
@@ -538,8 +504,6 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.primary}> rethink · </Text>
           <Text color={theme.primary} bold>[L]</Text>
           <Text color={theme.primary}> lock · </Text>
-          <Text color={theme.primary} bold>[V]</Text>
-          <Text color={theme.primary}> diff · </Text>
           <Text color={theme.primary} bold>[E]</Text>
           <Text color={theme.primary}> explain · </Text>
           <Text color={theme.primary} bold>[N]</Text>

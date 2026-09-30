@@ -132,7 +132,7 @@ function mergePlanTree(repository: PlanTreeEntry, plan: PlanTreeEntry): PlanTree
   return repository;
 }
 
-function entryHasPlan(entry: PlanTreeEntry): boolean {
+export function entryHasPlan(entry: PlanTreeEntry): boolean {
   return entry.nodeIds.length > 0 || entry.candidateIds.length > 0 || entry.diffIds.length > 0 || entry.explanationIds.length > 0 || entry.obligationIds.length > 0;
 }
 

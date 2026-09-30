@@ -8,7 +8,7 @@ import { renderToString } from "ink";
 import { cleanup, render as renderInk } from "ink-testing-library";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
-import { AugmentTui } from "../src/tui/augment.js";
+import { AugmentTui, detailLines } from "../src/tui/augment.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
 const temporaryFiles: string[] = [];
@@ -97,8 +97,7 @@ describe("augment TUI controller", () => {
     expect(fileOutput).toContain("--- a/src/auth/session.ts");
   });
 
-  it("shows the complete repository tree and enforces path locks", async () => {
-    const runtime: ModelRuntime = {
+  it("shows the complete repository tree and enforces path locks", async () => {    const runtime: ModelRuntime = {
       call: async (request) => {
         if (request.operation === "generate-domain") {
           return { value: { candidates: [{ label: "Edit package", rationale: "forbidden", confidence: 90, touchedPaths: ["package.json"] }] } };
@@ -138,14 +137,19 @@ describe("augment TUI controller", () => {
     const directory = controller.snapshot().rows.find((row) => row.id === "entry:src");
     expect(directory?.entry.diffIds).toHaveLength(1);
 
+    const detail = detailLines(controller.snapshot().task, directory);
+    const lines = detail.map((line) => line.text);
+    expect(lines).toContain("FOLDER CHANGE SUMMARY");
+    expect(lines).toContain("1 changed");
+    expect(lines.some((line) => line.includes("retry cutoff"))).toBe(true);
+    expect(lines.some((line) => line.includes("session.ts"))).toBe(true);
+    expect(lines.indexOf("EXACT DIFF")).toBeGreaterThanOrEqual(0);
+    expect(lines.some((line) => line.includes("--- a/src/auth/session.ts"))).toBe(true);
+    expect(lines.indexOf("EXACT DIFF")).toBeLessThan(lines.indexOf("APPROACHES"));
+
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
-    expect(output).toContain("FOLDER CHANGE SUMMARY");
-    expect(output).toContain("1 changed");
-    expect(output).toContain("retry cutoff");
-    expect(output).toContain("session.ts");
-    expect(output).toContain("EXACT DIFF");
+    expect(output).toContain("CONTENTS");
     expect(output).toContain("--- a/src/auth/session.ts");
-    expect(output.indexOf("EXACT DIFF")).toBeLessThan(output.indexOf("APPROACHES"));
   });
 
   it("highlights explained files and directories with selected-path details", async () => {
@@ -278,6 +282,57 @@ describe("augment TUI rendering", () => {
     expect(output).toContain("augment/");
     expect(output).toContain("unchanged");
     expect(output).toContain("Press [N] to describe a change.");
+  });
+});
+
+describe("selected-path detail model", () => {
+  it("renders the complete patch for a drafted file, not a preview", async () => {
+    const patch = [
+      "--- a/src/auth/session.ts",
+      "+++ b/src/auth/session.ts",
+      "@@ -1,4 +1,6 @@",
+      ...Array.from({ length: 24 }, (_, index) => `${index % 2 ? "-" : "+"}changed line ${index + 1}`),
+      "+final marker line",
+    ].join("\n");
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "draft-patch") return { value: { patch, assumptions: [] } };
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+
+    const row = controller.snapshot().rows.find((item) => item.id === "entry:src/auth/session.ts");
+    const lines = detailLines(controller.snapshot().task, row).map((line) => line.text);
+    expect(lines).toContain("EXACT DIFF · 28 lines · basis commit:1");
+    expect(lines).toContain("--- a/src/auth/session.ts");
+    expect(lines).toContain("+changed line 1");
+    expect(lines).toContain("-changed line 24");
+    expect(lines).toContain("+final marker line");
+  });
+
+  it("summarizes folder contents when a directory is selected", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+    controller.select("entry:src/auth");
+
+    const row = controller.snapshot().rows.find((item) => item.id === "entry:src/auth");
+    const lines = detailLines(controller.snapshot().task, row).map((line) => line.text);
+    expect(lines).toContain("CONTENTS · 1 entry");
+    expect(lines.some((line) => line.includes("session.ts") && line.includes("changed"))).toBe(true);
   });
 });
 
