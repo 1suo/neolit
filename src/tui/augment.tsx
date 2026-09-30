@@ -70,7 +70,7 @@ function diffState(diffs: PlannedDiff[]): { indicator: string; state: string; co
   return { indicator: "Δ", state: parts.join(" "), color: counts.delete ? theme.warning : theme.success };
 }
 
-function entryState(task: PlanTask | undefined, row: PlannedTreeRow): { indicator: string; state: string; color: string } {
+function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLocks: string[] = []): { indicator: string; state: string; color: string } {
   const entry = row.entry;
   const candidates = candidatesForEntry(task, entry);
   const selected = candidates.find((candidate) => candidate.status === "selected");
@@ -79,7 +79,7 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow): { indicato
   const explanations = entry.explanationIds.map((id) => task?.explanations[id]).filter(Boolean);
   const blocked = entry.nodeIds.some((id) => ["stale", "blocked"].includes(task?.nodes[id]?.status ?? ""));
   const ready = entry.nodeIds.some((id) => task?.nodes[id]?.status === "ready");
-  const locked = task && entry.path !== "." && pathIsLocked(task, entry.path);
+  const locked = entry.path !== "." && ((task && pathIsLocked(task, entry.path)) || pendingLocks.includes(entry.path));
   const drafted = diffState(diffs);
 
   if (locked) return { indicator: "#", state: "locked", color: theme.error };
@@ -101,8 +101,8 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow): { indicato
   return { indicator: "·", state: "suggested", color: theme.muted };
 }
 
-function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number }) {
-  const state = entryState(props.task, props.row);
+function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingLocks?: string[] }) {
+  const state = entryState(props.task, props.row, props.pendingLocks);
   return (
     <Box backgroundColor={props.selected ? theme.selected : undefined}>
       <Text wrap="truncate-end">
@@ -183,7 +183,7 @@ const FOLDER_PATCH_PREVIEW = 4;
  * directory rows render a summary derived from their immediate contents plus
  * aggregated descendant changes.
  */
-export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined): DetailLine[] {
+export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = []): DetailLine[] {
   if (!row) return [{ text: "  Describe a change to see affected files.", color: theme.muted }];
   const entry = row.entry;
   const nodes = entry.nodeIds.map((id) => task?.nodes[id]).filter(Boolean) as PlanNode[];
@@ -194,7 +194,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   });
   const notes = constraintsForEntry(task, entry);
   const explanations = explanationsForEntry(task, entry);
-  const state = entryState(task, row);
+  const state = entryState(task, row, pendingLocks);
   const isDirectory = entry.kind === "dir" || entry.kind === "root";
   const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
   const lines: DetailLine[] = [];
@@ -216,7 +216,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
           branch: "",
           entry: child,
           repositoryOnly: false,
-        });
+        }, pendingLocks);
         const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
         add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${crop(reason, 56)}` : ""}`, childState.color);
       }
@@ -288,7 +288,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
 }
 
 function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number }) {
-  const lines = useMemo(() => detailLines(props.state.task, props.row), [props.state.task, props.row]);
+  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks), [props.state.task, props.row, props.state.pendingLocks]);
   const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
   const visible = lines.slice(clamped, clamped + props.limit);
   return (
@@ -488,6 +488,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
               task={state.task}
               selected={state.selectedRowId === row.id}
               width={treeWidth}
+              pendingLocks={state.pendingLocks}
             />
           ))}
         </Box>

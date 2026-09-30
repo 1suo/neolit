@@ -23,6 +23,7 @@ export interface TuiActionState {
   operation?: string;
   message: string;
   error?: string;
+  pendingLocks: string[];
 }
 
 export interface AugmentTuiControllerOptions {
@@ -173,6 +174,7 @@ export class AugmentTuiController {
   private readonly defaultLod: LOD;
   private repository: PlanTreeEntry;
   private task?: PlanTask;
+  private pendingLocks: string[] = [];
   private rows: PlannedTreeRow[] = [];
   private selectedRowId?: string;
   private busy = false;
@@ -195,7 +197,7 @@ export class AugmentTuiController {
   }
 
   snapshot(): TuiActionState {
-    return { task: this.task, rows: this.rows, selectedRowId: this.selectedRowId, busy: this.busy, operation: this.operation, message: this.message, error: this.error };
+    return { task: this.task, rows: this.rows, selectedRowId: this.selectedRowId, busy: this.busy, operation: this.operation, message: this.message, error: this.error, pendingLocks: [...this.pendingLocks] };
   }
 
   selectedRow(): PlannedTreeRow | undefined {
@@ -228,6 +230,16 @@ export class AugmentTuiController {
     await this.dispatch("Starting plan", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision, mode: "change" } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+      for (const lockPath of this.pendingLocks) {
+        const locked = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 15,
+          method: "path/lock",
+          params: { taskId: this.task.id, expectedRevision: this.task.revision, path: lockPath, locked: true },
+        });
+        this.task = expectResult(locked, PlanTaskLike.is) as PlanTask;
+      }
+      this.pendingLocks = [];
       this.refresh();
       this.message = this.runtime ? "Generating approaches..." : `Plan started at ${this.task.basisRevision}. No model is configured.`;
     });
@@ -438,20 +450,25 @@ export class AugmentTuiController {
   }
 
   async toggleLock(): Promise<void> {
-    const task = this.requireTask();
     const row = this.selectedRow();
     const targetPath = row?.entry.path;
     if (!targetPath || targetPath === ".") {
       this.error = "Select a file or directory to lock.";
       return;
     }
-    const locked = pathIsLocked(task, targetPath);
+    if (!this.task) {
+      const locked = this.pendingLocks.includes(targetPath);
+      this.pendingLocks = locked ? this.pendingLocks.filter((lockedPath) => lockedPath !== targetPath) : [...this.pendingLocks, targetPath];
+      this.message = `${targetPath} is ${locked ? "unlocked" : "locked"} for the next task; the model will be told not to change it.`;
+      return;
+    }
+    const locked = pathIsLocked(this.task, targetPath);
     await this.dispatch(locked ? "Unlocking path" : "Locking path", async () => {
       const response = await this.server.handle({
         jsonrpc: "2.0",
         id: 12,
         method: "path/lock",
-        params: { taskId: task.id, expectedRevision: task.revision, path: targetPath, locked: !locked },
+        params: { taskId: this.task!.id, expectedRevision: this.task!.revision, path: targetPath, locked: !locked },
       });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();

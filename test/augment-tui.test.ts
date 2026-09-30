@@ -153,6 +153,37 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().error).toBeUndefined();
   });
 
+  it("locks paths before a task starts and constrains the first model run", async () => {
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") {
+          return { value: { candidates: [{ label: "Edit package", rationale: "forbidden", confidence: 90, touchedPaths: ["package.json"] }] } };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    controller.select("entry:package.json");
+    await controller.toggleLock();
+    let snapshot = controller.snapshot();
+    expect(snapshot.task).toBeUndefined();
+    expect(snapshot.pendingLocks).toEqual(["package.json"]);
+    const row = snapshot.rows.find((item) => item.id === "entry:package.json");
+    expect(detailLines(snapshot.task, row, snapshot.pendingLocks).map((line) => line.text).join("\n")).toContain("# package.json");
+
+    await controller.toggleLock();
+    expect(controller.snapshot().pendingLocks).toEqual([]);
+    await controller.toggleLock();
+    expect(controller.snapshot().pendingLocks).toEqual(["package.json"]);
+
+    await controller.start("change package metadata", "commit:1");
+    snapshot = controller.snapshot();
+    expect(snapshot.pendingLocks).toEqual([]);
+    expect(snapshot.task?.lockedPaths).toEqual(["package.json"]);
+    await controller.crystallize();
+    expect(controller.snapshot().error).toContain("touches locked path");
+  });
+
   it("aggregates directory changes and shows descendant exact patches", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");

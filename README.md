@@ -165,7 +165,7 @@ F      expand approach into files
 D      draft selected file change
 A      apply drafted patch to working tree
 G      rethink selected path
-L      lock/unlock selected file or directory
+L      lock/unlock file or directory, before or during a run
 E      explanation task
 N      new change task
 Tab    switch pane
