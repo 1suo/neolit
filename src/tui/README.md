@@ -91,9 +91,11 @@ Select a working model explicitly with `--model provider/model` or `AUGMENT_OPEN
 AUGMENT_OPENCODE_COMMAND
 AUGMENT_OPENCODE_MODEL
 AUGMENT_OPENCODE_DRAFT_MODEL
+AUGMENT_OPENCODE_CHALLENGE_MODEL  (optional faster model for challenge-domain coverage checks)
 AUGMENT_OPENCODE_AGENT
 AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after this budget)
 AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh OpenCode session for every call)
+AUGMENT_CHALLENGE_ROUNDS       (0-2, default 2; 0 skips challenge rounds for much faster domains)
 AUGMENT_TUI_NO_MODEL=1
 ```
 
@@ -118,9 +120,13 @@ The TUI requires an interactive terminal (`process.stdin.isTTY`). It edits plann
 
 `controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `apply.ts` owns the host-side apply transaction (preflighted, atomic, uncommitted `git apply`). `augment.tsx` renders the controller snapshot with Ink/React. This keeps interaction testable separately from rendering.
 
-Rendering is incremental: the Ink/React tree repaints only rows whose snapshot
-content changed, and the frame stays pinned to the viewport height with a per-frame
-budget, so a keypress costs a bounded repaint instead of a full clear and redraw.
+Rendering is incremental: the Ink/React tree repaints only rows whose snapshot content
+changed, and `frameLayout` in `augment.tsx` keeps every frame inside the viewport: the
+root box is pinned to the window height, and the fixed chrome (root padding 2, header 1,
+legend 2, status line 1 or the bordered input box 3) plus each pane's borders and labels
+(3) is subtracted before the file tree and detail pane get their row limits. A frame
+taller than the viewport makes Ink clear and scroll the terminal, which reads as a
+flash on every repaint.
 
 ## Validation
 

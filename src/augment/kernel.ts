@@ -42,6 +42,7 @@ export interface CrystallizeNodeInput {
   temperature: Temperature;
   lod: LOD;
   replace?: boolean;
+  challengeRounds?: number;
 }
 
 export interface RefineWithModelInput {
@@ -145,7 +146,8 @@ export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, inp
     replace: input.replace,
   });
 
-  for (let round = 1; round <= MAX_DOMAIN_CHALLENGE_ROUNDS; round++) {
+  const rounds = Math.max(0, Math.min(input.challengeRounds ?? MAX_DOMAIN_CHALLENGE_ROUNDS, MAX_DOMAIN_CHALLENGE_ROUNDS));
+  for (let round = 1; round <= rounds; round++) {
     const node = current.nodes[input.nodeId]!;
     const challenge = await call(runtime, current, node, "challenge-domain", input.temperature, input.lod, parseWith(ChallengeDomainSchema));
     if (challenge.kind === "accept") {
@@ -175,6 +177,7 @@ export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, inp
       reason: `challenge reported missing path ${challenge.path}: ${challenge.reason}`,
     });
   }
+  if (rounds === 0) return current;
   return exhaustDomainChallenge(current, {
     taskId: current.id,
     expectedRevision: current.revision,

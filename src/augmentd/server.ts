@@ -207,6 +207,7 @@ export class AugmentServer {
           temperature: temperature(input.temperature),
           lod: lod(input.lod),
           replace: input.replace === true,
+          challengeRounds: input.challengeRounds === undefined ? undefined : Math.max(0, Math.min(Number(input.challengeRounds) || 0, 2)),
         });
         this.tasks.set(updated.id, updated);
         return updated;

@@ -64,6 +64,7 @@ export interface OpenCodeCliRuntimeOptions {
   command?: string;
   model?: string;
   draftModel?: string;
+  challengeModel?: string;
   agent?: string;
   timeoutMs?: number;
   autoApprove?: boolean;
@@ -92,6 +93,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   private readonly command: string;
   private readonly model?: string;
   private readonly draftModel?: string;
+  private readonly challengeModel?: string;
   private readonly agent?: string;
   private readonly timeoutMs: number;
   private readonly autoApprove: boolean;
@@ -103,6 +105,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     this.command = options.command ?? process.env.AUGMENT_OPENCODE_COMMAND ?? "opencode";
     this.model = options.model ?? (process.env.AUGMENT_OPENCODE_MODEL || undefined);
     this.draftModel = options.draftModel ?? (process.env.AUGMENT_OPENCODE_DRAFT_MODEL || undefined);
+    this.challengeModel = options.challengeModel ?? (process.env.AUGMENT_OPENCODE_CHALLENGE_MODEL || undefined);
     this.agent = options.agent ?? (process.env.AUGMENT_OPENCODE_AGENT || "plan");
     this.timeoutMs = options.timeoutMs ?? Number(process.env.AUGMENT_OPENCODE_TIMEOUT_MS ?? 600_000);
     this.autoApprove = options.autoApprove ?? process.env.AUGMENT_OPENCODE_AUTO !== "0";
@@ -142,7 +145,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
       ...(draftFileSection(request, this.directory) ? [draftFileSection(request, this.directory)] : []),
       ...(correction ? [correction] : []),
-      `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed; diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context, null, 2)}`,
+      `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed; diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context)}`,
     ];
     if (previous) {
       try {
@@ -159,7 +162,11 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   }
 
   private invocation(request: ModelCallRequest, prompt: string, session?: string): string[] {
-    const model = DRAFT_OPERATIONS.has(request.operation) && this.draftModel ? this.draftModel : this.model;
+    const model = DRAFT_OPERATIONS.has(request.operation) && this.draftModel
+      ? this.draftModel
+      : request.operation === "challenge-domain" && this.challengeModel
+        ? this.challengeModel
+        : this.model;
     return [
       "run",
       "--format",

@@ -175,6 +175,7 @@ export class AugmentTuiController {
   private readonly runtime?: ModelRuntime;
   private readonly server: AugmentServer;
   private readonly defaultLod: LOD;
+  private readonly challengeRounds: number | undefined;
   private repository: PlanTreeEntry;
   private task?: PlanTask;
   private pendingLocks: string[] = [];
@@ -195,6 +196,8 @@ export class AugmentTuiController {
     this.runtime = options.runtime;
     this.server = new AugmentServer({ runtime: options.runtime });
     this.defaultLod = options.defaultLod ?? "file";
+    const rounds = Number(process.env.AUGMENT_CHALLENGE_ROUNDS);
+    this.challengeRounds = Number.isInteger(rounds) && rounds >= 0 && rounds <= 2 ? rounds : undefined;
     this.repository = repositoryTree(options.directory);
     this.refresh();
   }
@@ -300,7 +303,7 @@ export class AugmentTuiController {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
     await this.dispatch("Generating approaches", async () => {
-      const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
+      const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod, challengeRounds: this.challengeRounds } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
       const generatedNode = this.task.nodes[nodeId]!;
@@ -437,7 +440,7 @@ export class AugmentTuiController {
           jsonrpc: "2.0",
           id: 10,
           method: "crystallize",
-          params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true },
+          params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true, challengeRounds: this.challengeRounds },
         });
         this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
         this.refresh();
@@ -472,7 +475,7 @@ export class AugmentTuiController {
         const reopened = await this.server.handle({ jsonrpc: "2.0", id: 10, method: "node/reopen", params: { taskId: current.id, expectedRevision: current.revision, nodeId, reason: text ? `Rethink: ${text}` : "Operator requested a rethink" } });
         current = expectResult(reopened, PlanTaskLike.is) as PlanTask;
       }
-      const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 11, method: "crystallize", params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true } });
+      const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 11, method: "crystallize", params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true, challengeRounds: this.challengeRounds } });
       this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
       this.refresh();
       this.selectNodeEntry(nodeId);

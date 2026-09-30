@@ -8,7 +8,7 @@ import { renderToString } from "ink";
 import { cleanup, render as renderInk } from "ink-testing-library";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
-import { AugmentTui, detailLines } from "../src/tui/augment.js";
+import { AugmentTui, detailLines, frameLayout } from "../src/tui/augment.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
 const temporaryFiles: string[] = [];
@@ -216,6 +216,28 @@ describe("augment TUI controller", () => {
     const recovered = controller.snapshot();
     expect(recovered.active).toBeUndefined();
     expect(recovered.failed).toBeUndefined();
+  });
+
+  it("skips challenge rounds when AUGMENT_CHALLENGE_ROUNDS is zero", async () => {
+    process.env.AUGMENT_CHALLENGE_ROUNDS = "0";
+    try {
+      const operations: string[] = [];
+      const runtime: ModelRuntime = {
+        call: async (request) => {
+          operations.push(request.operation);
+          return modelRuntime().call(request);
+        },
+      };
+      const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+      await controller.start("bounded retries", "commit:1");
+      await controller.crystallize();
+      expect(operations).toEqual(["generate-domain"]);
+      const node = controller.snapshot().task!.nodes[controller.snapshot().task!.rootNodeId]!;
+      expect(node.status).toBe("domain");
+      expect(node.challengeExhausted).toBe(false);
+    } finally {
+      delete process.env.AUGMENT_CHALLENGE_ROUNDS;
+    }
   });
 
   it("aggregates directory changes and shows descendant exact patches", async () => {
@@ -446,6 +468,11 @@ describe("augment TUI apply", () => {
 });
 
 describe("augment TUI rendering", () => {
+  // Root padding (2) + header (1) + legend (2) + status line (1) + pane borders (2) + pane label (1).
+  const IDLE_PANE_CHROME_ROWS = 9;
+  // The bordered input box replaces the one-row status line while typing.
+  const TYPING_PANE_CHROME_ROWS = 11;
+
   it("reports a running operation immediately instead of appearing idle", async () => {
     const runtime: ModelRuntime = {
       call: async () => {
@@ -508,6 +535,56 @@ describe("augment TUI rendering", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(instance.lastFrame()).not.toMatch(/rethinking selected path…/i);
     instance.unmount();
+  });
+
+  it("keeps every frame inside the viewport at any terminal height", () => {
+    expect(frameLayout(10, "idle")).toEqual({ frameRows: 10, treeRows: 1, detailRows: 1 });
+    expect(frameLayout(14, "idle").detailRows).toBe(5);
+    expect(frameLayout(40, "idle").detailRows).toBe(31);
+    expect(frameLayout(40, "objective").detailRows).toBe(29);
+    for (const windowRows of [10, 12, 14, 20, 40]) {
+      const idle = frameLayout(windowRows, "idle");
+      const typing = frameLayout(windowRows, "objective");
+      expect(IDLE_PANE_CHROME_ROWS + Math.max(idle.treeRows, idle.detailRows)).toBeLessThanOrEqual(windowRows);
+      expect(TYPING_PANE_CHROME_ROWS + typing.detailRows).toBeLessThanOrEqual(windowRows);
+      expect(typing.treeRows).toBeLessThanOrEqual(idle.treeRows);
+    }
+    const unknown = frameLayout(undefined, "idle");
+    expect(unknown.frameRows).toBeGreaterThan(0);
+    expect(IDLE_PANE_CHROME_ROWS + unknown.detailRows).toBeLessThanOrEqual(unknown.frameRows);
+  });
+
+  it("truncates the tallest tree and the longest patch to the pane budget", async () => {
+    const patch = [
+      "--- a/src/auth/session.ts",
+      "+++ b/src/auth/session.ts",
+      "@@ -1,2 +1,122 @@",
+      " alpha",
+      ...Array.from({ length: 120 }, (_, index) => `+added line ${index + 1}`),
+    ].join("\n");
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "draft-patch") return { value: { patch, assumptions: [] } };
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+
+    const snapshot = controller.snapshot();
+    const detail = detailLines(snapshot.task, snapshot.rows.find((item) => item.id === "entry:src/auth/session.ts"));
+    for (const windowRows of [10, 14, 20, 40]) {
+      const idle = frameLayout(windowRows, "idle");
+      expect(detail.length).toBeGreaterThan(idle.detailRows);
+      expect(snapshot.rows.length).toBeGreaterThan(idle.treeRows);
+      expect(IDLE_PANE_CHROME_ROWS + idle.detailRows).toBeLessThanOrEqual(windowRows);
+    }
   });
 });
 
@@ -939,6 +1016,37 @@ describe("OpenCode CLI runtime parsing", () => {
     await runtime.call({ operation: "generate-domain", context: { taskId: "task:2", rejectedCandidates: [], ...base }, temperature: "normal", lod: "file" } as never);
     const fresh = fs.readFileSync(capture, "utf8");
     expect(fresh.endsWith("never repeat a rejected label")).toBe(false);
+  });
+
+  it("routes challenge calls to the challenge model", async () => {
+    const capture = path.join(os.tmpdir(), `augment-capture-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(capture);
+    const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000, challengeModel: "fast/challenge" });
+    await runtime.call({
+      operation: "challenge-domain",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: {} as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        taskDiffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "normal",
+      lod: "file",
+    });
+    expect(fs.readFileSync(capture, "utf8")).toContain("--model fast/challenge");
   });
 
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {
