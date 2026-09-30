@@ -69,7 +69,7 @@ Enter  attach a message and regenerate this path/subtree
 F  expand the chosen approach into files
 D  draft the selected file patch
 A  apply the selected path's drafted patch(es) to the working tree
-G  rethink the selected path
+G  rethink the selected path (prompts for an optional guiding message; submitting empty rethinks without one)
 L  lock/unlock the selected file or directory (before a task starts, locks are held for the next task and applied before its first model run; the model sees them as paths it must not change)
 O  reopen selected node with a reason
 S  mark a real path changed outside the plan

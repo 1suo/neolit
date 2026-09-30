@@ -18,7 +18,7 @@ const theme = {
   text: "#c0caf5",
 };
 
-type InputMode = "idle" | "objective" | "explanation" | "message" | "reopen" | "stale";
+type InputMode = "idle" | "objective" | "explanation" | "message" | "rethink" | "reopen" | "stale";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -353,6 +353,7 @@ function inputTitle(mode: InputMode): string {
   if (mode === "objective") return "What should change?";
   if (mode === "explanation") return "Explain what repository topic?";
   if (mode === "message") return "Message about selected path";
+  if (mode === "rethink") return "Rethink how? (empty = fresh rethink)";
   if (mode === "reopen") return "Reason for reopening selected node";
   if (mode === "stale") return "Changed repository path";
   return "Message";
@@ -428,6 +429,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     if (activeMode === "objective") run(props.controller.start(value));
     else if (activeMode === "explanation") run(props.controller.startExplanation(value));
     else if (activeMode === "message") run(props.controller.constrain(value));
+    else if (activeMode === "rethink") run(props.controller.rethink(value));
     else if (activeMode === "reopen") run(props.controller.reopen(value));
     else if (activeMode === "stale") run(props.controller.markStale(value));
   };
@@ -497,7 +499,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
     else if (command === "n") beginInput("objective");
     else if (command === "e") beginInput("explanation");
-    else if (command === "g") run(props.controller.rethink());
+    else if (command === "g") beginInput("rethink");
     else if (command === "f") run(props.controller.refine());
     else if (command === "d") run(props.controller.draftPatch());
     else if (command === "a") run(props.controller.applySelected());

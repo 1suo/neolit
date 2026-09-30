@@ -314,6 +314,22 @@ describe("augment TUI controller", () => {
     expect(second.taskDiffs.map((diff) => diff.path)).toEqual(["src/auth/session.ts"]);
   });
 
+  it("rethinks with an optional guiding message persisted as a constraint", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.rethink("avoid touching the kernel scheduler");
+    const snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    expect(Object.values(snapshot.task?.constraints ?? {}).some((constraint) => constraint.text.includes("avoid touching the kernel scheduler"))).toBe(true);
+    expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "domain" });
+    expect(snapshot.message).toContain("regenerated from your note");
+    await controller.rethink();
+    expect(controller.snapshot().message).toBe("Approaches regenerated. Choose one with keys 1-7.");
+  });
+
   it("carries path messages into descendant patch context", async () => {
     const patchConstraints: unknown[] = [];
     const runtime: ModelRuntime = {
@@ -484,6 +500,8 @@ describe("augment TUI rendering", () => {
     await controller.start("bounded retries", "commit:1");
     const instance = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
     instance.stdin.write("g");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    instance.stdin.write("\r");
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(instance.lastFrame()).toMatch(/rethinking selected path…/i);
     releaseGate();
@@ -892,6 +910,35 @@ describe("OpenCode CLI runtime parsing", () => {
     } finally {
       delete process.env.AUGMENT_OPENCODE_SESSIONS;
     }
+  });
+
+  it("warns regenerations not to echo rejected approaches", async () => {
+    const capture = path.join(os.tmpdir(), `augment-capture-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(capture);
+    const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"candidates\":[{\"label\":\"A\",\"rationale\":\"r\",\"confidence\":70,\"touchedPaths\":[\"src/a.ts\"]}]}" }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
+    const base = {
+      taskRevision: 1,
+      objective: "objective",
+      basisRevision: "commit:1",
+      node: {} as never,
+      candidates: [] as unknown[],
+      constraints: [] as unknown[],
+      obligations: [] as unknown[],
+      diffs: [] as unknown[],
+      taskDiffs: [] as unknown[],
+      lockedPaths: [] as string[],
+    };
+    await runtime.call({ operation: "generate-domain", context: { taskId: "task:1", rejectedCandidates: [{ label: "Old idea", reason: "rejected" }], ...base }, temperature: "normal", lod: "file" } as never);
+    const rejected = fs.readFileSync(capture, "utf8");
+    expect(rejected).toContain("never repeat a rejected label");
+    await runtime.call({ operation: "generate-domain", context: { taskId: "task:2", rejectedCandidates: [], ...base }, temperature: "normal", lod: "file" } as never);
+    const fresh = fs.readFileSync(capture, "utf8");
+    expect(fresh.endsWith("never repeat a rejected label")).toBe(false);
   });
 
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {

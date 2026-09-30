@@ -450,22 +450,33 @@ export class AugmentTuiController {
     }, nodeId);
   }
 
-  async rethink(): Promise<void> {
+  async rethink(message?: string): Promise<void> {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
     const node = task.nodes[nodeId];
     if (!node) return;
+    const text = message?.trim();
     await this.dispatch("Rethinking selected path", async () => {
       let current = task;
-      if (node.selectedCandidateId || Object.values(current.nodes).some((child) => child.parent === nodeId)) {
-        const reopened = await this.server.handle({ jsonrpc: "2.0", id: 10, method: "node/reopen", params: { taskId: current.id, expectedRevision: current.revision, nodeId, reason: "Operator requested a rethink" } });
+      if (text) {
+        const row = this.selectedRow();
+        const constrained = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 16,
+          method: "node/constrain",
+          params: { taskId: current.id, expectedRevision: current.revision, nodeId, path: row?.entry.path && row.entry.path !== "." ? row.entry.path : undefined, text },
+        });
+        current = expectResult(constrained, PlanTaskLike.is) as PlanTask;
+      }
+      if (current.nodes[nodeId]?.selectedCandidateId || Object.values(current.nodes).some((child) => child.parent === nodeId)) {
+        const reopened = await this.server.handle({ jsonrpc: "2.0", id: 10, method: "node/reopen", params: { taskId: current.id, expectedRevision: current.revision, nodeId, reason: text ? `Rethink: ${text}` : "Operator requested a rethink" } });
         current = expectResult(reopened, PlanTaskLike.is) as PlanTask;
       }
       const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 11, method: "crystallize", params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true } });
       this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
       this.refresh();
       this.selectNodeEntry(nodeId);
-      this.message = "Approaches regenerated. Choose one with keys 1-7.";
+      this.message = text ? "Approaches regenerated from your note. Choose one with keys 1-7." : "Approaches regenerated. Choose one with keys 1-7.";
     }, nodeId);
   }
 

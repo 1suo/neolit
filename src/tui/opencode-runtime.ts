@@ -131,7 +131,11 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   private async prompt(request: ModelCallRequest, correction?: string): Promise<string> {
     const taskId = request.context.taskId;
     const previous = this.continueSessions ? this.sessions.get(taskId) : undefined;
+    const regenerationNote = request.operation === "generate-domain" && request.context.rejectedCandidates?.length
+      ? "This is a regeneration: the operator rejected the approaches listed in rejectedCandidates. Produce materially different candidates — never repeat a rejected label or a trivial rewording of one."
+      : undefined;
     const baseParts = [
+      ...(regenerationNote ? [regenerationNote] : []),
       `You are executing exactly one Neolit planned-diff operation: ${request.operation}.`,
       `Return ONE valid JSON object and no prose, Markdown, or code fence.`,
       `JSON contract:\n${operationContract(request)}`,
