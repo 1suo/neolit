@@ -231,6 +231,9 @@ function EntryDetail(props: { state: TuiActionState; row?: PlannedTreeRow }) {
         </>
       ) : null}
 
+      {nodes.some((node) => node!.challengeExhausted) ? (
+        <Text color={theme.warning}>BOUNDED CHALLENGE · omissions were found; coverage is not proven</Text>
+      ) : null}
       {candidates.length ? <Text color={theme.muted}>APPROACHES</Text> : null}
       {candidates.map((candidate, index) => (
         <Box key={candidate.id} flexDirection="column">

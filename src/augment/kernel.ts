@@ -11,6 +11,7 @@ import {
   attachExplanations,
   attachPatch,
   collapseNode,
+  exhaustDomainChallenge,
   generateDomain,
   refineNode,
   replacePatch,
@@ -173,7 +174,12 @@ export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, inp
       reason: `challenge reported missing path ${challenge.path}: ${challenge.reason}`,
     });
   }
-  return current;
+  return exhaustDomainChallenge(current, {
+    taskId: current.id,
+    expectedRevision: current.revision,
+    nodeId: input.nodeId,
+    challengeRound: MAX_DOMAIN_CHALLENGE_ROUNDS,
+  });
 }
 
 export async function refineWithModel(runtime: ModelRuntime, task: PlanTask, input: RefineWithModelInput): Promise<PlanTask> {

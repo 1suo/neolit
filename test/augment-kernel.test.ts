@@ -45,7 +45,16 @@ describe("augment kernel", () => {
     const root = result.nodes[result.rootNodeId]!;
     expect(root.candidateIds).toHaveLength(7);
     expect(root.acceptedDomain).toBe(false);
-    expect(root.challengeRound).toBe(0);
+    expect(root.challengeExhausted).toBe(true);
+    expect(root.challengeRound).toBe(2);
+
+    const selected = selectCandidate(result, {
+      taskId: result.id,
+      expectedRevision: result.revision,
+      nodeId: result.rootNodeId,
+      candidateId: root.candidateIds[0]!,
+    });
+    expect(selected.nodes[selected.rootNodeId]).toMatchObject({ status: "collapsed", selectedCandidateId: root.candidateIds[0] });
   });
 
   it("rejects oversized initial domains before touching task state", async () => {

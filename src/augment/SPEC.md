@@ -15,6 +15,7 @@ A task has two modes: `change` and `explanation`. A change task uses candidate d
 3. Candidate domains are materially distinct approaches for one node, bounded by the controller.
 4. A domain must be challenged before controller collapse.
 5. Every proposed candidate carries a 0–100 model confidence estimate. The estimate is presentation metadata only; it never eliminates or selects a candidate.
+6. If the challenge budget is exhausted after concrete omissions, the controller records `challengeExhausted`. This is not acceptance and not proof of coverage; it explicitly permits human collapse from the bounded domain while preserving the exhaustion record.
 6. Collapse selects one possible candidate, records the witness, and eliminates sibling candidates as superseded, not as forgotten prose.
 6. Refinement is legal only for a collapsed node.
 7. Child nodes must stay inside the parent path scope and collectively describe the parent's planned work.
@@ -33,7 +34,7 @@ A task has two modes: `change` and `explanation`. A change task uses candidate d
 The runtime is a replaceable port. For each operation it receives a bounded context packet, temperature, and LOD, and returns one typed proposal:
 
 - `generate-domain`: one bounded initial set of at most five candidates, each with a 0–100 confidence estimate. Two live-domain slots remain reserved for challenge counterexamples, keeping the total bound at seven.
-- `challenge-domain`: acceptance, one missing candidate, or one missing touched path. At most two counterexample rounds run.
+- `challenge-domain`: acceptance, one missing candidate, or one missing touched path. At most two counterexample rounds run; exhausting that budget records bounded, unproven coverage rather than failing the task.
 - `refine-node`: bounded children and obligations for a selected node.
 - `draft-patch`: one patch for one file/hunk node.
 - `repair-patch`: one replacement patch grounded in an exact failed check.

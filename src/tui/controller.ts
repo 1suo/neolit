@@ -271,9 +271,8 @@ export class AugmentTuiController {
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
       const generatedNode = this.task.nodes[nodeId]!;
-      if (!generatedNode.acceptedDomain) {
-        this.error = "The challenger did not accept the final domain. Press [G] to rethink it with your message.";
-        this.message = "Approaches were generated, but challenge coverage was inconclusive.";
+      if (generatedNode.challengeExhausted) {
+        this.message = "Approaches ready after bounded challenge. Choose 1-7, or press [G] to rethink.";
       } else {
         this.message = "Approaches ready. Choose one with keys 1-7.";
       }

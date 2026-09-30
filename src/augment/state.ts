@@ -263,6 +263,7 @@ export function createPlanTask(input: CreatePlanTaskInput): PlanTask {
     reason: input.objective,
     candidateIds: [],
     acceptedDomain: false,
+    challengeExhausted: false,
     challengeRound: 0,
     constraintIds: [],
     evidenceIds: [],
@@ -379,6 +380,7 @@ export function generateDomain(task: PlanTask, input: GenerateDomainInput): Plan
   }
   const added = input.candidates.map((candidate) => addCandidateRecord(next, node, candidate));
   node.acceptedDomain = false;
+  node.challengeExhausted = false;
   node.challengeRound = 0;
   node.status = "domain";
   next.revision = nextRevision(next);
@@ -394,10 +396,27 @@ export function acceptDomain(task: PlanTask, input: { taskId: string; expectedRe
   if (!possible.length) throw new PlanStateError(`Cannot accept an empty domain for ${node.id}.`);
   if (!Number.isSafeInteger(input.challengeRound) || input.challengeRound < 1) throw new PlanStateError("Domain acceptance requires a positive challenge round.");
   node.acceptedDomain = true;
+  node.challengeExhausted = false;
   node.challengeRound = input.challengeRound;
   if (node.status === "unresolved" || node.status === "stale") node.status = "domain";
   next.revision = nextRevision(next);
   emit(next, { type: "domain-accepted", revision: next.revision, nodeId: node.id, challengeRound: input.challengeRound });
+  return next;
+}
+
+export function exhaustDomainChallenge(task: PlanTask, input: { taskId: string; expectedRevision: PlanRevision; nodeId: PlanNodeId; challengeRound: number }): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const node = requireNode(next, input.nodeId);
+  const possible = node.candidateIds.map((id) => next.candidates[id]!).filter((candidate) => candidate.status === "possible");
+  if (!possible.length) throw new PlanStateError(`Cannot exhaust an empty domain for ${node.id}.`);
+  if (!Number.isSafeInteger(input.challengeRound) || input.challengeRound < 1) throw new PlanStateError("Challenge exhaustion requires a positive challenge round.");
+  node.acceptedDomain = false;
+  node.challengeExhausted = true;
+  node.challengeRound = input.challengeRound;
+  if (node.status === "unresolved" || node.status === "stale") node.status = "domain";
+  next.revision = nextRevision(next);
+  emit(next, { type: "domain-challenge-exhausted", revision: next.revision, nodeId: node.id, challengeRound: input.challengeRound });
   return next;
 }
 
@@ -416,6 +435,7 @@ export function addCandidate(task: PlanTask, input: AddCandidateInput): PlanTask
   if (count >= MAX_CANDIDATES_PER_NODE) throw new PlanStateError(`Node ${node.id} already has the maximum ${MAX_CANDIDATES_PER_NODE} live candidates.`);
   const candidate = addCandidateRecord(next, node, input.candidate);
   node.acceptedDomain = false;
+  node.challengeExhausted = false;
   if (node.status === "unresolved") node.status = "domain";
   next.revision = nextRevision(next);
   emit(next, { type: "candidate-added", revision: next.revision, nodeId: node.id, candidateId: candidate.id, reason: input.reason });
@@ -466,7 +486,7 @@ export function collapseNode(task: PlanTask, input: CollapseInput): PlanTask {
   if (!candidate || candidate.nodeId !== node.id) throw new PlanStateError(`Candidate ${input.candidateId} does not belong to ${node.id}.`);
   for (const path of candidate.touchedPaths) requireUnlockedPattern(next, candidate.label, path);
   if (candidate.status !== "possible") throw new PlanStateError(`Only a possible candidate can collapse ${node.id}; ${candidate.id} is ${candidate.status}.`);
-  if (!node.acceptedDomain) throw new PlanStateError(`Domain for ${node.id} must be challenged and accepted before collapse.`);
+  if (!node.acceptedDomain && !node.challengeExhausted) throw new PlanStateError(`Domain for ${node.id} must be challenged and accepted before collapse.`);
   for (const siblingId of node.candidateIds) {
     const sibling = next.candidates[siblingId]!;
     if (sibling.id === candidate.id) continue;
@@ -502,6 +522,7 @@ function createRefinementChild(task: PlanTask, parent: PlanNode, input: Refineme
     reason: input.reason,
     candidateIds: [],
     acceptedDomain: false,
+    challengeExhausted: false,
     challengeRound: 0,
     constraintIds: [],
     evidenceIds: [],
@@ -559,6 +580,7 @@ export function reopenNode(task: PlanTask, input: ReopenNodeInput): PlanTask {
   node.status = "unresolved";
   node.selectedCandidateId = undefined;
   node.acceptedDomain = false;
+  node.challengeExhausted = false;
   node.challengeRound = 0;
   node.diffIds = [];
   node.obligationIds = node.obligationIds.filter((id) => next.obligations[id] !== undefined);

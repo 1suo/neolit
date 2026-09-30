@@ -92,6 +92,7 @@ export interface PlanNode {
   candidateIds: PlanCandidateId[];
   selectedCandidateId?: PlanCandidateId;
   acceptedDomain: boolean;
+  challengeExhausted: boolean;
   challengeRound: number;
   constraintIds: PlanConstraintId[];
   evidenceIds: PlanEvidenceId[];
@@ -125,6 +126,7 @@ export type PlanEvent =
   | { type: "domain-generated"; revision: PlanRevision; nodeId: PlanNodeId; candidateIds: PlanCandidateId[] }
   | { type: "candidate-added"; revision: PlanRevision; nodeId: PlanNodeId; candidateId: PlanCandidateId; reason: string }
   | { type: "domain-accepted"; revision: PlanRevision; nodeId: PlanNodeId; challengeRound: number }
+  | { type: "domain-challenge-exhausted"; revision: PlanRevision; nodeId: PlanNodeId; challengeRound: number }
   | { type: "candidate-rejected"; revision: PlanRevision; candidateId: PlanCandidateId; reason: string }
   | { type: "node-collapsed"; revision: PlanRevision; nodeId: PlanNodeId; candidateId: PlanCandidateId }
   | { type: "node-refined"; revision: PlanRevision; nodeId: PlanNodeId; childIds: PlanNodeId[] }
