@@ -139,6 +139,8 @@ describe("augment TUI controller", () => {
 
     const detail = detailLines(controller.snapshot().task, directory);
     const lines = detail.map((line) => line.text);
+    expect(lines).toContain("CONTENTS · 1 entry");
+    expect(lines.some((line) => line.includes("augment/"))).toBe(false);
     expect(lines).toContain("FOLDER CHANGE SUMMARY");
     expect(lines).toContain("1 changed");
     expect(lines.some((line) => line.includes("retry cutoff"))).toBe(true);
@@ -280,7 +282,7 @@ describe("augment TUI rendering", () => {
     expect(output).toContain("NO MODEL");
     expect(output).toContain("package.json");
     expect(output).toContain("augment/");
-    expect(output).toContain("unchanged");
+    expect(output).not.toContain("unchanged");
     expect(output).toContain("Press [N] to describe a change.");
   });
 });

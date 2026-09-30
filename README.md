@@ -171,7 +171,7 @@ Tab    switch pane
 Q      quit
 ```
 
-Directories aggregate descendant change state (`added`, `removed`, `changed`) and show a contents summary of their immediate children with plan state, aggregated change counts, and descendant patch previews. Files show their complete exact patch directly in the right pane; `j`/`k` scroll it while the detail pane is focused.
+Directories aggregate descendant change state (`added`, `removed`, `changed`) and show a contents summary of their planned children (unchanged entries are omitted), aggregated change counts, and descendant patch previews. Files show their complete exact patch directly in the right pane; `j`/`k` scroll it while the detail pane is focused.
 
 The TUI changes planned state only; it does not apply patches to the repository.
 Its layout and interaction conventions are documented in

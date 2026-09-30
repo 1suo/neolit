@@ -97,7 +97,7 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow): { indicato
     const best = Math.max(...possible.map((candidate) => candidate.confidence));
     return { indicator: "◇", state: `${possible.length} choices · best ${best}%`, color: theme.warning };
   }
-  if (row.repositoryOnly) return { indicator: "·", state: "unchanged", color: theme.muted };
+  if (row.repositoryOnly) return { indicator: "", state: "", color: theme.muted };
   return { indicator: "·", state: "suggested", color: theme.muted };
 }
 
@@ -107,15 +107,20 @@ function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boo
     <Box backgroundColor={props.selected ? theme.selected : undefined}>
       <Text wrap="truncate-end">
         {props.row.branch}
-        <Text color={state.color}>{state.indicator}</Text>{" "}
+        {state.indicator ? <Text color={state.color}>{state.indicator}</Text> : null}
+        {state.indicator ? " " : null}
         <Text
           color={props.row.repositoryOnly ? theme.muted : props.row.entry.kind === "dir" ? theme.accent : theme.text}
           bold={!props.row.repositoryOnly}
         >
           {entryName(props.row.entry)}
         </Text>
-        {" "}
-        <Text color={theme.muted}>{state.state}</Text>
+        {state.state ? (
+          <>
+            {" "}
+            <Text color={theme.muted}>{state.state}</Text>
+          </>
+        ) : null}
       </Text>
     </Box>
   );
@@ -196,24 +201,27 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   const add = (text: string, color: string, bold = false) => lines.push({ text: text.length ? text : " ", color, bold });
   const label = (text: string) => add(text, theme.muted);
 
-  add(`${state.indicator} ${entryName(entry)}`, state.color, true);
-  label(state.state);
+  add(state.indicator ? `${state.indicator} ${entryName(entry)}` : entryName(entry), state.color, true);
+  if (state.state) label(state.state);
 
   if (isDirectory) {
-    label(`CONTENTS · ${entry.children.length} ${entry.children.length === 1 ? "entry" : "entries"}`);
-    for (const child of entry.children.slice(0, FOLDER_CONTENT_PREVIEW)) {
-      const childState = entryState(task, {
-        kind: "entry",
-        id: `entry:${child.path}`,
-        depth: row.depth + 1,
-        branch: "",
-        entry: child,
-        repositoryOnly: !entryHasPlan(child),
-      });
-      add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}`, childState.color);
-    }
-    if (entry.children.length > FOLDER_CONTENT_PREVIEW) {
-      add(`  + ${entry.children.length - FOLDER_CONTENT_PREVIEW} more entries`, theme.muted);
+    const plannedChildren = entry.children.filter((child) => entryHasPlan(child));
+    if (plannedChildren.length) {
+      label(`CONTENTS · ${plannedChildren.length} ${plannedChildren.length === 1 ? "entry" : "entries"}`);
+      for (const child of plannedChildren.slice(0, FOLDER_CONTENT_PREVIEW)) {
+        const childState = entryState(task, {
+          kind: "entry",
+          id: `entry:${child.path}`,
+          depth: row.depth + 1,
+          branch: "",
+          entry: child,
+          repositoryOnly: false,
+        });
+        add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}`, childState.color);
+      }
+      if (plannedChildren.length > FOLDER_CONTENT_PREVIEW) {
+        add(`  + ${plannedChildren.length - FOLDER_CONTENT_PREVIEW} more entries`, theme.muted);
+      }
     }
   }
 

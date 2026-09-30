@@ -4,18 +4,18 @@
 
 ## Layout
 
-The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible as unchanged; planned and drafted paths are marked in place.
+The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place.
 
 ```text
 FILES
 ◆ repo/                   chosen 78%
 └─ src/
-   ├─ augment/            unchanged
+   ├─ augment/
    │  └─ state.ts         modify
    ├─ auth/               planned
    │  └─ session.ts       new
    └─ tui/
-      └─ augment.tsx      unchanged
+      └─ augment.tsx
 ├─ test/
 │  └─ state.test.ts       modify
 ├─ package.json           locked
@@ -25,7 +25,6 @@ FILES
 Indicators:
 
 ```text
-· unchanged  repository-only path
 ◇ possible   path appears in a possible approach
 ◆ chosen     selected approach, with model confidence
 ~ planned    concrete path in the current plan
@@ -38,7 +37,7 @@ Indicators:
 ? explained  path is relevant to the current explanation topic
 ```
 
-Directories inherit and aggregate descendant state. Selecting a directory immediately shows a contents summary of its immediate children (each with its plan indicator and state), a folder change summary (`added`, `changed`, `removed`), every descendant change with its reason, and the beginning of each exact patch. Selecting a file immediately shows its reason and complete exact patch in the right pane; no secondary command is required. The pane scrolls with `j`/`k` while it is focused (`Tab`). Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
+Directories inherit and aggregate descendant state. Selecting a directory immediately shows a contents summary listing only its planned children (each with its plan indicator and state; unchanged entries are omitted), a folder change summary (`added`, `changed`, `removed`), every descendant change with its reason, and the beginning of each exact patch. Selecting a file immediately shows its reason and complete exact patch in the right pane; no secondary command is required. The pane scrolls with `j`/`k` while it is focused (`Tab`). Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
 
 Press `E` to start an explanation task. Explanation tasks highlight related files and folders with `?` marks and show their role, summary, and confidence in the selected-path pane. Explanation tasks do not create approaches or patches.
 
