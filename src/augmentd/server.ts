@@ -1,5 +1,5 @@
 import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, setPathLock } from "../augment/state.js";
-import { crystallizeNode, draftPatchWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
+import { crystallizeNode, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
 import type { LOD, ModelRuntime, PlanTask, Temperature } from "../augment/types.js";
 
 export const AUGMENT_PROTOCOL_VERSION = 1;
@@ -39,6 +39,7 @@ interface TaskStartParams {
   taskId?: string;
   objective: string;
   basisRevision: string;
+  mode?: "change" | "explanation";
 }
 
 interface TaskMutationParams {
@@ -114,7 +115,8 @@ export class AugmentServer {
         const input = object(params) as unknown as TaskStartParams;
         const taskId = typeof input.taskId === "string" && input.taskId.trim() ? input.taskId.trim() : `task:${this.nextTaskId++}`;
         if (this.tasks.has(taskId)) throw new ProtocolError(-32002, `Task already exists: ${taskId}`);
-        const task = createPlanTask({ id: taskId, objective: string(input.objective, "objective"), basisRevision: string(input.basisRevision, "basisRevision") });
+        const mode = input.mode === "explanation" ? "explanation" : "change";
+        const task = createPlanTask({ id: taskId, objective: string(input.objective, "objective"), basisRevision: string(input.basisRevision, "basisRevision"), mode });
         this.tasks.set(taskId, task);
         return task;
       }
@@ -182,6 +184,16 @@ export class AugmentServer {
           ...base,
           path: string(input.path, "path"),
           locked: input.locked !== false,
+        });
+        this.tasks.set(updated.id, updated);
+        return updated;
+      }
+      case "explain": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const updated = await explainProjectWithModel(this.runtime, this.requireTask(base.taskId), {
+          taskId: base.taskId,
+          temperature: temperature(input.temperature),
         });
         this.tasks.set(updated.id, updated);
         return updated;

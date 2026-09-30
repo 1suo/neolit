@@ -12,6 +12,18 @@ export type Temperature = "low" | "normal" | "high";
 
 export type PathPattern = string;
 
+export type PlanTaskMode = "change" | "explanation";
+
+export interface PathExplanation {
+  id: PlanEvidenceId;
+  topic: string;
+  path: string;
+  role: "primary" | "supporting" | "context";
+  summary: string;
+  detail: string;
+  confidence: number;
+}
+
 export interface PlanCandidate {
   id: PlanCandidateId;
   nodeId: PlanNodeId;
@@ -84,6 +96,7 @@ export interface PlanNode {
   constraintIds: PlanConstraintId[];
   evidenceIds: PlanEvidenceId[];
   obligationIds: PlanObligationId[];
+  explanationIds: PlanEvidenceId[];
   diffIds: PlanDiffId[];
   blockedReason?: string;
 }
@@ -91,6 +104,7 @@ export interface PlanNode {
 export interface PlanTask {
   version: 1;
   id: string;
+  mode: PlanTaskMode;
   objective: string;
   basisRevision: string;
   revision: PlanRevision;
@@ -100,6 +114,7 @@ export interface PlanTask {
   candidates: Record<PlanCandidateId, PlanCandidate>;
   constraints: Record<PlanConstraintId, PlanConstraint>;
   evidence: Record<PlanEvidenceId, PlanEvidence>;
+  explanations: Record<PlanEvidenceId, PathExplanation>;
   obligations: Record<PlanObligationId, PlanObligation>;
   diffs: Record<PlanDiffId, PlannedDiff>;
   events: PlanEvent[];
@@ -116,6 +131,7 @@ export type PlanEvent =
   | { type: "node-reopened"; revision: PlanRevision; nodeId: PlanNodeId; reason: string }
   | { type: "patch-attached"; revision: PlanRevision; nodeId: PlanNodeId; diffId: PlanDiffId }
   | { type: "constraint-added"; revision: PlanRevision; constraintId: PlanConstraintId }
+  | { type: "explanations-attached"; revision: PlanRevision; topic: string; explanationIds: PlanEvidenceId[] }
   | { type: "node-staled"; revision: PlanRevision; nodeId: PlanNodeId; path: string }
   | { type: "path-locked"; revision: PlanRevision; path: string }
   | { type: "path-unlocked"; revision: PlanRevision; path: string }
@@ -130,6 +146,7 @@ export interface PlanTreeEntry {
   candidateIds: PlanCandidateId[];
   selectedCandidateId?: PlanCandidateId;
   diffIds: PlanDiffId[];
+  explanationIds: PlanEvidenceId[];
   obligationIds: PlanObligationId[];
   children: PlanTreeEntry[];
 }
@@ -139,7 +156,8 @@ export type ModelOperation =
   | "challenge-domain"
   | "refine-node"
   | "draft-patch"
-  | "repair-patch";
+  | "repair-patch"
+  | "explain-project";
 
 export interface ModelContextPacket {
   taskId: string;

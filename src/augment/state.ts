@@ -1,5 +1,6 @@
 import {
   type LOD,
+  type PathExplanation,
   type PathPattern,
   type PlanCandidate,
   type PlanCandidateId,
@@ -15,6 +16,7 @@ import {
   type PlanObligationId,
   type PlanRevision,
   type PlanTask,
+  type PlanTaskMode,
   type PlanTreeEntry,
   type PlannedDiff,
   type PlannedDiffKind,
@@ -35,6 +37,7 @@ export interface CreatePlanTaskInput {
   id: string;
   objective: string;
   basisRevision: string;
+  mode?: PlanTaskMode;
 }
 
 export interface DomainCandidateInput {
@@ -123,6 +126,21 @@ export interface SetPathLockInput {
   expectedRevision: PlanRevision;
   path: string;
   locked: boolean;
+}
+
+export interface PathExplanationInput {
+  path: PathPattern;
+  role: PathExplanation["role"];
+  summary: string;
+  detail: string;
+  confidence: number;
+}
+
+export interface AttachExplanationsInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  topic: string;
+  entries: PathExplanationInput[];
 }
 
 function clone<T extends PlanTask>(task: T): T {
@@ -249,11 +267,13 @@ export function createPlanTask(input: CreatePlanTaskInput): PlanTask {
     constraintIds: [],
     evidenceIds: [],
     obligationIds: [],
+    explanationIds: [],
     diffIds: [],
   };
   return {
     version: 1,
     id: input.id,
+    mode: input.mode ?? "change",
     objective: input.objective,
     basisRevision: input.basisRevision,
     revision: 1,
@@ -263,6 +283,7 @@ export function createPlanTask(input: CreatePlanTaskInput): PlanTask {
     candidates: {},
     constraints: {},
     evidence: {},
+    explanations: {},
     obligations: {},
     diffs: {},
     events: [{ type: "task-created", revision: 1, objective: input.objective }],
@@ -485,6 +506,7 @@ function createRefinementChild(task: PlanTask, parent: PlanNode, input: Refineme
     constraintIds: [],
     evidenceIds: [],
     obligationIds: [],
+    explanationIds: [],
     diffIds: [],
   };
   task.nodes[id] = child;
@@ -628,6 +650,39 @@ function markSubtreeStale(task: PlanTask, nodeId: PlanNodeId, path: string): Pla
   return affected;
 }
 
+export function attachExplanations(task: PlanTask, input: AttachExplanationsInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  if (!input.topic.trim()) throw new PlanStateError("Explanation topic is required.");
+  if (!input.entries.length) throw new PlanStateError("An explanation requires at least one path.");
+  if (input.entries.length > 64) throw new PlanStateError("An explanation may contain at most 64 paths.");
+
+  next.explanations = {};
+  const ids: PlanEvidenceId[] = [];
+  for (const entry of input.entries) {
+    const explainedPath = normalizePath(entry.path);
+    if (explainedPath === ROOT_PATH) throw new PlanStateError("Explain a concrete file or directory, not the repository root.");
+    if (/[?*[]/.test(explainedPath)) throw new PlanStateError(`Explanation paths must be concrete: ${entry.path}`);
+    if (!entry.summary.trim() || !entry.detail.trim()) throw new PlanStateError(`Explanation for ${entry.path} requires a summary and detail.`);
+    if (!Number.isSafeInteger(entry.confidence) || entry.confidence < 0 || entry.confidence > 100) throw new PlanStateError(`Explanation confidence for ${entry.path} must be an integer from 0 through 100.`);
+    const id = nextId("explanation:", Object.keys(next.explanations));
+    next.explanations[id] = {
+      id,
+      topic: input.topic.trim(),
+      path: explainedPath,
+      role: entry.role,
+      summary: entry.summary.trim(),
+      detail: entry.detail.trim(),
+      confidence: entry.confidence,
+    };
+    ids.push(id);
+  }
+
+  next.revision = nextRevision(next);
+  emit(next, { type: "explanations-attached", revision: next.revision, topic: input.topic.trim(), explanationIds: ids });
+  return next;
+}
+
 export function setPathLock(task: PlanTask, input: SetPathLockInput): PlanTask {
   const next = clone(requireTask(task, input.taskId));
   requireRevision(next, input.expectedRevision);
@@ -686,6 +741,7 @@ function ensureEntry(state: TreeBuildState, path: string, kind: PlanTreeEntry["k
     nodeIds: [],
     candidateIds: [],
     diffIds: [],
+    explanationIds: [],
     obligationIds: [],
     children: [],
   };
@@ -713,6 +769,7 @@ function addNodeToEntry(state: TreeBuildState, node: PlanNode, task: PlanTask): 
   entry.candidateIds.push(...node.candidateIds);
   if (node.selectedCandidateId) entry.selectedCandidateId = node.selectedCandidateId;
   entry.diffIds.push(...node.diffIds);
+  entry.explanationIds.push(...node.explanationIds);
   entry.obligationIds.push(...node.obligationIds);
   entry.status = entryStatus(entry.status, node.status);
   if (node.kind === "virtual") {
@@ -738,6 +795,10 @@ export function planTree(task: PlanTask): PlanTreeEntry {
       const entry = ensureEntry(state, normalized, normalized.endsWith("/") ? "dir" : "file");
       if (!entry.candidateIds.includes(candidate.id)) entry.candidateIds.push(candidate.id);
     }
+  }
+  for (const explanation of Object.values(task.explanations)) {
+    const entry = ensureEntry(state, explanation.path, explanation.path.endsWith("/") ? "dir" : "file");
+    if (!entry.explanationIds.includes(explanation.id)) entry.explanationIds.push(explanation.id);
   }
   for (const diff of Object.values(task.diffs)) {
     const path = diff.path || ROOT_PATH;

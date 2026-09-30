@@ -35,9 +35,14 @@ Indicators:
 ! stale      repository basis changed
 # locked     path cannot change in this run
 ● ready      path and obligations are complete
+? explained  path is relevant to the current explanation topic
 ```
 
-The right pane explains the selected path: why it is included, available approaches with model confidence estimates, user messages, and exact patch text. Confidence is a model estimate for presentation only; the controller never selects an approach from it.
+Directories inherit and aggregate descendant state. A selected directory shows every descendant change kind, the reason for each planned node, and each exact patch. A selected file shows its own reason and exact patch. Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
+
+Press `V` on a drafted path to open a dedicated full-screen exact-diff view. The tree’s `new` / `modify` / `delete` marks are derived labels only; the exact patch remains authoritative.
+
+Press `E` to start an explanation task. Explanation tasks highlight related files and folders with `?` marks and show their role, summary, and confidence in the selected-path pane. Explanation tasks do not create approaches or patches.
 
 ## Flow
 
@@ -55,7 +60,9 @@ After a task is entered and a model is configured, the TUI automatically generat
 ## Operations
 
 ```text
-N  start a new plan
+N  start a new change plan
+E  start an explanation task
+V  view exact diff for selected drafted path
 Enter  attach a message and regenerate this path/subtree
 1-7  choose the numbered approach
 F  expand the chosen approach into files

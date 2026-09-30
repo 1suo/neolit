@@ -156,7 +156,7 @@ npm run build
 AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
-After a task is entered, the TUI automatically generates approaches for the root node. Lower nodes receive candidates only when explicitly opened. Then:
+After a change task is entered, the TUI automatically generates approaches for the root node. Lower nodes receive candidates only when explicitly opened. Then:
 
 ```text
 Enter  message/regenerate selected path and its descendants
@@ -165,10 +165,14 @@ F      expand approach into files
 D      draft selected file change
 G      rethink selected path
 L      lock/unlock selected file or directory
-N      new plan
+V      full-screen exact diff for selected path/subtree
+E      explanation task
+N      new change task
 Tab    switch pane
 Q      quit
 ```
+
+Directories aggregate descendant change state (`added`, `removed`, `changed`) and show descendant descriptions and exact patches when selected.
 
 The TUI changes planned state only; it does not apply patches to the repository.
 Its layout and interaction conventions are documented in

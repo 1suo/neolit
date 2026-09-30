@@ -116,6 +116,8 @@ function operationContract(request: ModelCallRequest): string {
     case "draft-patch":
     case "repair-patch":
       return `{"patch":"unified diff text","assumptions":["explicit assumption"]}`;
+    case "explain-project":
+      return `{"topic":"short topic","entries":[{"path":"src/example.ts","role":"primary|supporting|context","summary":"one sentence","detail":"what it is and what it does","confidence":75}]} (1-64 concrete repository paths)`;
   }
 }
 

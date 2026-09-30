@@ -65,6 +65,7 @@ function emptyTreeEntry(entryPath: string, kind: PlanTreeEntry["kind"]): PlanTre
     nodeIds: [],
     candidateIds: [],
     diffIds: [],
+    explanationIds: [],
     obligationIds: [],
     children: [],
   };
@@ -91,6 +92,23 @@ export function repositoryTree(directory: string): PlanTreeEntry {
   return root;
 }
 
+function aggregateSubtree(entry: PlanTreeEntry): void {
+  for (const child of entry.children) aggregateSubtree(child);
+  for (const child of entry.children) {
+    const append = <T>(target: T[], values: readonly T[]) => {
+      for (const value of values) if (!target.includes(value)) target.push(value);
+    };
+    append(entry.nodeIds, child.nodeIds);
+    append(entry.candidateIds, child.candidateIds);
+    append(entry.diffIds, child.diffIds);
+    append(entry.explanationIds, child.explanationIds);
+    append(entry.obligationIds, child.obligationIds);
+    entry.selectedCandidateId ??= child.selectedCandidateId;
+    if (child.status === "stale") entry.status = "stale";
+    else if (child.status === "blocked" && entry.status !== "stale") entry.status = "blocked";
+  }
+}
+
 function mergePlanTree(repository: PlanTreeEntry, plan: PlanTreeEntry): PlanTreeEntry {
   const merge = (source: PlanTreeEntry) => {
     const target = source.path === "." ? repository : ensureTreeEntry(repository, source.path, source.kind);
@@ -98,6 +116,7 @@ function mergePlanTree(repository: PlanTreeEntry, plan: PlanTreeEntry): PlanTree
     target.nodeIds = [...new Set([...target.nodeIds, ...source.nodeIds])];
     target.candidateIds = [...new Set([...target.candidateIds, ...source.candidateIds])];
     target.diffIds = [...new Set([...target.diffIds, ...source.diffIds])];
+    target.explanationIds = [...new Set([...target.explanationIds, ...source.explanationIds])];
     target.obligationIds = [...new Set([...target.obligationIds, ...source.obligationIds])];
     target.selectedCandidateId ??= source.selectedCandidateId;
     target.status = source.status;
@@ -109,11 +128,12 @@ function mergePlanTree(repository: PlanTreeEntry, plan: PlanTreeEntry): PlanTree
     entry.children.forEach(sortChildren);
   };
   sortChildren(repository);
+  aggregateSubtree(repository);
   return repository;
 }
 
 function entryHasPlan(entry: PlanTreeEntry): boolean {
-  return entry.nodeIds.length > 0 || entry.candidateIds.length > 0 || entry.diffIds.length > 0 || entry.obligationIds.length > 0;
+  return entry.nodeIds.length > 0 || entry.candidateIds.length > 0 || entry.diffIds.length > 0 || entry.explanationIds.length > 0 || entry.obligationIds.length > 0;
 }
 
 function rowsFromTree(root: PlanTreeEntry): PlannedTreeRow[] {
@@ -134,7 +154,9 @@ export function plannedTreeRowsFromRepository(repository: PlanTreeEntry): Planne
 }
 
 export function plannedTreeRows(task: PlanTask, repository?: PlanTreeEntry): PlannedTreeRow[] {
-  const root = repository ? mergePlanTree(structuredClone(repository), planTree(task)) : planTree(task);
+  const plan = planTree(task);
+  const root = repository ? mergePlanTree(structuredClone(repository), plan) : plan;
+  aggregateSubtree(root);
   return rowsFromTree(root);
 }
 
@@ -203,10 +225,41 @@ export class AugmentTuiController {
       return;
     }
     await this.dispatch("Starting plan", async () => {
-      const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision } });
+      const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision, mode: "change" } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
       this.message = this.runtime ? "Generating approaches..." : `Plan started at ${this.task.basisRevision}. No model is configured.`;
+    });
+  }
+
+  async startExplanation(objective: string, basisRevision = currentRevision(this.directory)): Promise<void> {
+    if (!objective.trim()) {
+      this.error = "Explanation topic is required.";
+      return;
+    }
+    await this.dispatch("Explaining repository topic", async () => {
+      const started = await this.server.handle({
+        jsonrpc: "2.0",
+        id: 13,
+        method: "task/start",
+        params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision, mode: "explanation" },
+      });
+      let task = expectResult(started, PlanTaskLike.is) as PlanTask;
+      this.task = task;
+      this.refresh();
+      const explained = await this.server.handle({
+        jsonrpc: "2.0",
+        id: 14,
+        method: "explain",
+        params: { taskId: task.id, expectedRevision: task.revision, temperature: "low" },
+      });
+      task = expectResult(explained, PlanTaskLike.is) as PlanTask;
+      this.task = task;
+      this.refresh();
+      const explanationCount = Object.keys(task.explanations).length;
+      const firstExplanation = Object.values(task.explanations)[0];
+      if (firstExplanation) this.select(`entry:${firstExplanation.path}`);
+      this.message = `Explained ${explanationCount} related paths. Select ? paths for details.`;
     });
   }
 

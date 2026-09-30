@@ -6,6 +6,8 @@ Status: normative desired behavior for the planned-diff product. The current imp
 
 Neolit turns one objective into an inspectable, filesystem-shaped planned diff tree. Models propose domain and refinement deltas; deterministic controller code validates, challenges, collapses, propagates, and tracks staleness. Hosts own models, repository access, UI, and patch application.
 
+A task has two modes: `change` and `explanation`. A change task uses candidate domains, refinement, and planned diffs. An explanation task attaches typed path explanations to repository files and directories without creating change candidates or patches. Explanations use the same repository-tree projection; selecting an explained path exposes what it is, what it does, and why it relates to the requested topic.
+
 ## Planned-tree invariants
 
 1. A task has exactly one root and every node has one parent.
@@ -35,10 +37,11 @@ The runtime is a replaceable port. For each operation it receives a bounded cont
 - `refine-node`: bounded children and obligations for a selected node.
 - `draft-patch`: one patch for one file/hunk node.
 - `repair-patch`: one replacement patch grounded in an exact failed check.
+- `explain-project`: one bounded set of repository path explanations for the requested topic.
 
 A user message attached to a path is a scoped constraint. Regenerating that path reopens the owning node and its descendants, preserves the message on the owning node, and crystallizes only that node. Sibling subtrees remain intact. A message on a repository path without a node binds to the root with that path scope.
 
-Every planned diff derives a deterministic presentation kind: `new`, `modify`, or `delete` when the unified diff identifies it; otherwise `unknown`. The kind never replaces the exact patch text.
+Every planned diff derives a deterministic presentation kind: `new`, `modify`, or `delete` when the unified diff identifies it; otherwise `unknown`. The kind never replaces the exact patch text. A dedicated exact-diff projection must remain available for every drafted path.
 
 Invalid shape, illegal paths, duplicate identities, out-of-scope mutations, locked-path mutations, and previously rejected candidates are controller failures. A failed model call changes no task state.
 

@@ -40,7 +40,21 @@ function modelRuntime(): ModelRuntime {
           },
         };
       }
-      if (request.operation === "draft-patch") return { value: { patch: "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n", assumptions: [] } };
+      if (request.operation === "draft-patch") {
+        const path = request.context.node.path ?? "src/auth/session.ts";
+        return { value: { patch: `--- a/${path}\n+++ b/${path}\n`, assumptions: [] } };
+      }
+      if (request.operation === "explain-project") {
+        return {
+          value: {
+            topic: "retry policy",
+            entries: [
+              { path: "src/augment/state.ts", role: "primary", summary: "Owns planned state.", detail: "It stores tasks, candidates, locks, and planned diffs.", confidence: 92 },
+              { path: "src/augment", role: "supporting", summary: "Core planning subsystem.", detail: "Contains the planned-diff state machine and model contracts.", confidence: 88 },
+            ],
+          },
+        };
+      }
       throw new Error(`unexpected operation ${request.operation}`);
     },
   };
@@ -102,6 +116,40 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().task?.lockedPaths).toEqual([]);
     await controller.crystallize();
     expect(controller.snapshot().error).toBeUndefined();
+  });
+
+  it("aggregates directory changes and shows descendant exact patches", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+    controller.select("entry:src");
+    const directory = controller.snapshot().rows.find((row) => row.id === "entry:src");
+    expect(directory?.entry.diffIds).toHaveLength(1);
+
+    const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
+    expect(output).toContain("CHANGES IN THIS PATH");
+    expect(output).toContain("~ src/auth/session.ts · changed");
+    expect(output).toContain("--- a/src/auth/session.ts");
+  });
+
+  it("highlights explained files and directories with selected-path details", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.startExplanation("retry policy");
+    const state = controller.snapshot();
+    expect(state.task?.mode).toBe("explanation");
+    expect(state.rows.find((row) => row.id === "entry:src/augment/state.ts")?.repositoryOnly).toBe(false);
+    expect(state.rows.find((row) => row.id === "entry:src/augment")?.repositoryOnly).toBe(false);
+
+    controller.select("entry:src/augment");
+    const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
+    expect(output).toContain("EXPLANATION");
+    expect(output).toContain("Owns planned state.");
+    expect(output).toContain("Core planning subsystem.");
   });
 
   it("keeps selection stable when possible and reports action errors", async () => {

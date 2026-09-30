@@ -42,7 +42,21 @@ export const PatchProposalSchema = z.object({
   assumptions: z.array(z.string().min(1).max(2000)).max(32).default([]),
 });
 
+export const PathExplanationSchema = z.object({
+  path: pathPattern,
+  role: z.enum(["primary", "supporting", "context"]),
+  summary: z.string().min(1).max(500),
+  detail: z.string().min(1).max(4000),
+  confidence: z.number().int().min(0).max(100),
+});
+
+export const ExplanationProposalSchema = z.object({
+  topic: z.string().min(1).max(300),
+  entries: z.array(PathExplanationSchema).min(1).max(64),
+});
+
 export type DomainProposal = z.infer<typeof DomainProposalSchema>;
 export type ChallengeDomainProposal = z.infer<typeof ChallengeDomainSchema>;
 export type RefinementProposal = z.infer<typeof RefinementProposalSchema>;
 export type PatchProposal = z.infer<typeof PatchProposalSchema>;
+export type ExplanationProposal = z.infer<typeof ExplanationProposalSchema>;

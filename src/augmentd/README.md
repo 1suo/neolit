@@ -21,6 +21,7 @@ initialize
 task/start
 task/get
 tree/get
+explain
 node/get
 node/constrain
 node/select
@@ -35,7 +36,7 @@ diff/get
 shutdown
 ```
 
-Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. `path/lock` records task-local controller authority: candidates, refinement children, and patches cannot modify a locked path or its descendants.
+Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches. `path/lock` records task-local controller authority: candidates, refinement children, and patches cannot modify a locked path or its descendants.
 
 ## Model runtime
 

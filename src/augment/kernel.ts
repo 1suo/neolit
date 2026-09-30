@@ -1,12 +1,14 @@
 import {
   ChallengeDomainSchema,
   DomainProposalSchema,
+  ExplanationProposalSchema,
   PatchProposalSchema,
   RefinementProposalSchema,
 } from "./schemas.js";
 import {
   acceptDomain,
   addCandidate,
+  attachExplanations,
   attachPatch,
   collapseNode,
   generateDomain,
@@ -58,6 +60,11 @@ export interface RepairPatchWithModelInput {
   taskId: string;
   diffId: string;
   failedCheck: string;
+  temperature: Temperature;
+}
+
+export interface ExplainProjectWithModelInput {
+  taskId: string;
   temperature: Temperature;
 }
 
@@ -184,6 +191,18 @@ export async function draftPatchWithModel(runtime: ModelRuntime, task: PlanTask,
   const node = requireNode(task, input.nodeId);
   const proposal = await call(runtime, task, node, "draft-patch", input.temperature, node.lod, parseWith(PatchProposalSchema));
   return attachPatch(task, { taskId: task.id, expectedRevision: task.revision, nodeId: input.nodeId, patch: proposal.patch });
+}
+
+export async function explainProjectWithModel(runtime: ModelRuntime, task: PlanTask, input: ExplainProjectWithModelInput): Promise<PlanTask> {
+  if (task.mode !== "explanation") throw new AugmentModelError("Explanations require an explanation task.");
+  const node = requireNode(task, task.rootNodeId);
+  const proposal = await call(runtime, task, node, "explain-project", input.temperature, "architecture", parseWith(ExplanationProposalSchema));
+  return attachExplanations(task, {
+    taskId: task.id,
+    expectedRevision: task.revision,
+    topic: proposal.topic,
+    entries: proposal.entries,
+  });
 }
 
 export async function repairPatchWithModel(runtime: ModelRuntime, task: PlanTask, input: RepairPatchWithModelInput): Promise<PlanTask> {
