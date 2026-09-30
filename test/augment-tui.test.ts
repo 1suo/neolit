@@ -478,6 +478,20 @@ describe("selected-path detail model", () => {
     expect(lines).toContain("+final marker line");
   });
 
+  it("tells the user how to draft a planned file", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    const row = controller.snapshot().rows.find((item) => item.id === "entry:src/auth/session.ts");
+    const lines = detailLines(controller.snapshot().task, row).map((line) => line.text);
+    expect(lines).toContain("FILE PLAN");
+    expect(lines).toContain("[D] draft this file's exact patch · [A] apply it after drafting");
+  });
+
   it("summarizes folder contents when a directory is selected", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");

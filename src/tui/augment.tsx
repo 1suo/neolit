@@ -297,6 +297,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
       add(`  ${node.reason}`, theme.text);
       if (node.blockedReason) add(`  ${node.blockedReason}`, theme.error);
     }
+    if (!isDirectory) add("[D] draft this file's exact patch · [A] apply it after drafting", theme.primary);
   }
 
   if (nodes.some((node) => node.challengeExhausted)) {
