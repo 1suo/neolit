@@ -1,5 +1,40 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import type { ModelCallRequest, ModelRuntime } from "../augment/types.js";
+
+const DRAFT_FILE_LIMIT = 24_000;
+const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch"]);
+
+/**
+ * Drafts should behave like auto-complete, not exploration: embed the target
+ * file's exact content so the model answers in one shot without tool rounds.
+ * The host owns repository access, so this lives here rather than in the core.
+ */
+function draftFileSection(request: ModelCallRequest, directory: string): string | undefined {
+  if (!DRAFT_OPERATIONS.has(request.operation)) return undefined;
+  const target = request.context.node?.path;
+  if (!target || target.includes("..")) return undefined;
+  const root = path.resolve(directory);
+  const absolute = path.resolve(directory, target);
+  if (!absolute.startsWith(`${root}${path.sep}`)) return undefined;
+  let content: string;
+  try {
+    if (!fs.statSync(absolute).isFile()) return undefined;
+    content = fs.readFileSync(absolute, "utf8");
+  } catch {
+    return `Target path ${target} does not exist in the repository; the patch must create it as a new file. Do not read any file or run any tool.`;
+  }
+  const truncated = content.length > DRAFT_FILE_LIMIT;
+  const visible = truncated ? content.slice(0, DRAFT_FILE_LIMIT) : content;
+  return [
+    `The exact current content of ${target} is embedded below. Do NOT read any file, run any tool, or verify anything — answer from this packet alone in one shot.`,
+    truncated ? `(showing the first ${DRAFT_FILE_LIMIT} of ${content.length} characters)` : "",
+    "```",
+    visible,
+    "```",
+  ].filter(Boolean).join("\n");
+}
 
 const activeChildren = new Set<ChildProcess>();
 process.on("exit", () => {
@@ -12,6 +47,7 @@ export interface OpenCodeCliRuntimeOptions {
   directory: string;
   command?: string;
   model?: string;
+  draftModel?: string;
   agent?: string;
   timeoutMs?: number;
   autoApprove?: boolean;
@@ -39,6 +75,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   readonly directory: string;
   private readonly command: string;
   private readonly model?: string;
+  private readonly draftModel?: string;
   private readonly agent?: string;
   private readonly timeoutMs: number;
   private readonly autoApprove: boolean;
@@ -47,6 +84,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     this.directory = options.directory;
     this.command = options.command ?? process.env.AUGMENT_OPENCODE_COMMAND ?? "opencode";
     this.model = options.model ?? (process.env.AUGMENT_OPENCODE_MODEL || undefined);
+    this.draftModel = options.draftModel ?? (process.env.AUGMENT_OPENCODE_DRAFT_MODEL || undefined);
     this.agent = options.agent ?? (process.env.AUGMENT_OPENCODE_AGENT || "plan");
     this.timeoutMs = options.timeoutMs ?? Number(process.env.AUGMENT_OPENCODE_TIMEOUT_MS ?? 600_000);
     this.autoApprove = options.autoApprove ?? process.env.AUGMENT_OPENCODE_AUTO !== "0";
@@ -68,14 +106,17 @@ export class OpenCodeCliRuntime implements ModelRuntime {
 
   private async prompt(request: ModelCallRequest): Promise<string> {
     const operation = operationContract(request);
+    const fileSection = draftFileSection(request, this.directory);
+    const model = DRAFT_OPERATIONS.has(request.operation) && this.draftModel ? this.draftModel : this.model;
     const prompt = [
       `You are executing exactly one Neolit planned-diff operation: ${request.operation}.`,
       `Return ONE valid JSON object and no prose, Markdown, or code fence.`,
       `JSON contract:\n${operation}`,
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
+      ...(fileSection ? [fileSection] : []),
       `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed:\n${JSON.stringify(request.context, null, 2)}`,
     ].join("\n\n");
-    const args = ["run", "--format", "json", ...(this.model ? ["--model", this.model] : []), ...(this.agent ? ["--agent", this.agent] : []), ...(this.autoApprove ? ["--auto"] : []), "--title", `augment-${request.operation}`, "--", prompt];
+    const args = ["run", "--format", "json", ...(model ? ["--model", model] : []), ...(this.agent ? ["--agent", this.agent] : []), ...(this.autoApprove ? ["--auto"] : []), "--title", `augment-${request.operation}`, "--", prompt];
     const stdout = await this.run(args);
     return extractAssistantText(stdout);
   }
@@ -121,7 +162,7 @@ function operationContract(request: ModelCallRequest): string {
       return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"one sentence","obligations":[{"kind":"test|documentation|check|todo","description":"..."}]}]} (1-16 children; every child needs one reason of at most 200 characters; directory children summarize their whole subtree in that one sentence; at most 4 obligations per child, each description <= 160 characters; omit the diff field entirely — patches are drafted by a separate later operation, never here; never generate descendant candidate domains; lockedPaths are immutable)`;
     case "draft-patch":
     case "repair-patch":
-      return `{"patch":"unified diff text","assumptions":["explicit assumption"]}`;
+      return `{"patch":"unified diff text","assumptions":["explicit assumption"]} (the patch must be a single-file unified diff touching ONLY the target path whose content is embedded in this prompt — never a multi-file or diff --git series covering other paths; include only the hunks the node reason requires; at most 3 assumptions, each <= 160 characters; answer in one shot without reading files or running tools)`;
     case "explain-project":
       return `{"topic":"short topic","entries":[{"path":"src/example.ts","role":"primary|supporting|context","summary":"one sentence","detail":"what it is and what it does","confidence":75}]} (1-64 concrete repository paths)`;
   }

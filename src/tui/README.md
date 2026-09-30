@@ -89,10 +89,17 @@ Select a working model explicitly with `--model provider/model` or `AUGMENT_OPEN
 ```text
 AUGMENT_OPENCODE_COMMAND
 AUGMENT_OPENCODE_MODEL
+AUGMENT_OPENCODE_DRAFT_MODEL
 AUGMENT_OPENCODE_AGENT
 AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after this budget)
 AUGMENT_TUI_NO_MODEL=1
 ```
+
+`AUGMENT_OPENCODE_DRAFT_MODEL` optionally routes only `draft-patch` and
+`repair-patch` to a faster model. Draft and repair calls embed the target
+file's exact content in the prompt and instruct the model to answer in one
+shot without tools, so a small quick model is usually enough; domain
+generation and challenges keep using `AUGMENT_OPENCODE_MODEL`.
 
 The TUI requires an interactive terminal (`process.stdin.isTTY`). It edits planned state and, on request, applies drafted patches to the working tree through `src/tui/apply.ts`: a shared `git apply --check` preflight followed by one atomic `git apply` for all selected patches. It never stages or commits.
 

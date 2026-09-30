@@ -590,6 +590,72 @@ describe("OpenCode CLI runtime parsing", () => {
     })).rejects.toThrow(/no JSON object for refine-node: The response looks truncated/);
   });
 
+  it("embeds the target file for one-shot drafts and routes them to the draft model", async () => {
+    const capture = path.join(os.tmpdir(), `augment-capture-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(capture);
+    const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"--- a/package.json\"}" }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000, draftModel: "fast/small-model" });
+    await runtime.call({
+      operation: "draft-patch",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: { path: "package.json", kind: "file" } as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "low",
+      lod: "hunk",
+    });
+    const captured = fs.readFileSync(capture, "utf8");
+    expect(captured).toContain("--model fast/small-model");
+    expect(captured).toContain("exact current content of package.json");
+    expect(captured).toContain("Do NOT read any file");
+    expect(captured).toContain("\"scripts\"");
+    expect(captured).toContain("single-file unified diff touching ONLY the target path");
+  });
+
+  it("tells one-shot drafts when the target path is new", async () => {
+    const capture = path.join(os.tmpdir(), `augment-capture-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(capture);
+    const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"--- a/src/new.ts\"}" }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
+    await runtime.call({
+      operation: "draft-patch",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: { path: "src/definitely-new-file.ts", kind: "file" } as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "low",
+      lod: "hunk",
+    });
+    const captured = fs.readFileSync(capture, "utf8");
+    expect(captured).toContain("must create it as a new file");
+  });
+
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {
     const file = path.join(os.tmpdir(), `augment-opencode-slow-${process.pid}-${temporaryFiles.length}.sh`);
     fs.writeFileSync(file, "#!/bin/sh\nsleep 5\n");
