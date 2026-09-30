@@ -33,6 +33,7 @@ Indicators:
 + new        drafted new file
 ~ modify     drafted modification
 - delete     drafted deletion
+✓ applied    drafted patch was applied to the working tree; nothing is committed
 ! stale      repository basis changed
 # locked     path cannot change in this run
 ● ready      path and obligations are complete
@@ -99,13 +100,20 @@ AUGMENT_TUI_NO_MODEL=1
 `repair-patch` to a faster model. Draft and repair calls embed the target
 file's exact content in the prompt and instruct the model to answer in one
 shot without tools, so a small quick model is usually enough; domain
-generation and challenges keep using `AUGMENT_OPENCODE_MODEL`.
+generation and challenges keep using `AUGMENT_OPENCODE_MODEL`. Drafts are
+also preflighted with `git apply --check` against the working tree and
+retried once with git's diagnostic when the patch is empty or structurally
+invalid, so stored diffs reach `A` already known to apply.
 
 The TUI requires an interactive terminal (`process.stdin.isTTY`). It edits planned state and, on request, applies drafted patches to the working tree through `src/tui/apply.ts`: a shared `git apply --check` preflight followed by one atomic `git apply` for all selected patches. It never stages or commits.
 
 ## Architecture
 
 `controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `apply.ts` owns the host-side apply transaction (preflighted, atomic, uncommitted `git apply`). `augment.tsx` renders the controller snapshot with Ink/React. This keeps interaction testable separately from rendering.
+
+Rendering is incremental: the Ink/React tree repaints only rows whose snapshot
+content changed, and the frame stays pinned to the viewport height with a per-frame
+budget, so a keypress costs a bounded repaint instead of a full clear and redraw.
 
 ## Validation
 

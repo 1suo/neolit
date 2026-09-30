@@ -89,7 +89,7 @@ function diffState(diffs: PlannedDiff[]): { indicator: string; state: string; co
   return { indicator: "Δ", state: parts.join(" "), color: counts.delete ? theme.warning : theme.success };
 }
 
-function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLocks: string[] = [], live?: RowLiveFlags): { indicator: string; state: string; color: string } {
+function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLocks: string[] = [], live?: RowLiveFlags, appliedDiffIds: string[] = []): { indicator: string; state: string; color: string } {
   const entry = row.entry;
   const candidates = candidatesForEntry(task, entry);
   const selected = candidates.find((candidate) => candidate.status === "selected");
@@ -99,6 +99,7 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLock
   const blocked = entry.nodeIds.some((id) => ["stale", "blocked"].includes(task?.nodes[id]?.status ?? ""));
   const ready = entry.nodeIds.some((id) => task?.nodes[id]?.status === "ready");
   const locked = entry.path !== "." && ((task && pathIsLocked(task, entry.path)) || pendingLocks.includes(entry.path));
+  const applied = diffs.filter((diff) => appliedDiffIds.includes(diff.id));
   const drafted = diffState(diffs);
 
   if (live?.active) return { indicator: live.spinner ?? "⠋", state: `${(live.operation ?? "working").toLowerCase()}…`, color: theme.warning };
@@ -109,11 +110,12 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLock
     return { indicator: "?", state: `${primary ? "primary" : "related"} ${explanations.length}`, color: primary ? theme.warning : theme.accent };
   }
   if (blocked) return { indicator: "!", state: "needs refresh", color: theme.error };
+  if (applied.length) return { indicator: "✓", state: applied.length === diffs.length ? "applied" : `applied ${applied.length}/${diffs.length}`, color: theme.success };
   if (drafted) return drafted;
-  if (entry.nodeIds.length && entry.kind !== "root") return { indicator: "~", state: "planned change", color: theme.text };
+  if (entry.nodeIds.length && entry.kind !== "root") return { indicator: "~", state: "planned", color: theme.text };
   if (ready) return { indicator: "●", state: "ready", color: theme.success };
-  if (selected && entry.kind !== "root") return { indicator: "◇", state: `proposed · ${selected.confidence}%`, color: theme.secondary };
-  if (selected) return { indicator: "◆", state: `approach · ${selected.confidence}%`, color: theme.secondary };
+  if (selected && entry.kind !== "root") return { indicator: "◇", state: `chosen · ${selected.confidence}%`, color: theme.secondary };
+  if (selected) return { indicator: "◆", state: `chosen · ${selected.confidence}%`, color: theme.secondary };
   if (possible.length) {
     const best = Math.max(...possible.map((candidate) => candidate.confidence));
     return { indicator: "◇", state: `${possible.length} choices · best ${best}%`, color: theme.warning };
@@ -122,26 +124,29 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLock
   return { indicator: "·", state: "suggested", color: theme.muted };
 }
 
-function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingLocks?: string[]; live?: RowLiveFlags }) {
-  const state = entryState(props.task, props.row, props.pendingLocks, props.live);
+const STATE_COLUMN = 22;
+
+function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingLocks?: string[]; live?: RowLiveFlags; appliedDiffIds?: string[] }) {
+  const state = entryState(props.task, props.row, props.pendingLocks, props.live, props.appliedDiffIds);
+  const leftWidth = Math.max(20, props.width - STATE_COLUMN);
+  const prefix = `${props.row.branch}${state.indicator ? `${state.indicator} ` : ""}`;
+  const name = entryName(props.row.entry);
+  const prefixWidth = [...prefix].length;
+  const nameBudget = leftWidth - prefixWidth;
+  const shown = [...name].length >= nameBudget ? crop(name, Math.max(3, nameBudget - 1)) : name;
+  const pad = nameBudget - [...shown].length > 0 ? " ".repeat(nameBudget - [...shown].length) : " ";
   return (
     <Box backgroundColor={props.selected ? theme.selected : undefined}>
       <Text wrap="truncate-end">
-        {props.row.branch}
-        {state.indicator ? <Text color={state.color}>{state.indicator}</Text> : null}
-        {state.indicator ? " " : null}
+        {prefix}
         <Text
           color={props.row.repositoryOnly ? theme.muted : props.row.entry.kind === "dir" ? theme.accent : theme.text}
           bold={!props.row.repositoryOnly}
         >
-          {entryName(props.row.entry)}
+          {shown}
         </Text>
-        {state.state ? (
-          <>
-            {" "}
-            <Text color={theme.muted}>{state.state}</Text>
-          </>
-        ) : null}
+        {pad}
+        <Text color={state.color}>{state.state}</Text>
       </Text>
     </Box>
   );
@@ -204,7 +209,7 @@ const FOLDER_PATCH_PREVIEW = 4;
  * directory rows render a summary derived from their immediate contents plus
  * aggregated descendant changes.
  */
-export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = [], live?: LiveStatus): DetailLine[] {
+export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = [], live?: LiveStatus, appliedDiffIds: string[] = []): DetailLine[] {
   const lines: DetailLine[] = [];
   const add = (text: string, color: string, bold = false) => lines.push({ text: text.length ? text : " ", color, bold });
   const label = (text: string) => add(text, theme.muted);
@@ -230,7 +235,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   });
   const notes = constraintsForEntry(task, entry);
   const explanations = explanationsForEntry(task, entry);
-  const state = entryState(task, row, pendingLocks);
+  const state = entryState(task, row, pendingLocks, undefined, appliedDiffIds);
   const isDirectory = entry.kind === "dir" || entry.kind === "root";
   const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
 
@@ -257,7 +262,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
           branch: "",
           entry: child,
           repositoryOnly: false,
-        }, pendingLocks, childLive);
+        }, pendingLocks, childLive, appliedDiffIds);
         const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
         add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${crop(reason, 56)}` : ""}`, childState.color);
       }
@@ -268,12 +273,14 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   }
 
   if (diffs.length) {
+    const appliedCount = diffs.filter((diff) => appliedDiffIds.includes(diff.id)).length;
+    const appliedSuffix = appliedCount === diffs.length ? " · applied, not committed" : appliedCount ? ` · ${appliedCount}/${diffs.length} applied` : "";
     label(isDirectory ? "FOLDER CHANGE SUMMARY" : "FILE CHANGE");
-    add(changeSummary(diffs), state.color, true);
+    add(changeSummary(diffs) + appliedSuffix, state.color, true);
     if (isDirectory) {
       label("EXACT DIFF");
       for (const diff of diffs.slice(0, 3)) {
-        add(`  ${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}`, diff.kind === "delete" ? theme.error : theme.success);
+        add(`  ${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " · applied" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
         if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
         const patchLines = diff.patch.split(/\r?\n/);
         for (const line of patchLines.slice(0, FOLDER_PATCH_PREVIEW)) add(`  ${line}`, diffColor(line));
@@ -285,7 +292,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
       const totalLines = diffs.reduce((count, diff) => count + diff.patch.split(/\r?\n/).length, 0);
       label(`EXACT DIFF · ${totalLines} lines · basis ${diffs[0]!.basisRevision.slice(0, 12)}`);
       for (const diff of diffs) {
-        add(`${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}`, diff.kind === "delete" ? theme.error : theme.success);
+        add(`${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " · applied" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
         if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
         for (const line of diff.patch.split(/\r?\n/)) add(line, diffColor(line));
       }
@@ -330,7 +337,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
 }
 
 function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; live?: LiveStatus }) {
-  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks, props.live), [props.state.task, props.row, props.state.pendingLocks, props.live]);
+  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds), [props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds]);
   const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
   const visible = lines.slice(clamped, clamped + props.limit);
   return (
@@ -546,6 +553,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
                 width={treeWidth}
                 pendingLocks={state.pendingLocks}
                 live={activeRow || failedRow ? { active: activeRow, failed: failedRow, spinner, operation: state.active?.operation } : undefined}
+                appliedDiffIds={state.appliedDiffIds}
               />
             );
           })}

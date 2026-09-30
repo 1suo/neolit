@@ -24,6 +24,7 @@ export interface TuiActionState {
   message: string;
   error?: string;
   pendingLocks: string[];
+  appliedDiffIds: string[];
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
 }
@@ -177,6 +178,7 @@ export class AugmentTuiController {
   private repository: PlanTreeEntry;
   private task?: PlanTask;
   private pendingLocks: string[] = [];
+  private readonly appliedDiffIds = new Set<string>();
   private activeNodeId?: string;
   private failedNodeId?: string;
   private failedOperation?: string;
@@ -212,6 +214,7 @@ export class AugmentTuiController {
       message: this.message,
       error: this.error,
       pendingLocks: [...this.pendingLocks],
+      appliedDiffIds: [...this.appliedDiffIds],
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
     };
@@ -385,6 +388,7 @@ export class AugmentTuiController {
     }
     await this.dispatch("Applying drafted changes", async () => {
       const applied = applyPlannedDiffs(this.directory, diffs);
+      for (const diff of diffs) if (diff.patch.trim().length > 0) this.appliedDiffIds.add(diff.id);
       this.repository = repositoryTree(this.directory);
       this.refresh();
       this.message = `Applied ${applied.length} drafted ${applied.length === 1 ? "change" : "changes"} to the working tree. Nothing is committed.`;

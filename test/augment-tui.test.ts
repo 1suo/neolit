@@ -376,7 +376,16 @@ describe("augment TUI apply", () => {
     const snapshot = controller.snapshot();
     expect(snapshot.error).toBeUndefined();
     expect(snapshot.message).toContain("Applied 1 drafted change");
+    expect(snapshot.appliedDiffIds).toHaveLength(1);
     expect(snapshot.rows.some((row) => row.id === "entry:session.ts")).toBe(true);
+
+    const appliedRow = snapshot.rows.find((row) => row.id === "entry:session.ts");
+    const detail = detailLines(snapshot.task, appliedRow, [], undefined, snapshot.appliedDiffIds).map((line) => line.text);
+    expect(detail.join("\n")).toContain("applied, not committed");
+    expect(detail.some((line) => line.includes("session.ts · changed · applied"))).toBe(true);
+    const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
+    expect(output).toContain("✓ session.ts");
+    expect(output).toContain("applied");
   });
 
   it("rejects the whole apply when the preflight fails and leaves the tree untouched", async () => {
@@ -742,6 +751,49 @@ describe("OpenCode CLI runtime parsing", () => {
     expect(captured).toContain("TAILMARK");
     expect(captured).toContain("characters are omitted");
     expect(captured).toContain("first 44800 and the last 19200");
+  });
+
+  it("retries once with git's diagnostic when a draft patch is structurally corrupt", async () => {
+    const directory = tempGitRepo();
+    const corrupt = "--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,2 @@\n alpha\n";
+    const valid = "--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,3 @@\n alpha\n+gamma\n beta\n";
+    const marker = path.join(os.tmpdir(), `augment-retried-${process.pid}-${temporaryFiles.length}.flag`);
+    const log = path.join(os.tmpdir(), `augment-retry-log-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(marker, log);
+    const validOutput = JSON.stringify({ type: "message", parts: [{ type: "text", text: JSON.stringify({ patch: valid, assumptions: [] }) }] });
+    const corruptOutput = JSON.stringify({ type: "message", parts: [{ type: "text", text: JSON.stringify({ patch: corrupt, assumptions: [] }) }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, [
+      "#!/bin/sh",
+      `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
+      `if [ -f ${JSON.stringify(marker)} ]; then printf '%s' ${JSON.stringify(validOutput)}; else touch ${JSON.stringify(marker)}; printf '%s' ${JSON.stringify(corruptOutput)}; fi`,
+      "",
+    ].join("\n"));
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory, command: file, timeoutMs: 5_000 });
+    const result = await runtime.call({
+      operation: "draft-patch",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: { path: "session.ts", kind: "file" } as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "low",
+      lod: "hunk",
+    });
+    expect(result.value).toEqual({ patch: valid, assumptions: [] });
+    const logged = fs.readFileSync(log, "utf8");
+    expect(logged).toContain("does not pass git's unified-diff check");
+    expect(logged.match(/--title augment-draft-patch/g)?.length).toBe(2);
   });
 
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {
