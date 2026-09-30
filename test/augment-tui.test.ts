@@ -287,7 +287,7 @@ describe("augment TUI controller", () => {
     await controller.constrain("Preserve the retry API.");
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
     await controller.refine();
-    expect(controller.snapshot().error).toBe("This path has 1 approaches — choose one with keys 1-7, then press F to expand it.");
+    expect(controller.snapshot().error).toBe("This path has 1 approach — choose one with keys 1-7, then press F to expand it.");
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
   });
 

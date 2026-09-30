@@ -337,7 +337,7 @@ export class AugmentTuiController {
     if (node && node.status !== "collapsed") {
       const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
       if (node.status === "domain" && possible.length) {
-        this.error = `This path has ${possible.length} approaches — choose one with keys 1-7, then press F to expand it.`;
+        this.error = `This path has ${possible.length} approach${possible.length === 1 ? "" : "es"} — choose one with keys 1-7, then press F to expand it.`;
       }
       else if (node.status === "unresolved") {
         this.error = "Approaches are not generated for this path yet. Press G to generate them, choose 1-7, then press F.";
