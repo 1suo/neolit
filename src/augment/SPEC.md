@@ -32,8 +32,8 @@ A task has two modes: `change` and `explanation`. A change task uses candidate d
 
 The runtime is a replaceable port. For each operation it receives a bounded context packet, temperature, and LOD, and returns one typed proposal:
 
-- `generate-domain`: one bounded set of candidates, each with a 0–100 confidence estimate.
-- `challenge-domain`: acceptance, one missing candidate, or one missing touched path.
+- `generate-domain`: one bounded initial set of at most five candidates, each with a 0–100 confidence estimate. Two live-domain slots remain reserved for challenge counterexamples, keeping the total bound at seven.
+- `challenge-domain`: acceptance, one missing candidate, or one missing touched path. At most two counterexample rounds run.
 - `refine-node`: bounded children and obligations for a selected node.
 - `draft-patch`: one patch for one file/hunk node.
 - `repair-patch`: one replacement patch grounded in an exact failed check.

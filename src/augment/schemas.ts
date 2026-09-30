@@ -10,7 +10,9 @@ export const DomainCandidateSchema = z.object({
 });
 
 export const DomainProposalSchema = z.object({
-  candidates: z.array(DomainCandidateSchema).min(1).max(7),
+  // Leave two controller slots for challenge counterexamples. The live domain
+  // remains bounded by MAX_CANDIDATES_PER_NODE (7).
+  candidates: z.array(DomainCandidateSchema).min(1).max(5),
 });
 
 export const ChallengeDomainSchema = z.discriminatedUnion("kind", [

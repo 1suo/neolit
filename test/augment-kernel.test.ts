@@ -34,6 +34,33 @@ describe("augment kernel", () => {
     expect(root.candidateIds.map((id) => result.candidates[id]!.label)).toEqual(["Fixed count", "Deadline"]);
   });
 
+  it("reserves challenge capacity and never exceeds seven live candidates", async () => {
+    const candidate = (ordinal: number) => ({ label: `Approach ${ordinal}`, rationale: `materially distinct ${ordinal}`, confidence: 60 + ordinal, touchedPaths: [`src/${ordinal}.ts`] });
+    const model = runtime([
+      () => ({ candidates: [1, 2, 3, 4, 5].map(candidate) }),
+      () => ({ kind: "missing-candidate", candidate: candidate(6), reason: "missing family" }),
+      () => ({ kind: "missing-candidate", candidate: candidate(7), reason: "another missing family" }),
+    ]);
+    const result = await crystallizeNode(model, task(), { taskId: "task:kernel", nodeId: "node:root", temperature: "normal", lod: "architecture" });
+    const root = result.nodes[result.rootNodeId]!;
+    expect(root.candidateIds).toHaveLength(7);
+    expect(root.acceptedDomain).toBe(false);
+    expect(root.challengeRound).toBe(0);
+  });
+
+  it("rejects oversized initial domains before touching task state", async () => {
+    const initial = task();
+    const candidates = Array.from({ length: 6 }, (_, index) => ({
+      label: `Approach ${index + 1}`,
+      rationale: `materially distinct ${index + 1}`,
+      confidence: 70,
+      touchedPaths: [`src/${index + 1}.ts`],
+    }));
+    const model: ModelRuntime = { call: async () => ({ value: { candidates } }) };
+    await expect(crystallizeNode(model, initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "architecture" })).rejects.toThrow(/invalid/u);
+    expect(initial.nodes[initial.rootNodeId]!.candidateIds).toHaveLength(0);
+  });
+
   it("does not collapse during crystallization", async () => {
     const model = runtime([
       () => ({ candidates: [{ label: "Only", rationale: "one materially distinct family", confidence: 75, touchedPaths: ["src/a.ts"] }] }),

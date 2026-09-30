@@ -26,7 +26,7 @@ import type {
   Temperature,
 } from "./types.js";
 
-export const MAX_DOMAIN_CHALLENGE_ROUNDS = 3;
+export const MAX_DOMAIN_CHALLENGE_ROUNDS = 2;
 
 export class AugmentModelError extends Error {
   constructor(message: string) {

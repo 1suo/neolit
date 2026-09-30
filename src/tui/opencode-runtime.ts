@@ -108,7 +108,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
 function operationContract(request: ModelCallRequest): string {
   switch (request.operation) {
     case "generate-domain":
-      return `{"candidates":[{"label":"short approach","rationale":"why materially distinct","confidence":75,"touchedPaths":["src/example.ts"]}]} (1-7 candidates; confidence is an integer 0-100 estimate that this approach solves the node)`;
+      return `{"candidates":[{"label":"short approach","rationale":"why materially distinct","confidence":75,"touchedPaths":["src/example.ts"]}]} (exactly 1-5 initial candidates; confidence is an integer 0-100 estimate; reserve capacity for challenge counterexamples)`;
     case "challenge-domain":
       return `Accept: {"kind":"accept"}; missing family: {"kind":"missing-candidate","candidate":{...},"reason":"..."}; omitted path: {"kind":"missing-path","path":"src/example.ts","reason":"..."}`;
     case "refine-node":

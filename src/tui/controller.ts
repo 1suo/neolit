@@ -270,7 +270,13 @@ export class AugmentTuiController {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
-      this.message = "Approaches ready. Choose one with keys 1-7.";
+      const generatedNode = this.task.nodes[nodeId]!;
+      if (!generatedNode.acceptedDomain) {
+        this.error = "The challenger did not accept the final domain. Press [G] to rethink it with your message.";
+        this.message = "Approaches were generated, but challenge coverage was inconclusive.";
+      } else {
+        this.message = "Approaches ready. Choose one with keys 1-7.";
+      }
       this.selectNodeEntry(nodeId);
     });
   }

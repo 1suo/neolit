@@ -45,6 +45,7 @@ Model runtimes execute outside this module. `crystallize` and `refine` in `kerne
 - A stale node cannot become ready without an explicit refresh.
 - Candidate and refinement counts are bounded to prevent model-driven bloat.
 - Candidate confidence is presentation metadata and never selects or eliminates a candidate.
+- Initial domains contain at most five candidates; two challenge slots keep the live bound at seven.
 - Locked paths are controller authority and reject candidate, refinement, or patch mutations inside them.
 - Planned diffs preserve exact patch text and derive only presentation kinds (`new`, `modify`, `delete`, `unknown`).
 - Descendant candidate domains are not generated implicitly by refinement; each node is crystallized only when explicitly opened.
