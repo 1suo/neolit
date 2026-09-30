@@ -90,6 +90,11 @@ describe("augment TUI controller", () => {
     expect(Object.values(patched.task?.diffs ?? {})[0]).toMatchObject({ kind: "modify", path: "src/auth/session.ts" });
     expect(patched.error).toBeUndefined();
     expect(patched.message).toContain("Draft change ready");
+
+    const fileOutput = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
+    expect(fileOutput.indexOf("EXACT DIFF")).toBeGreaterThanOrEqual(0);
+    expect(fileOutput.indexOf("EXACT DIFF")).toBeLessThan(fileOutput.indexOf("APPROACHES"));
+    expect(fileOutput).toContain("--- a/src/auth/session.ts");
   });
 
   it("shows the complete repository tree and enforces path locks", async () => {
@@ -134,9 +139,13 @@ describe("augment TUI controller", () => {
     expect(directory?.entry.diffIds).toHaveLength(1);
 
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
-    expect(output).toContain("CHANGES IN THIS PATH");
-    expect(output).toContain("~ src/auth/session.ts · changed");
+    expect(output).toContain("FOLDER CHANGE SUMMARY");
+    expect(output).toContain("1 changed");
+    expect(output).toContain("retry cutoff");
+    expect(output).toContain("session.ts");
+    expect(output).toContain("EXACT DIFF");
     expect(output).toContain("--- a/src/auth/session.ts");
+    expect(output.indexOf("EXACT DIFF")).toBeLessThan(output.indexOf("APPROACHES"));
   });
 
   it("highlights explained files and directories with selected-path details", async () => {

@@ -122,15 +122,33 @@ function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boo
   );
 }
 
-function DiffDetail(props: { diff: PlannedDiff; description?: string }) {
+function changeSummary(diffs: PlannedDiff[]): string {
+  const counts = diffs.reduce((accumulator, diff) => {
+    accumulator[diff.kind] = (accumulator[diff.kind] ?? 0) + 1;
+    return accumulator;
+  }, {} as Record<PlannedDiff["kind"], number>);
+  const parts: string[] = [];
+  if (counts.new) parts.push(`${counts.new} added`);
+  if (counts.modify) parts.push(`${counts.modify} changed`);
+  if (counts.delete) parts.push(`${counts.delete} removed`);
+  if (counts.unknown) parts.push(`${counts.unknown} unknown`);
+  return parts.join(" · ") || "no drafted changes";
+}
+
+function DiffPreview(props: { diff: PlannedDiff; description?: string; lines?: number }) {
+  const patchLines = props.diff.patch.split(/\r?\n/);
+  const visible = patchLines.slice(0, props.lines ?? 8);
   return (
-    <Box flexDirection="column" gap={1} paddingX={1}>
+    <Box flexDirection="column">
       <Box gap={1}>
         <Text color={props.diff.kind === "delete" ? theme.error : theme.success} bold>{diffIndicator(props.diff.kind)} {props.diff.path || props.diff.id}</Text>
-        <Text color={theme.muted}>{diffLabel(props.diff.kind)} · {props.diff.basisRevision}</Text>
+        <Text color={theme.muted}>{diffLabel(props.diff.kind)}</Text>
       </Box>
       {props.description ? <Text color={theme.text}>  {props.description}</Text> : null}
-      <Text>{props.diff.patch}</Text>
+      {visible.map((line, index) => (
+        <Text key={`${index}:${line}`} wrap="truncate-end" color={diffColor(line)}>{line || " "}</Text>
+      ))}
+      {patchLines.length > visible.length ? <Text color={theme.muted}>  … {patchLines.length - visible.length} more diff lines</Text> : null}
     </Box>
   );
 }
@@ -173,6 +191,8 @@ function EntryDetail(props: { state: TuiActionState; row?: PlannedTreeRow }) {
 
   if (!row) return <Text color={theme.muted}>  Describe a change to see affected files.</Text>;
   const state = entryState(task, row);
+  const isDirectory = row.entry.kind === "dir" || row.entry.kind === "root";
+  const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
 
   return (
     <Box flexDirection="column" gap={1} paddingX={1}>
@@ -181,12 +201,35 @@ function EntryDetail(props: { state: TuiActionState; row?: PlannedTreeRow }) {
         <Text color={theme.muted}>{state.state}</Text>
       </Box>
 
-      {nodes.map((node) => (
-        <Box key={node!.id} flexDirection="column">
-          <Text color={theme.muted}>  {node!.reason}</Text>
-          {node!.blockedReason ? <Text color={theme.error}>  {node!.blockedReason}</Text> : null}
-        </Box>
-      ))}
+      {diffs.length ? (
+        <>
+          <Text color={theme.muted}>{isDirectory ? "FOLDER CHANGE SUMMARY" : "FILE CHANGE"}</Text>
+          <Text color={state.color} bold>{changeSummary(diffs)}</Text>
+          {diffs.map((diff) => (
+            <Box key={diff.id} flexDirection="column">
+              <Text color={diff.kind === "delete" ? theme.error : theme.success}>
+                {diffIndicator(diff.kind)} {diff.path} · {diffLabel(diff.kind)}
+              </Text>
+              {descriptionFor(diff) ? <Text color={theme.text}>  {descriptionFor(diff)}</Text> : null}
+            </Box>
+          ))}
+          <Text color={theme.muted}>EXACT DIFF</Text>
+          {diffs.slice(0, 3).map((diff) => (
+            <DiffPreview key={diff.id} diff={diff} description={descriptionFor(diff)} lines={isDirectory ? 6 : 10} />
+          ))}
+          {diffs.length > 3 ? <Text color={theme.muted}>  + {diffs.length - 3} more patches</Text> : null}
+        </>
+      ) : nodes.length ? (
+        <>
+          <Text color={theme.muted}>{isDirectory ? "FOLDER PLAN" : "FILE PLAN"}</Text>
+          {nodes.map((node) => (
+            <Box key={node!.id} flexDirection="column">
+              <Text color={theme.text}>  {node!.reason}</Text>
+              {node!.blockedReason ? <Text color={theme.error}>  {node!.blockedReason}</Text> : null}
+            </Box>
+          ))}
+        </>
+      ) : null}
 
       {candidates.length ? <Text color={theme.muted}>APPROACHES</Text> : null}
       {candidates.map((candidate, index) => (
@@ -216,22 +259,7 @@ function EntryDetail(props: { state: TuiActionState; row?: PlannedTreeRow }) {
         <Text key={note.id} color={theme.warning}>  {note.text}</Text>
       ))}
 
-      {diffs.length ? (
-        <>
-          <Text color={theme.muted}>CHANGES IN THIS PATH</Text>
-          <Text color={state.color} bold>{state.indicator} {state.state}</Text>
-          {diffs.map((diff) => (
-            <Text key={diff.id} color={diff.kind === "delete" ? theme.error : theme.success}>
-              {diffIndicator(diff.kind)} {diff.path} · {diffLabel(diff.kind)}
-            </Text>
-          ))}
-        </>
-      ) : null}
-
-      {diffs.length ? <Text color={theme.muted}>EXACT PATCHES</Text> : null}
-      {diffs.map((diff) => <DiffDetail key={diff.id} diff={diff} description={task?.nodes[diff.nodeId]?.reason} />)}
-
-      <Text color={theme.primary}>[Enter] message/regenerate · [L] lock · [V] exact diff</Text>
+      <Text color={theme.primary}>[Enter] message/regenerate · [L] lock</Text>
     </Box>
   );
 }

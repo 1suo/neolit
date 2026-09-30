@@ -38,9 +38,7 @@ Indicators:
 ? explained  path is relevant to the current explanation topic
 ```
 
-Directories inherit and aggregate descendant state. A selected directory shows every descendant change kind, the reason for each planned node, and each exact patch. A selected file shows its own reason and exact patch. Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
-
-Press `V` on a drafted path to open a dedicated full-screen exact-diff view. The tree’s `new` / `modify` / `delete` marks are derived labels only; the exact patch remains authoritative.
+Directories inherit and aggregate descendant state. Selecting a directory immediately shows a folder change summary (`added`, `changed`, `removed`), every descendant change with its reason, and the beginning of each exact patch. Selecting a file immediately shows its reason and exact patch in the right pane; no secondary command is required. `V` only expands that already-visible diff to a scrollable full-screen view. Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
 
 Press `E` to start an explanation task. Explanation tasks highlight related files and folders with `?` marks and show their role, summary, and confidence in the selected-path pane. Explanation tasks do not create approaches or patches.
 
@@ -62,7 +60,7 @@ After a task is entered and a model is configured, the TUI automatically generat
 ```text
 N  start a new change plan
 E  start an explanation task
-V  view exact diff for selected drafted path
+V  expand the already-visible exact diff to full screen
 Enter  attach a message and regenerate this path/subtree
 1-7  choose the numbered approach
 F  expand the chosen approach into files

@@ -165,14 +165,14 @@ F      expand approach into files
 D      draft selected file change
 G      rethink selected path
 L      lock/unlock selected file or directory
-V      full-screen exact diff for selected path/subtree
+V      expand the right-pane diff to full screen
 E      explanation task
 N      new change task
 Tab    switch pane
 Q      quit
 ```
 
-Directories aggregate descendant change state (`added`, `removed`, `changed`) and show descendant descriptions and exact patches when selected.
+Directories aggregate descendant change state (`added`, `removed`, `changed`) and immediately show descendant descriptions and exact patches when selected. Files show their exact patch directly in the right pane.
 
 The TUI changes planned state only; it does not apply patches to the repository.
 Its layout and interaction conventions are documented in
