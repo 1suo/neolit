@@ -333,6 +333,20 @@ export class AugmentTuiController {
   async refine(temperature: Temperature = "normal", lod: LOD = this.defaultLod): Promise<void> {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
+    const node = task.nodes[nodeId];
+    if (node && node.status !== "collapsed") {
+      const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
+      if (node.status === "domain" && possible.length) {
+        this.error = `This path has ${possible.length} approaches — choose one with keys 1-7, then press F to expand it.`;
+      }
+      else if (node.status === "unresolved") {
+        this.error = "Approaches are not generated for this path yet. Press G to generate them, choose 1-7, then press F.";
+      }
+      else {
+        this.error = `This path is ${node.status}; only a path with a chosen approach can be expanded with F.`;
+      }
+      return;
+    }
     await this.dispatch("Expanding approach into files", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 4, method: "refine", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;

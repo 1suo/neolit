@@ -275,6 +275,22 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().error).toContain("A patch must target a file, hunk, or virtual node");
   });
 
+  it("tells the user to choose an approach before refining a domain path", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
+    controller.select("entry:src/auth/session.ts");
+    await controller.constrain("Preserve the retry API.");
+    expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
+    await controller.refine();
+    expect(controller.snapshot().error).toBe("This path has 1 approaches — choose one with keys 1-7, then press F to expand it.");
+    expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
+  });
+
   it("carries path messages into descendant patch context", async () => {
     const patchConstraints: unknown[] = [];
     const runtime: ModelRuntime = {
