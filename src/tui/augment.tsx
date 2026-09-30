@@ -220,7 +220,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   }
   if (live?.failed) {
     add(`× ${live.failed.operation ?? "Last operation"} failed — press the same key again to retry`, theme.error, true);
-    if (live.failed.error) add(`  ${crop(live.failed.error.split(/\r?\n/)[0] ?? "", 180)}`, theme.error);
+    if (live.failed.error) add(`  ${live.failed.error.split(/\r?\n/)[0] ?? ""}`, theme.error);
   }
   if (!row) {
     lines.push({ text: "  Describe a change to see affected files.", color: theme.muted });
@@ -264,7 +264,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
           repositoryOnly: false,
         }, pendingLocks, childLive, appliedDiffIds);
         const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
-        add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${crop(reason, 56)}` : ""}`, childState.color);
+        add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${reason}` : ""}`, childState.color);
       }
       if (plannedChildren.length > FOLDER_CONTENT_PREVIEW) {
         add(`  + ${plannedChildren.length - FOLDER_CONTENT_PREVIEW} more entries`, theme.muted);
@@ -336,14 +336,15 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   return lines;
 }
 
-function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; live?: LiveStatus }) {
+function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; width: number; live?: LiveStatus }) {
   const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds), [props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds]);
-  const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
-  const visible = lines.slice(clamped, clamped + props.limit);
+  const visual = useMemo(() => lines.flatMap((line) => wrapLine(line.text, props.width).map((text) => ({ ...line, text }))), [lines, props.width]);
+  const clamped = Math.min(props.offset, Math.max(0, visual.length - props.limit));
+  const visible = visual.slice(clamped, clamped + props.limit);
   return (
     <Box flexDirection="column" paddingX={1}>
       {visible.map((line, index) => (
-        <Text key={`${clamped + index}:${line.text}`} wrap="truncate-end" color={line.color} bold={line.bold}>{line.text}</Text>
+        <Text key={`${clamped + index}:${line.text}`} wrap="wrap" color={line.color} bold={line.bold}>{line.text}</Text>
       ))}
     </Box>
   );
@@ -392,6 +393,40 @@ function visibleWindow<T>(items: T[], selected: number, limit: number): T[] {
   if (items.length <= limit) return items;
   const start = Math.max(0, Math.min(items.length - limit, selected - Math.floor(limit / 2)));
   return items.slice(start, start + limit);
+}
+
+/**
+ * Wraps one logical detail line to the pane width. Continuations are indented
+ * two spaces and overlong tokens are hard-split, so no entry — diff lines,
+ * rationales, explanations, messages — is ever truncated.
+ */
+export function wrapLine(text: string, width: number): string[] {
+  const limit = Math.max(8, Math.floor(width));
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [" "];
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    let token = word;
+    while ([...token].length > limit) {
+      if (line) {
+        lines.push(line);
+        line = "";
+      }
+      const chars = [...token];
+      lines.push(chars.slice(0, limit).join(""));
+      token = chars.slice(limit).join("");
+    }
+    const candidate = line ? `${line} ${token}` : `${lines.length ? "  " : ""}${token}`;
+    if ([...candidate].length <= limit) {
+      line = candidate;
+      continue;
+    }
+    lines.push(line);
+    line = `  ${token}`;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
 export function AugmentTui(props: { controller: AugmentTuiController; modelAvailable: boolean; modelLabel?: string }) {
@@ -541,6 +576,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const layout = frameLayout(windowSize.rows, mode);
   const treeRows = visibleWindow(state.rows, selectedIndex, layout.treeRows);
   const treeWidth = Math.max(30, Math.floor(windowSize.columns * 0.42) - 6);
+  const detailWidth = Math.max(20, Math.floor(windowSize.columns * 0.58) - 4);
   const detailLimit = layout.detailRows;
   const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]!;
   const liveStatus: LiveStatus | undefined = state.active || state.failed
@@ -595,7 +631,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Box paddingLeft={1}>
             <Text color={pane === "detail" ? theme.primary : theme.muted} bold>SELECTED PATH</Text>
           </Box>
-          <DetailView state={state} row={selectedRow} offset={detailOffset} limit={detailLimit} live={liveStatus} />
+          <DetailView state={state} row={selectedRow} offset={detailOffset} limit={detailLimit} width={detailWidth} live={liveStatus} />
         </Box>
       </Box>
 

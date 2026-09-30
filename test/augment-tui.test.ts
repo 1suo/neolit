@@ -8,7 +8,7 @@ import { renderToString } from "ink";
 import { cleanup, render as renderInk } from "ink-testing-library";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
-import { AugmentTui, detailLines, frameLayout } from "../src/tui/augment.js";
+import { AugmentTui, detailLines, frameLayout, wrapLine } from "../src/tui/augment.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
 const temporaryFiles: string[] = [];
@@ -1050,6 +1050,18 @@ describe("OpenCode CLI runtime parsing", () => {
       lod: "file",
     });
     expect(fs.readFileSync(capture, "utf8")).toContain("--model fast/challenge");
+  });
+
+  it("wraps long detail entries instead of truncating them", () => {
+    expect(wrapLine("short line", 20)).toEqual(["short line"]);
+    expect(wrapLine("   ", 20)).toEqual([" "]);
+    const wrapped = wrapLine("the quick brown fox jumps over the lazy dog again and again", 20);
+    expect(wrapped[0]).toBe("the quick brown fox");
+    expect(wrapped.length).toBeGreaterThan(1);
+    expect(wrapped.at(-1)).toContain("again");
+    expect(wrapped.slice(1).every((line) => line.startsWith("  "))).toBe(true);
+    const hard = wrapLine("x".repeat(45), 20);
+    expect(hard).toEqual(["x".repeat(20), "x".repeat(20), "  xxxxx"]);
   });
 
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {
