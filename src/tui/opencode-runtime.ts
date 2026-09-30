@@ -112,7 +112,7 @@ function operationContract(request: ModelCallRequest): string {
     case "challenge-domain":
       return `Accept: {"kind":"accept"}; missing family: {"kind":"missing-candidate","candidate":{...},"reason":"..."}; omitted path: {"kind":"missing-path","path":"src/example.ts","reason":"..."}`;
     case "refine-node":
-      return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"...","obligations":[{"kind":"test|documentation|check|todo","description":"..."}],"diff":{"patch":"..."}}]} (1-16 children; never generate descendant candidate domains; lockedPaths are immutable)`;
+      return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"...","obligations":[{"kind":"test|documentation|check|todo","description":"..."}],"diff":{"patch":"..."}}]} (1-16 children; every child needs a one-sentence reason for why it changes; directory children must give a reason that summarizes the change intent for their whole subtree; never generate descendant candidate domains; lockedPaths are immutable)`;
     case "draft-patch":
     case "repair-patch":
       return `{"patch":"unified diff text","assumptions":["explicit assumption"]}`;

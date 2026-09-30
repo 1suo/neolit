@@ -170,6 +170,7 @@ describe("augment TUI controller", () => {
     const lines = detail.map((line) => line.text);
     expect(lines).toContain("CONTENTS · 1 entry");
     expect(lines.some((line) => line.includes("augment/"))).toBe(false);
+    expect(lines.some((line) => line.includes("auth/") && line.includes("retry cutoff"))).toBe(true);
     expect(lines).toContain("FOLDER CHANGE SUMMARY");
     expect(lines).toContain("1 changed");
     expect(lines.some((line) => line.includes("retry cutoff"))).toBe(true);
@@ -403,6 +404,7 @@ describe("selected-path detail model", () => {
     const lines = detailLines(controller.snapshot().task, row).map((line) => line.text);
     expect(lines).toContain("CONTENTS · 1 entry");
     expect(lines.some((line) => line.includes("session.ts") && line.includes("changed"))).toBe(true);
+    expect(lines.some((line) => line.includes("session.ts") && line.includes("retry cutoff"))).toBe(true);
   });
 });
 

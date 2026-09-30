@@ -217,7 +217,8 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
           entry: child,
           repositoryOnly: false,
         });
-        add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}`, childState.color);
+        const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
+        add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${crop(reason, 56)}` : ""}`, childState.color);
       }
       if (plannedChildren.length > FOLDER_CONTENT_PREVIEW) {
         add(`  + ${plannedChildren.length - FOLDER_CONTENT_PREVIEW} more entries`, theme.muted);
