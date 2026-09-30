@@ -359,6 +359,35 @@ function inputTitle(mode: InputMode): string {
   return "Message";
 }
 
+const FRAME_PADDING_ROWS = 2;
+const HEADER_ROWS = 1;
+const LEGEND_ROWS = 2;
+const STATUS_ROWS = 1;
+const INPUT_BOX_ROWS = 3;
+const PANE_FRAME_ROWS = 3;
+const MIN_PANE_ROWS = 1;
+const UNKNOWN_WINDOW_ROWS = 24;
+
+export interface FrameLayout {
+  frameRows: number;
+  treeRows: number;
+  detailRows: number;
+}
+
+/**
+ * Derives the vertical budget of one frame from the terminal height. Ink clears
+ * and scrolls the terminal whenever a frame exceeds the viewport, which reads
+ * as a flash on every repaint, so the fixed chrome (root padding, header,
+ * legend, status or input box, pane borders and labels) is subtracted first and
+ * the panes receive only what is left.
+ */
+export function frameLayout(rows: number | undefined, mode: InputMode): FrameLayout {
+  const frameRows = typeof rows === "number" && Number.isFinite(rows) && rows > 0 ? Math.floor(rows) : UNKNOWN_WINDOW_ROWS;
+  const chromeRows = FRAME_PADDING_ROWS + HEADER_ROWS + LEGEND_ROWS + (mode === "idle" ? STATUS_ROWS : INPUT_BOX_ROWS);
+  const paneRows = Math.max(MIN_PANE_ROWS, frameRows - chromeRows - PANE_FRAME_ROWS);
+  return { frameRows, treeRows: paneRows, detailRows: paneRows };
+}
+
 function visibleWindow<T>(items: T[], selected: number, limit: number): T[] {
   if (items.length <= limit) return items;
   const start = Math.max(0, Math.min(items.length - limit, selected - Math.floor(limit / 2)));
@@ -509,9 +538,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   });
 
   const selectedIndex = state.rows.findIndex((row) => row.id === state.selectedRowId);
-  const treeRows = visibleWindow(state.rows, selectedIndex, Math.max(6, windowSize.rows - 12));
+  const layout = frameLayout(windowSize.rows, mode);
+  const treeRows = visibleWindow(state.rows, selectedIndex, layout.treeRows);
   const treeWidth = Math.max(30, Math.floor(windowSize.columns * 0.42) - 6);
-  const detailLimit = Math.max(6, (windowSize.rows || 0) - 9);
+  const detailLimit = layout.detailRows;
   const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]!;
   const liveStatus: LiveStatus | undefined = state.active || state.failed
     ? { spinner, active: state.active, failed: state.failed }
@@ -526,7 +556,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const statusMessage = state.busy ? `${state.operation ?? "Working"}...` : state.error ?? state.message;
 
   return (
-    <Box flexDirection="column" height={windowSize.rows} width={windowSize.columns} padding={1}>
+    <Box flexDirection="column" height={layout.frameRows} width={windowSize.columns} padding={1}>
       <Box gap={2} flexShrink={0}>
         <Text color={theme.primary} bold>NEOLIT</Text>
         <Text color={state.error ? theme.error : status === "IDLE" ? theme.muted : theme.success}>[{status}]</Text>

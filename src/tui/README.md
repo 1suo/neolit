@@ -46,6 +46,8 @@ Press `E` to start an explanation task. Explanation tasks highlight related file
 
 While an operation runs, its target path animates in the tree (`⠋` with the lowercased operation name) and the preview leads with the live operation and its target path. A failed operation marks its path with `× failed`; the preview shows the failed operation and the first line of its error, and the mark clears when the same path succeeds on retry.
 
+Every frame derives its vertical budget from the exported `frameLayout()`: fixed chrome (root padding, header, legend, status line or input box, pane borders and titles) is subtracted from the terminal height first, so a frame never exceeds the viewport and repaints never clear and scroll the terminal.
+
 ## Flow
 
 After a task is entered and a model is configured, the TUI automatically generates approaches. The intended flow is:

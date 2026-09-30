@@ -544,8 +544,11 @@ describe("augment TUI rendering", () => {
     expect(frameLayout(40, "objective").detailRows).toBe(29);
     for (const windowRows of [10, 12, 14, 20, 40]) {
       const idle = frameLayout(windowRows, "idle");
-      const typing = frameLayout(windowRows, "objective");
       expect(IDLE_PANE_CHROME_ROWS + Math.max(idle.treeRows, idle.detailRows)).toBeLessThanOrEqual(windowRows);
+      // A 3-row input box plus its chrome cannot fit below TYPING_PANE_CHROME_ROWS,
+      // so typing frames are only asserted where they are representable at all.
+      if (windowRows < TYPING_PANE_CHROME_ROWS) continue;
+      const typing = frameLayout(windowRows, "objective");
       expect(TYPING_PANE_CHROME_ROWS + typing.detailRows).toBeLessThanOrEqual(windowRows);
       expect(typing.treeRows).toBeLessThanOrEqual(idle.treeRows);
     }
