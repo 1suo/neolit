@@ -316,7 +316,14 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const run = (action: Promise<void>) => {
     // Controller dispatch marks itself busy synchronously before its first await.
     sync();
-    void action.then(sync);
+    void action.then(sync, (error: unknown) => {
+      setState((current) => ({
+        ...current,
+        busy: false,
+        operation: undefined,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    });
   };
 
   useEffect(() => {
@@ -398,6 +405,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       return;
     }
     if (key.return || input === "\r" || input === "\n") {
+      if (!state.task) {
+        setState((current) => ({ ...current, error: "No task is active. Press [N] for a change or [E] for an explanation." }));
+        return;
+      }
       beginInput("message");
       return;
     }

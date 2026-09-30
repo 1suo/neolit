@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import React from "react";
 import { renderToString } from "ink";
+import { cleanup, render as renderInk } from "ink-testing-library";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { AugmentTui } from "../src/tui/augment.js";
@@ -12,6 +13,7 @@ import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
 const temporaryFiles: string[] = [];
 afterEach(() => {
+  cleanup();
   for (const file of temporaryFiles.splice(0)) fs.rmSync(file, { force: true });
 });
 
@@ -244,6 +246,16 @@ describe("augment TUI rendering", () => {
     expect(controller.snapshot()).toMatchObject({ busy: true, operation: "Generating approaches" });
     await operation;
     expect(controller.snapshot()).toMatchObject({ busy: false, operation: undefined });
+  });
+
+  it("does not crash or open a path message prompt without an active task", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd() });
+    const instance = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
+    instance.stdin.write("\n");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(instance.lastFrame()).toContain("No task is active");
+    expect(instance.lastFrame()).not.toContain("Message about selected path");
+    instance.unmount();
   });
 
   it("renders the initial planned-tree layout without a model runtime", () => {
