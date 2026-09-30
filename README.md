@@ -163,6 +163,7 @@ Enter  message/regenerate selected path and its descendants
 1-7    choose numbered approach
 F      expand approach into files
 D      draft selected file change
+A      apply drafted patch to working tree
 G      rethink selected path
 L      lock/unlock selected file or directory
 E      explanation task
@@ -173,7 +174,7 @@ Q      quit
 
 Directories aggregate descendant change state (`added`, `removed`, `changed`) and show a contents summary of their planned children (unchanged entries are omitted), aggregated change counts, and descendant patch previews. Files show their complete exact patch directly in the right pane; `j`/`k` scroll it while the detail pane is focused.
 
-The TUI changes planned state only; it does not apply patches to the repository.
+The TUI can apply drafted patches to the working tree on request (`A`): every selected patch is preflighted with `git apply --check` and applied as one unit, so a conflict anywhere leaves the tree untouched. Nothing is staged or committed, and the repository tree refreshes after applying.
 Its layout and interaction conventions are documented in
 [`src/tui/README.md`](./src/tui/README.md).
 

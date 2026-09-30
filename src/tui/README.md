@@ -63,6 +63,7 @@ Enter  attach a message and regenerate this path/subtree
 1-7  choose the numbered approach
 F  expand the chosen approach into files
 D  draft the selected file patch
+A  apply the selected path's drafted patch(es) to the working tree
 G  rethink the selected path
 L  lock/unlock the selected file or directory
 O  reopen selected node with a reason
@@ -89,11 +90,11 @@ AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after
 AUGMENT_TUI_NO_MODEL=1
 ```
 
-The TUI requires an interactive terminal (`process.stdin.isTTY`). It can edit only planned state and never applies a patch to the repository.
+The TUI requires an interactive terminal (`process.stdin.isTTY`). It edits planned state and, on request, applies drafted patches to the working tree through `src/tui/apply.ts`: a shared `git apply --check` preflight followed by one atomic `git apply` for all selected patches. It never stages or commits.
 
 ## Architecture
 
-`controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `augment.tsx` renders the controller snapshot with Ink/React. This keeps interaction testable separately from rendering.
+`controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `apply.ts` owns the host-side apply transaction (preflighted, atomic, uncommitted `git apply`). `augment.tsx` renders the controller snapshot with Ink/React. This keeps interaction testable separately from rendering.
 
 ## Validation
 

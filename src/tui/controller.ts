@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
+import { applyPlannedDiffs } from "./apply.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
@@ -170,7 +171,7 @@ export class AugmentTuiController {
   private readonly runtime?: ModelRuntime;
   private readonly server: AugmentServer;
   private readonly defaultLod: LOD;
-  private readonly repository: PlanTreeEntry;
+  private repository: PlanTreeEntry;
   private task?: PlanTask;
   private rows: PlannedTreeRow[] = [];
   private selectedRowId?: string;
@@ -325,6 +326,25 @@ export class AugmentTuiController {
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
       this.message = "Draft change ready. It is not applied to the repository.";
+    });
+  }
+
+  async applySelected(): Promise<void> {
+    const task = this.requireTask();
+    const row = this.selectedRow();
+    const diffs = (row?.entry.diffIds ?? []).flatMap((id) => {
+      const diff = task.diffs[id];
+      return diff ? [diff] : [];
+    });
+    if (!diffs.length) {
+      this.error = "Select a drafted path to apply.";
+      return;
+    }
+    await this.dispatch("Applying drafted changes", async () => {
+      const applied = applyPlannedDiffs(this.directory, diffs);
+      this.repository = repositoryTree(this.directory);
+      this.refresh();
+      this.message = `Applied ${applied.length} drafted ${applied.length === 1 ? "change" : "changes"} to the working tree. Nothing is committed.`;
     });
   }
 

@@ -12,9 +12,11 @@ import { AugmentTui, detailLines } from "../src/tui/augment.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
 const temporaryFiles: string[] = [];
+const temporaryDirectories: string[] = [];
 afterEach(() => {
   cleanup();
   for (const file of temporaryFiles.splice(0)) fs.rmSync(file, { force: true });
+  for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 });
 
 function fakeOpenCode(): string {
@@ -23,6 +25,33 @@ function fakeOpenCode(): string {
   fs.chmodSync(file, 0o755);
   temporaryFiles.push(file);
   return file;
+}
+
+function tempGitRepo(): string {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "augment-apply-"));
+  temporaryDirectories.push(directory);
+  const git = (args: string[]) => execFileSync("git", ["-C", directory, ...args], { stdio: "ignore" });
+  git(["init", "-q"]);
+  fs.writeFileSync(path.join(directory, "session.ts"), "alpha\nbeta\n");
+  git(["add", "session.ts"]);
+  git(["-c", "user.email=t@example.com", "-c", "user.name=test", "commit", "-q", "-m", "init"]);
+  return directory;
+}
+
+function singleFileRuntime(patch: string): ModelRuntime {
+  return {
+    async call(request: ModelCallRequest) {
+      if (request.operation === "generate-domain") {
+        return { value: { candidates: [{ label: "Edit session", rationale: "direct edit", confidence: 80, touchedPaths: ["session.ts"] }] } };
+      }
+      if (request.operation === "challenge-domain") return { value: { kind: "accept" } };
+      if (request.operation === "refine-node") {
+        return { value: { children: [{ kind: "file", path: "session.ts", lod: "hunk", reason: "apply the edit" }] } };
+      }
+      if (request.operation === "draft-patch") return { value: { patch, assumptions: [] } };
+      throw new Error(`unexpected operation ${request.operation}`);
+    },
+  };
 }
 
 function modelRuntime(): ModelRuntime {
@@ -244,6 +273,45 @@ describe("augment TUI controller", () => {
     expect(rows.every((row) => row.kind === "entry")).toBe(true);
     expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(1);
     void crystallized;
+  });
+});
+
+describe("augment TUI apply", () => {
+  const validPatch = "--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,3 @@\n alpha\n+gamma\n beta\n";
+
+  it("applies the selected drafted patch to the working tree", async () => {
+    const directory = tempGitRepo();
+    const controller = new AugmentTuiController({ directory, runtime: singleFileRuntime(validPatch) });
+    await controller.start("edit session");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:session.ts");
+    await controller.draftPatch();
+    await controller.applySelected();
+    expect(fs.readFileSync(path.join(directory, "session.ts"), "utf8")).toBe("alpha\ngamma\nbeta\n");
+    const snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    expect(snapshot.message).toContain("Applied 1 drafted change");
+    expect(snapshot.rows.some((row) => row.id === "entry:session.ts")).toBe(true);
+  });
+
+  it("rejects the whole apply when the preflight fails and leaves the tree untouched", async () => {
+    const directory = tempGitRepo();
+    const brokenPatch = "--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,2 @@\n alpha\n-missing\n+delta\n";
+    const controller = new AugmentTuiController({ directory, runtime: singleFileRuntime(brokenPatch) });
+    await controller.start("edit session");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:session.ts");
+    await controller.draftPatch();
+    await controller.applySelected();
+    const snapshot = controller.snapshot();
+    expect(snapshot.error).toContain("git apply --check");
+    expect(fs.readFileSync(path.join(directory, "session.ts"), "utf8")).toBe("alpha\nbeta\n");
   });
 });
 

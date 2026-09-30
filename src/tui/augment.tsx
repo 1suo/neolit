@@ -443,6 +443,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     else if (command === "g") run(props.controller.rethink());
     else if (command === "f") run(props.controller.refine());
     else if (command === "d") run(props.controller.draftPatch());
+    else if (command === "a") run(props.controller.applySelected());
     else if (command === "l") run(props.controller.toggleLock());
     else if (command === "o") beginInput("reopen");
     else if (command === "s") beginInput("stale");
@@ -508,6 +509,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.primary}> files · </Text>
           <Text color={theme.primary} bold>[D]</Text>
           <Text color={theme.primary}> draft · </Text>
+          <Text color={theme.primary} bold>[A]</Text>
+          <Text color={theme.primary}> apply · </Text>
           <Text color={theme.primary} bold>[G]</Text>
           <Text color={theme.primary}> rethink · </Text>
           <Text color={theme.primary} bold>[L]</Text>
