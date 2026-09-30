@@ -34,6 +34,32 @@ describe("augment kernel", () => {
     expect(root.candidateIds.map((id) => result.candidates[id]!.label)).toEqual(["Fixed count", "Deadline"]);
   });
 
+  it("records out-of-scope challenge candidates as constraints instead of failing", async () => {
+    const seeded = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 75, touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]);
+    const domain = await crystallizeNode(seeded, task(), { taskId: "task:kernel", nodeId: "node:root", temperature: "normal", lod: "file" });
+    const selected = selectCandidate(domain, { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]! });
+    const refined = await refineWithModel(runtime([
+      () => ({ children: [{ kind: "file", path: "src/a.ts", lod: "hunk", reason: "tighten the cutoff" }] }),
+    ]), selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "hunk" });
+    const fileNode = Object.values(refined.nodes).find((node) => node.kind === "file")!;
+
+    const model = runtime([
+      () => ({ candidates: [{ label: "Local fix", rationale: "inside scope", confidence: 70, touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "missing-candidate", candidate: { label: "Cover the sibling", rationale: "docs must move too", confidence: 55, touchedPaths: ["src/b.ts"] }, reason: "the change needs src/b.ts as well" }),
+      () => ({ kind: "accept" }),
+    ]);
+    const result = await crystallizeNode(model, refined, { taskId: refined.id, nodeId: fileNode.id, temperature: "normal", lod: "file" });
+    expect(result.nodes[fileNode.id]!.status).toBe("domain");
+    expect(result.nodes[fileNode.id]!.acceptedDomain).toBe(true);
+    expect(result.nodes[fileNode.id]!.candidateIds).toHaveLength(1);
+    const note = Object.values(result.constraints).find((constraint) => constraint.text.includes("Out-of-scope dependency"));
+    expect(note?.text).toContain("src/b.ts");
+    expect(note?.nodeId).toBe(fileNode.id);
+  });
+
   it("reserves challenge capacity and never exceeds seven live candidates", async () => {
     const candidate = (ordinal: number) => ({ label: `Approach ${ordinal}`, rationale: `materially distinct ${ordinal}`, confidence: 60 + ordinal, touchedPaths: [`src/${ordinal}.ts`] });
     const model = runtime([

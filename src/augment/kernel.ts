@@ -8,6 +8,7 @@ import {
 import {
   acceptDomain,
   addCandidate,
+  addConstraint,
   attachExplanations,
   attachPatch,
   collapseNode,
@@ -154,28 +155,35 @@ export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, inp
       current = acceptDomain(current, { taskId: current.id, expectedRevision: current.revision, nodeId: input.nodeId, challengeRound: round });
       return current;
     }
-    if (challenge.kind === "missing-candidate") {
+    const proposal = challenge.kind === "missing-candidate"
+      ? { label: challenge.candidate.label, rationale: `Missing family: ${challenge.reason}`, confidence: challenge.candidate.confidence, touchedPaths: challenge.candidate.touchedPaths, note: `the domain omits a materially distinct approach: ${challenge.reason}` }
+      : { label: `Cover ${challenge.path}`, rationale: challenge.reason, confidence: 0, touchedPaths: [challenge.path], note: `challenge reported missing path ${challenge.path}: ${challenge.reason}` };
+    try {
       current = addCandidate(current, {
         taskId: current.id,
         expectedRevision: current.revision,
         nodeId: input.nodeId,
-        candidate: challenge.candidate,
-        reason: challenge.reason,
+        candidate: {
+          label: proposal.label,
+          rationale: proposal.rationale,
+          confidence: proposal.confidence,
+          touchedPaths: proposal.touchedPaths,
+        },
+        reason: proposal.note,
       });
-      continue;
+    } catch (error) {
+      // A challenger candidate touching paths outside this node's scope is a
+      // real dependency, but it cannot become a candidate here. Record it as a
+      // constraint so the omission is not lost and keep going.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("escapes") && !message.includes("scope")) throw error;
+      current = addConstraint(current, {
+        taskId: current.id,
+        expectedRevision: current.revision,
+        nodeId: input.nodeId,
+        text: `Out-of-scope dependency noted by challenge: ${proposal.note} (paths: ${proposal.touchedPaths.join(", ")})`,
+      });
     }
-    current = addCandidate(current, {
-      taskId: current.id,
-      expectedRevision: current.revision,
-      nodeId: input.nodeId,
-      candidate: {
-        label: `Cover ${challenge.path}`,
-        rationale: challenge.reason,
-        confidence: 0,
-        touchedPaths: [challenge.path],
-      },
-      reason: `challenge reported missing path ${challenge.path}: ${challenge.reason}`,
-    });
   }
   if (rounds === 0) return current;
   return exhaustDomainChallenge(current, {
