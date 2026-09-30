@@ -19,9 +19,9 @@ afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 });
 
-function fakeOpenCode(): string {
+function fakeOpenCode(output = "{\"type\":\"message\",\"parts\":[{\"type\":\"text\",\"text\":\"{\\\"kind\\\":\\\"accept\\\"}\"}]}"): string {
   const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-  fs.writeFileSync(file, "#!/bin/sh\ncat <<'JSON'\n{\"type\":\"message\",\"parts\":[{\"type\":\"text\",\"text\":\"{\\\"kind\\\":\\\"accept\\\"}\"}]}\nJSON\n");
+  fs.writeFileSync(file, `#!/bin/sh\ncat <<'JSON'\n${output}\nJSON\n`);
   fs.chmodSync(file, 0o755);
   temporaryFiles.push(file);
   return file;
@@ -445,6 +445,30 @@ describe("OpenCode CLI runtime parsing", () => {
     expect(extractJsonOnly('Here it is:\n```json\n{"kind":"accept"}\n```\n')).toEqual({ kind: "accept" });
     expect(extractJsonOnly('prefix {"patch":"diff"} suffix')).toEqual({ patch: "diff" });
     expect(extractJsonOnly("no object")).toBeUndefined();
+  });
+
+  it("reports likely truncation when the model output never completes the JSON object", async () => {
+    const truncated = "I will inspect the files first.\n{\"children\":[{\"path\":\"src/a.ts\",\"kind\":\"file\"";
+    const wrapped = JSON.stringify({ type: "message", parts: [{ type: "text", text: truncated }] });
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: fakeOpenCode(wrapped), timeoutMs: 5_000 });
+    await expect(runtime.call({
+      operation: "refine-node",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: {} as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "normal",
+      lod: "file",
+    })).rejects.toThrow(/no JSON object for refine-node: The response looks truncated/);
   });
 
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {

@@ -56,7 +56,13 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   async call(request: ModelCallRequest): Promise<OpenCodeCliResult> {
     const text = await this.prompt(request);
     const value = extractJsonOnly(text);
-    if (value === undefined) throw new Error(`OpenCode returned no JSON object for ${request.operation}:\n${text.slice(0, 2000)}`);
+    if (value === undefined) {
+      const trimmed = text.trim();
+      const truncated = trimmed && !trimmed.endsWith("}") && !trimmed.endsWith("```")
+        ? " The response looks truncated before completing the JSON object; ask for terser output or press the key again to retry."
+        : "";
+      throw new Error(`OpenCode returned no JSON object for ${request.operation}:${truncated}\n${text.slice(0, 2000)}`);
+    }
     return { value, text, stdout: text };
   }
 
@@ -108,11 +114,11 @@ export class OpenCodeCliRuntime implements ModelRuntime {
 function operationContract(request: ModelCallRequest): string {
   switch (request.operation) {
     case "generate-domain":
-      return `{"candidates":[{"label":"short approach","rationale":"why materially distinct","confidence":75,"touchedPaths":["src/example.ts"]}]} (exactly 1-5 initial candidates; every candidate MUST list 1-64 real repository paths it would touch in touchedPaths — an empty touchedPaths array is invalid and rejected; confidence is an integer 0-100 estimate; reserve capacity for challenge counterexamples)`;
+      return `{"candidates":[{"label":"short approach","rationale":"why materially distinct","confidence":75,"touchedPaths":["src/example.ts"]}]} (exactly 1-5 initial candidates; every candidate MUST list 1-64 real repository paths it would touch in touchedPaths — an empty touchedPaths array is invalid and rejected; keep each label <= 80 characters and each rationale <= 240 characters; confidence is an integer 0-100 estimate; reserve capacity for challenge counterexamples)`;
     case "challenge-domain":
-      return `Accept: {"kind":"accept"}; missing family: {"kind":"missing-candidate","candidate":{...},"reason":"..."}; omitted path: {"kind":"missing-path","path":"src/example.ts","reason":"..."}`;
+      return `Accept: {"kind":"accept"}; missing family: {"kind":"missing-candidate","candidate":{...},"reason":"..."}; omitted path: {"kind":"missing-path","path":"src/example.ts","reason":"..."} (reasons <= 240 characters; accept as soon as the domain covers the objective)`;
     case "refine-node":
-      return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"...","obligations":[{"kind":"test|documentation|check|todo","description":"..."}],"diff":{"patch":"..."}}]} (1-16 children; every child needs a one-sentence reason for why it changes; directory children must give a reason that summarizes the change intent for their whole subtree; never generate descendant candidate domains; lockedPaths are immutable)`;
+      return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"one sentence","obligations":[{"kind":"test|documentation|check|todo","description":"..."}]}]} (1-16 children; every child needs one reason of at most 200 characters; directory children summarize their whole subtree in that one sentence; at most 4 obligations per child, each description <= 160 characters; omit the diff field entirely — patches are drafted by a separate later operation, never here; never generate descendant candidate domains; lockedPaths are immutable)`;
     case "draft-patch":
     case "repair-patch":
       return `{"patch":"unified diff text","assumptions":["explicit assumption"]}`;
