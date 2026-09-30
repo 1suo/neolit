@@ -20,6 +20,25 @@ const theme = {
 
 type InputMode = "idle" | "objective" | "explanation" | "message" | "reopen" | "stale";
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+export interface LiveStatus {
+  spinner: string;
+  active?: { nodeId?: string; operation?: string };
+  failed?: { nodeId?: string; operation?: string; error?: string };
+}
+
+interface RowLiveFlags {
+  active?: boolean;
+  failed?: boolean;
+  spinner?: string;
+  operation?: string;
+}
+
+function entryTouchesNode(entry: PlannedTreeRow["entry"], nodeId?: string): boolean {
+  return nodeId !== undefined && entry.nodeIds.includes(nodeId);
+}
+
 function crop(value: string, width: number): string {
   const chars = [...value];
   return chars.length <= width ? value : `${chars.slice(0, Math.max(1, width - 1)).join("")}…`;
@@ -70,7 +89,7 @@ function diffState(diffs: PlannedDiff[]): { indicator: string; state: string; co
   return { indicator: "Δ", state: parts.join(" "), color: counts.delete ? theme.warning : theme.success };
 }
 
-function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLocks: string[] = []): { indicator: string; state: string; color: string } {
+function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLocks: string[] = [], live?: RowLiveFlags): { indicator: string; state: string; color: string } {
   const entry = row.entry;
   const candidates = candidatesForEntry(task, entry);
   const selected = candidates.find((candidate) => candidate.status === "selected");
@@ -82,6 +101,8 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLock
   const locked = entry.path !== "." && ((task && pathIsLocked(task, entry.path)) || pendingLocks.includes(entry.path));
   const drafted = diffState(diffs);
 
+  if (live?.active) return { indicator: live.spinner ?? "⠋", state: `${(live.operation ?? "working").toLowerCase()}…`, color: theme.warning };
+  if (live?.failed) return { indicator: "×", state: "failed · see preview", color: theme.error };
   if (locked) return { indicator: "#", state: "locked", color: theme.error };
   if (explanations.length) {
     const primary = explanations.some((explanation) => explanation!.role === "primary");
@@ -101,8 +122,8 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLock
   return { indicator: "·", state: "suggested", color: theme.muted };
 }
 
-function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingLocks?: string[] }) {
-  const state = entryState(props.task, props.row, props.pendingLocks);
+function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingLocks?: string[]; live?: RowLiveFlags }) {
+  const state = entryState(props.task, props.row, props.pendingLocks, props.live);
   return (
     <Box backgroundColor={props.selected ? theme.selected : undefined}>
       <Text wrap="truncate-end">
@@ -183,8 +204,23 @@ const FOLDER_PATCH_PREVIEW = 4;
  * directory rows render a summary derived from their immediate contents plus
  * aggregated descendant changes.
  */
-export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = []): DetailLine[] {
-  if (!row) return [{ text: "  Describe a change to see affected files.", color: theme.muted }];
+export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = [], live?: LiveStatus): DetailLine[] {
+  const lines: DetailLine[] = [];
+  const add = (text: string, color: string, bold = false) => lines.push({ text: text.length ? text : " ", color, bold });
+  const label = (text: string) => add(text, theme.muted);
+
+  if (live?.active) {
+    const target = task?.nodes[live.active.nodeId ?? ""]?.path;
+    add(`${live.spinner} ${live.active.operation ?? "Working"}…${target && target !== "." ? ` · ${target}` : ""}`, theme.warning, true);
+  }
+  if (live?.failed) {
+    add(`× ${live.failed.operation ?? "Last operation"} failed — press the same key again to retry`, theme.error, true);
+    if (live.failed.error) add(`  ${crop(live.failed.error.split(/\r?\n/)[0] ?? "", 180)}`, theme.error);
+  }
+  if (!row) {
+    lines.push({ text: "  Describe a change to see affected files.", color: theme.muted });
+    return lines;
+  }
   const entry = row.entry;
   const nodes = entry.nodeIds.map((id) => task?.nodes[id]).filter(Boolean) as PlanNode[];
   const candidates = candidatesForEntry(task, entry);
@@ -197,9 +233,6 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   const state = entryState(task, row, pendingLocks);
   const isDirectory = entry.kind === "dir" || entry.kind === "root";
   const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
-  const lines: DetailLine[] = [];
-  const add = (text: string, color: string, bold = false) => lines.push({ text: text.length ? text : " ", color, bold });
-  const label = (text: string) => add(text, theme.muted);
 
   add(state.indicator ? `${state.indicator} ${entryName(entry)}` : entryName(entry), state.color, true);
   if (state.state) label(state.state);
@@ -209,6 +242,14 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     if (plannedChildren.length) {
       label(`CONTENTS · ${plannedChildren.length} ${plannedChildren.length === 1 ? "entry" : "entries"}`);
       for (const child of plannedChildren.slice(0, FOLDER_CONTENT_PREVIEW)) {
+        const childLive: RowLiveFlags | undefined = live
+          ? {
+              active: entryTouchesNode(child, live.active?.nodeId),
+              failed: entryTouchesNode(child, live.failed?.nodeId),
+              spinner: live.spinner,
+              operation: live.active?.operation,
+            }
+          : undefined;
         const childState = entryState(task, {
           kind: "entry",
           id: `entry:${child.path}`,
@@ -216,7 +257,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
           branch: "",
           entry: child,
           repositoryOnly: false,
-        }, pendingLocks);
+        }, pendingLocks, childLive);
         const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
         add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${crop(reason, 56)}` : ""}`, childState.color);
       }
@@ -287,8 +328,8 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   return lines;
 }
 
-function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number }) {
-  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks), [props.state.task, props.row, props.state.pendingLocks]);
+function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; live?: LiveStatus }) {
+  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks, props.live), [props.state.task, props.row, props.state.pendingLocks, props.live]);
   const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
   const visible = lines.slice(clamped, clamped + props.limit);
   return (
@@ -321,10 +362,17 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const [state, setState] = useState<TuiActionState>(() => props.controller.snapshot());
   const [pane, setPane] = useState<"tree" | "detail">("tree");
   const [detailOffset, setDetailOffset] = useState(0);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [mode, setMode] = useState<InputMode>("idle");
   const [inputValue, setInputValue] = useState("");
   const autoGenerated = useRef(new Set<string>());
   const initialSnapshot = state;
+
+  useEffect(() => {
+    if (!state.busy) return;
+    const timer = setInterval(() => setSpinnerFrame((current) => current + 1), 120);
+    return () => clearInterval(timer);
+  }, [state.busy]);
 
   const sync = () => {
     setState(props.controller.snapshot());
@@ -454,6 +502,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const treeRows = visibleWindow(state.rows, selectedIndex, Math.max(6, windowSize.rows - 12));
   const treeWidth = Math.max(30, Math.floor(windowSize.columns * 0.42) - 6);
   const detailLimit = Math.max(6, (windowSize.rows || 0) - 9);
+  const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]!;
+  const liveStatus: LiveStatus | undefined = state.active || state.failed
+    ? { spinner, active: state.active, failed: state.failed }
+    : undefined;
   const rootStatus = state.task?.nodes[state.task.rootNodeId]?.status;
   const status = state.busy
     ? "BUSY"
@@ -481,23 +533,28 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={pane === "tree" ? theme.primary : theme.muted} bold>FILES</Text>
           {treeRows.length === 0 ? (
             <Text color={theme.muted}>No plan yet. Press [N].</Text>
-          ) : treeRows.map((row) => (
-            <PlannedRow
-              key={row.id}
-              row={row}
-              task={state.task}
-              selected={state.selectedRowId === row.id}
-              width={treeWidth}
-              pendingLocks={state.pendingLocks}
-            />
-          ))}
+          ) : treeRows.map((row) => {
+            const activeRow = entryTouchesNode(row.entry, state.active?.nodeId);
+            const failedRow = entryTouchesNode(row.entry, state.failed?.nodeId);
+            return (
+              <PlannedRow
+                key={row.id}
+                row={row}
+                task={state.task}
+                selected={state.selectedRowId === row.id}
+                width={treeWidth}
+                pendingLocks={state.pendingLocks}
+                live={activeRow || failedRow ? { active: activeRow, failed: failedRow, spinner, operation: state.active?.operation } : undefined}
+              />
+            );
+          })}
         </Box>
 
         <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden">
           <Box paddingLeft={1}>
             <Text color={pane === "detail" ? theme.primary : theme.muted} bold>SELECTED PATH</Text>
           </Box>
-          <DetailView state={state} row={selectedRow} offset={detailOffset} limit={detailLimit} />
+          <DetailView state={state} row={selectedRow} offset={detailOffset} limit={detailLimit} live={liveStatus} />
         </Box>
       </Box>
 

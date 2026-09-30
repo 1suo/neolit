@@ -25,6 +25,8 @@ FILES
 Indicators:
 
 ```text
+⠋ working     an operation is running on this path (animated while busy)
+× failed      the last operation on this path failed; the preview shows why
 ◇ possible   path appears in a possible approach
 ◆ chosen     selected approach, with model confidence
 ~ planned    concrete path in the current plan
@@ -40,6 +42,8 @@ Indicators:
 Directories inherit and aggregate descendant state. Selecting a directory immediately shows a contents summary listing only its planned children — each with its plan indicator, state, and the model's per-path change reason; unchanged entries are omitted — plus a folder change summary (`added`, `changed`, `removed`), every descendant change with its reason, and the beginning of each exact patch. Selecting a file immediately shows its reason and complete exact patch in the right pane; no secondary command is required. The pane scrolls with `j`/`k` while it is focused (`Tab`). Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
 
 Press `E` to start an explanation task. Explanation tasks highlight related files and folders with `?` marks and show their role, summary, and confidence in the selected-path pane. Explanation tasks do not create approaches or patches.
+
+While an operation runs, its target path animates in the tree (`⠋` with the lowercased operation name) and the preview leads with the live operation and its target path. A failed operation marks its path with `× failed`; the preview shows the failed operation and the first line of its error, and the mark clears when the same path succeeds on retry.
 
 ## Flow
 

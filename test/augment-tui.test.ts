@@ -184,6 +184,40 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().error).toContain("touches locked path");
   });
 
+  it("tracks the active and failed node of model operations", async () => {
+    let fail = true;
+    let gate: Promise<void> = Promise.resolve();
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") {
+          await gate;
+          if (fail) throw new Error("model exploded");
+          return { value: { candidates: [{ label: "Fixed retry count", rationale: "Smallest change", confidence: 78, touchedPaths: ["src/auth/session.ts"] }] } };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const failed = controller.snapshot();
+    expect(failed.failed).toMatchObject({ operation: "Generating approaches", nodeId: failed.task!.rootNodeId, error: expect.stringContaining("model exploded") });
+    expect(failed.active).toBeUndefined();
+
+    fail = false;
+    let releaseRetry!: () => void;
+    gate = new Promise<void>((resolve) => { releaseRetry = resolve; });
+    const retry = controller.crystallize();
+    const inFlight = controller.snapshot();
+    expect(inFlight.active).toMatchObject({ operation: "Generating approaches", nodeId: inFlight.task!.rootNodeId });
+    expect(inFlight.failed?.nodeId).toBe(inFlight.task!.rootNodeId);
+    releaseRetry();
+    await retry;
+    const recovered = controller.snapshot();
+    expect(recovered.active).toBeUndefined();
+    expect(recovered.failed).toBeUndefined();
+  });
+
   it("aggregates directory changes and shows descendant exact patches", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");
@@ -385,6 +419,30 @@ describe("augment TUI rendering", () => {
     expect(output).not.toContain("unchanged");
     expect(output).toContain("Press [N] to describe a change.");
   });
+
+  it("animates the active operation in the tree and preview, then clears it", async () => {
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => { releaseGate = resolve; });
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") {
+          await gate;
+          return { value: { candidates: [{ label: "Fixed retry count", rationale: "Smallest change", confidence: 78, touchedPaths: ["src/auth/session.ts"] }] } };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    const instance = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
+    instance.stdin.write("g");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(instance.lastFrame()).toMatch(/rethinking selected path…/i);
+    releaseGate();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(instance.lastFrame()).not.toMatch(/rethinking selected path…/i);
+    instance.unmount();
+  });
 });
 
 describe("selected-path detail model", () => {
@@ -436,6 +494,22 @@ describe("selected-path detail model", () => {
     expect(lines).toContain("CONTENTS · 1 entry");
     expect(lines.some((line) => line.includes("session.ts") && line.includes("changed"))).toBe(true);
     expect(lines.some((line) => line.includes("session.ts") && line.includes("retry cutoff"))).toBe(true);
+  });
+
+  it("leads the preview with live operation and failure status", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    const snapshot = controller.snapshot();
+    const row = snapshot.rows.find((item) => item.id === "entry:.");
+    const rootNodeId = snapshot.task!.rootNodeId;
+
+    const active = detailLines(snapshot.task, row, [], { spinner: "⠋", active: { nodeId: rootNodeId, operation: "Generating approaches" } }).map((line) => line.text);
+    expect(active[0]).toContain("⠋ Generating approaches…");
+
+    const failed = detailLines(snapshot.task, row, [], { spinner: "⠋", failed: { nodeId: rootNodeId, operation: "Generating approaches", error: "model exploded\nsecond line" } }).map((line) => line.text);
+    expect(failed[0]).toContain("× Generating approaches failed");
+    expect(failed.join("\n")).toContain("model exploded");
+    expect(failed.join("\n")).not.toContain("second line");
   });
 });
 

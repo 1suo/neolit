@@ -24,6 +24,8 @@ export interface TuiActionState {
   message: string;
   error?: string;
   pendingLocks: string[];
+  active?: { nodeId?: string; operation?: string };
+  failed?: { nodeId?: string; operation?: string; error?: string };
 }
 
 export interface AugmentTuiControllerOptions {
@@ -175,6 +177,10 @@ export class AugmentTuiController {
   private repository: PlanTreeEntry;
   private task?: PlanTask;
   private pendingLocks: string[] = [];
+  private activeNodeId?: string;
+  private failedNodeId?: string;
+  private failedOperation?: string;
+  private failedError?: string;
   private rows: PlannedTreeRow[] = [];
   private selectedRowId?: string;
   private busy = false;
@@ -197,7 +203,18 @@ export class AugmentTuiController {
   }
 
   snapshot(): TuiActionState {
-    return { task: this.task, rows: this.rows, selectedRowId: this.selectedRowId, busy: this.busy, operation: this.operation, message: this.message, error: this.error, pendingLocks: [...this.pendingLocks] };
+    return {
+      task: this.task,
+      rows: this.rows,
+      selectedRowId: this.selectedRowId,
+      busy: this.busy,
+      operation: this.operation,
+      message: this.message,
+      error: this.error,
+      pendingLocks: [...this.pendingLocks],
+      active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
+      failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
+    };
   }
 
   selectedRow(): PlannedTreeRow | undefined {
@@ -290,7 +307,7 @@ export class AugmentTuiController {
         this.message = "Approaches ready. Choose one with keys 1-7.";
       }
       this.selectNodeEntry(nodeId);
-    });
+    }, nodeId);
   }
 
   async selectCandidate(candidateId?: string): Promise<void> {
@@ -322,7 +339,7 @@ export class AugmentTuiController {
       this.refresh();
       this.message = "Planned files ready. Select a file and press D to draft its change.";
       this.selectFirstChild(nodeId);
-    });
+    }, nodeId);
   }
 
   async draftPatch(): Promise<void> {
@@ -338,7 +355,7 @@ export class AugmentTuiController {
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
       this.message = "Draft change ready. It is not applied to the repository.";
-    });
+    }, nodeId);
   }
 
   async applySelected(): Promise<void> {
@@ -412,7 +429,7 @@ export class AugmentTuiController {
         this.selectNodeEntry(nodeId);
         this.message = `Message saved for ${targetPath}. No model is configured to regenerate it.`;
       }
-    });
+    }, nodeId);
   }
 
   async rethink(): Promise<void> {
@@ -431,7 +448,7 @@ export class AugmentTuiController {
       this.refresh();
       this.selectNodeEntry(nodeId);
       this.message = "Approaches regenerated. Choose one with keys 1-7.";
-    });
+    }, nodeId);
   }
 
   async reopen(reason: string): Promise<void> {
@@ -512,23 +529,33 @@ export class AugmentTuiController {
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
   }
 
-  private async dispatch(operation: string, action: () => Promise<void>): Promise<void> {
+  private async dispatch(operation: string, action: () => Promise<void>, nodeId?: string): Promise<void> {
     if (this.busy) {
       this.error = `Another operation is already running: ${this.operation ?? "unknown"}.`;
       return;
     }
     this.busy = true;
     this.operation = operation;
+    this.activeNodeId = nodeId;
     this.error = undefined;
     this.message = `${operation}...`;
     try {
       await action();
+      if (this.failedNodeId && nodeId && this.failedNodeId === nodeId) {
+        this.failedNodeId = undefined;
+        this.failedOperation = undefined;
+        this.failedError = undefined;
+      }
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
       this.message = `${operation} failed.`;
+      this.failedNodeId = nodeId;
+      this.failedOperation = operation;
+      this.failedError = this.error;
     } finally {
       this.busy = false;
       this.operation = undefined;
+      this.activeNodeId = undefined;
     }
   }
 }
