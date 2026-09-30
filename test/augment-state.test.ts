@@ -11,6 +11,8 @@ import {
   refineNode,
   rejectCandidate,
   reopenNode,
+  setPathLock,
+  classifyPatchKind,
 } from "../src/augment/state.js";
 
 function task() {
@@ -24,8 +26,8 @@ function domain() {
     expectedRevision: initial.revision,
     nodeId: initial.rootNodeId,
     candidates: [
-      { label: "Fixed retry count", rationale: "Smallest behavior change.", touchedPaths: ["src/auth/session.ts", "test/auth/retry.test.ts"] },
-      { label: "Deadline cutoff", rationale: "Honors request deadlines.", touchedPaths: ["src/auth/deadline.ts"] },
+      { label: "Fixed retry count", rationale: "Smallest behavior change.", confidence: 78, touchedPaths: ["src/auth/session.ts", "test/auth/retry.test.ts"] },
+      { label: "Deadline cutoff", rationale: "Honors request deadlines.", confidence: 72, touchedPaths: ["src/auth/deadline.ts"] },
     ],
   });
 }
@@ -59,15 +61,15 @@ describe("planned diff state", () => {
       expectedRevision: current.revision,
       nodeId: current.rootNodeId,
       candidates: [
-        { label: "Same", rationale: "one", touchedPaths: ["src/a.ts"] },
-        { label: "same", rationale: "two", touchedPaths: ["src/b.ts"] },
+        { label: "Same", rationale: "one", confidence: 50, touchedPaths: ["src/a.ts"] },
+        { label: "same", rationale: "two", confidence: 50, touchedPaths: ["src/b.ts"] },
       ],
     })).toThrow(/Duplicate candidate label/u);
     expect(() => generateDomain(current, {
       taskId: current.id,
       expectedRevision: current.revision,
       nodeId: current.rootNodeId,
-      candidates: Array.from({ length: 8 }, (_, index) => ({ label: `Candidate ${index}`, rationale: "why", touchedPaths: ["src/a.ts"] })),
+      candidates: Array.from({ length: 8 }, (_, index) => ({ label: `Candidate ${index}`, rationale: "why", confidence: 50, touchedPaths: ["src/a.ts"] })),
     })).toThrow(/at most 7/u);
   });
 
@@ -84,6 +86,7 @@ describe("planned diff state", () => {
     });
     const children = Object.values(refined.nodes).filter((node) => node.parent === refined.rootNodeId);
     expect(children.map((node) => node.path).sort()).toEqual(["src/auth/session.ts", "test/auth/retry.test.ts"]);
+    expect(children.every((node) => node.candidateIds.length === 0)).toBe(true);
     expect(() => refineNode(refined, { taskId: refined.id, expectedRevision: refined.revision, nodeId: refined.rootNodeId, children: [{ kind: "file", path: "src/other.ts", lod: "hunk", reason: "duplicate" }] })).toThrow(/already has a refinement/u);
   });
 
@@ -122,12 +125,15 @@ describe("planned diff state", () => {
     expect(staled.revision).toBeGreaterThan(refined.revision);
   });
 
-  it("projects candidate paths into a recursively unwrapped filesystem tree", () => {
-    const current = domain();
-    const tree = planTree(current);
+  it("projects only the selected candidate into the filesystem tree", () => {
+    const unchosen = planTree(domain());
+    expect(unchosen.children).toHaveLength(0);
+
+    const tree = planTree(collapsed());
     const src = tree.children.find((entry) => entry.path === "src");
     const auth = src?.children.find((entry) => entry.path === "src/auth");
     expect(auth?.children.map((entry) => entry.path)).toContain("src/auth/session.ts");
+    expect(auth?.children.map((entry) => entry.path)).not.toContain("src/auth/deadline.ts");
     expect(tree.children.some((entry) => entry.path === "docs")).toBe(false);
   });
 
@@ -139,17 +145,24 @@ describe("planned diff state", () => {
     expect(rejected.candidates[candidateId]).toMatchObject({ status: "eliminated", eliminationReason: "No deadline plumbing." });
   });
 
-  it("keeps a file patch immutable by basis revision", () => {
-    const current = collapsed();
-    const refined = refineNode(current, {
-      taskId: current.id,
-      expectedRevision: current.revision,
-      nodeId: current.rootNodeId,
-      children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "implementation" }],
-    });
-    const child = Object.values(refined.nodes).find((node) => node.path === "src/auth/session.ts")!;
-    const patched = attachPatch(refined, { taskId: refined.id, expectedRevision: refined.revision, nodeId: child.id, patch: "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n" });
-    const diff = Object.values(patched.diffs)[0]!;
-    expect(diff).toMatchObject({ nodeId: child.id, path: "src/auth/session.ts", basisRevision: "commit:1" });
+  it("locks paths against candidates, refinement, and patches", () => {
+    const locked = setPathLock(task(), { taskId: "task:1", expectedRevision: 1, path: "src/auth", locked: true });
+    expect(locked.lockedPaths).toEqual(["src/auth"]);
+    expect(() => generateDomain(locked, {
+      taskId: locked.id,
+      expectedRevision: locked.revision,
+      nodeId: locked.rootNodeId,
+      candidates: [{ label: "Forbidden", rationale: "touches lock", confidence: 90, touchedPaths: ["src/auth/session.ts"] }],
+    })).toThrow(/touches locked path/u);
+
+    const unlocked = setPathLock(locked, { taskId: locked.id, expectedRevision: locked.revision, path: "src/auth", locked: false });
+    expect(unlocked.lockedPaths).toEqual([]);
+  });
+
+  it("classifies planned patches as new, modify, or delete", () => {
+    expect(classifyPatchKind("new file mode 100644\n--- /dev/null\n+++ b/new.ts")).toBe("new");
+    expect(classifyPatchKind("deleted file mode 100644\n--- a/old.ts\n+++ /dev/null")).toBe("delete");
+    expect(classifyPatchKind("diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts")).toBe("modify");
+    expect(classifyPatchKind("replace this file")).toBe("unknown");
   });
 });

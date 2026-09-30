@@ -144,9 +144,9 @@ state changes.
 
 ## TUI
 
-The standalone `augment` executable embeds `AugmentServer`, renders the planned
-diff tree with Ink/React, and (when `opencode` is available) routes bounded
-model operations through the OpenCode CLI:
+The standalone `augment` executable embeds `AugmentServer`, renders the full
+repository tree with integrated plan state, and (when `opencode` is available)
+routes bounded model operations through the OpenCode CLI:
 
 ```sh
 npm run build
@@ -156,14 +156,15 @@ npm run build
 AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
-After a task is entered, the TUI automatically generates a filesystem-shaped plan. Then:
+After a task is entered, the TUI automatically generates approaches for the root node. Lower nodes receive candidates only when explicitly opened. Then:
 
 ```text
-Enter  message about selected path
+Enter  message/regenerate selected path and its descendants
 1-7    choose numbered approach
 F      expand approach into files
 D      draft selected file change
 G      rethink selected path
+L      lock/unlock selected file or directory
 N      new plan
 Tab    switch pane
 Q      quit

@@ -10,7 +10,7 @@ function model(): ModelRuntime {
   return {
     async call(request: ModelCallRequest) {
       if (request.operation === "generate-domain") {
-        return { value: { candidates: [{ label: "Fixed count", rationale: "smallest change", touchedPaths: ["src/auth/session.ts"] }] } };
+        return { value: { candidates: [{ label: "Fixed count", rationale: "smallest change", confidence: 78, touchedPaths: ["src/auth/session.ts"] }] } };
       }
       if (request.operation === "challenge-domain") return { value: { kind: "accept" } };
       throw new Error(`unexpected operation ${request.operation}`);
@@ -35,8 +35,13 @@ describe("augmentd protocol", () => {
     const { server, task } = await started();
     const crystallized = await server.handle(request(2, "crystallize", { taskId: task.id, expectedRevision: task.revision, nodeId: task.rootNodeId, temperature: "normal", lod: "file" }));
     expect(crystallized && "result" in crystallized).toBe(true);
-    const updated = (crystallized as { result: { revision: number } }).result;
-    const tree = await server.handle(request(3, "tree/get", { taskId: task.id }));
+    const updated = (crystallized as { result: { revision: number; rootNodeId: string; nodes: Record<string, { candidateIds: string[] }> } }).result;
+    const beforeChoice = await server.handle(request(3, "tree/get", { taskId: task.id }));
+    expect(((beforeChoice as { result: { children: unknown[] } }).result).children).toHaveLength(0);
+    const candidateId = updated.nodes[updated.rootNodeId]!.candidateIds[0]!;
+    const selected = await server.handle(request(4, "node/select", { taskId: updated.id, expectedRevision: updated.revision, nodeId: updated.rootNodeId, candidateId }));
+    expect(selected && "result" in selected).toBe(true);
+    const tree = await server.handle(request(5, "tree/get", { taskId: updated.id }));
     const root = (tree as { result: { children: unknown[] } }).result;
     expect(root.children).toHaveLength(1);
     expect(updated.revision).toBeGreaterThan(task.revision);

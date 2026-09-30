@@ -17,6 +17,7 @@ export interface PlanCandidate {
   nodeId: PlanNodeId;
   label: string;
   rationale: string;
+  confidence: number;
   touchedPaths: PathPattern[];
   status: "possible" | "selected" | "eliminated";
   eliminationReason?: string;
@@ -39,11 +40,14 @@ export interface PlanEvidence {
   refs: string[];
 }
 
+export type PlannedDiffKind = "new" | "modify" | "delete" | "unknown";
+
 export interface PlannedDiff {
   id: PlanDiffId;
   nodeId: PlanNodeId;
   path: string;
   patch: string;
+  kind: PlannedDiffKind;
   basisRevision: string;
   failedCheck?: string;
 }
@@ -91,6 +95,7 @@ export interface PlanTask {
   basisRevision: string;
   revision: PlanRevision;
   rootNodeId: PlanNodeId;
+  lockedPaths: string[];
   nodes: Record<PlanNodeId, PlanNode>;
   candidates: Record<PlanCandidateId, PlanCandidate>;
   constraints: Record<PlanConstraintId, PlanConstraint>;
@@ -112,6 +117,8 @@ export type PlanEvent =
   | { type: "patch-attached"; revision: PlanRevision; nodeId: PlanNodeId; diffId: PlanDiffId }
   | { type: "constraint-added"; revision: PlanRevision; constraintId: PlanConstraintId }
   | { type: "node-staled"; revision: PlanRevision; nodeId: PlanNodeId; path: string }
+  | { type: "path-locked"; revision: PlanRevision; path: string }
+  | { type: "path-unlocked"; revision: PlanRevision; path: string }
   | { type: "node-blocked"; revision: PlanRevision; nodeId: PlanNodeId; reason: string };
 
 export interface PlanTreeEntry {
@@ -145,6 +152,7 @@ export interface ModelContextPacket {
   constraints: PlanConstraint[];
   obligations: PlanObligation[];
   diffs: PlannedDiff[];
+  lockedPaths: string[];
   rejectedCandidates: Array<{ label: string; reason: string }>;
 }
 

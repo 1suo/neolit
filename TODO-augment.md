@@ -6,6 +6,9 @@ Known gaps between shipped behavior and `src/augment/SPEC.md`.
 - [ ] Add a repository watcher that turns path/basis changes into `node/stale` operations.
 - [ ] Add an isolated apply/verify transaction boundary for planned patches.
 - [x] Add an OpenCode CLI `ModelRuntime` for the standalone TUI.
+- [x] Project the planned tree onto the complete repository tree.
+- [x] Add task-local locked paths with mutation rejection.
+- [x] Keep candidate domains node-local and scope candidate paths to their owning node.
 - [ ] Add native OpenCode-plugin and Codex `ModelRuntime` adapters.
 - [ ] Persist and reload TUI tasks across process restarts.
 - [ ] Add a stable transport address (Unix socket) alongside stdio.

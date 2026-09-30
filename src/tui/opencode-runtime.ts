@@ -67,7 +67,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       `Return ONE valid JSON object and no prose, Markdown, or code fence.`,
       `JSON contract:\n${operation}`,
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
-      `Context packet (JSON):\n${JSON.stringify(request.context, null, 2)}`,
+      `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed:\n${JSON.stringify(request.context, null, 2)}`,
     ].join("\n\n");
     const args = ["run", "--format", "json", ...(this.model ? ["--model", this.model] : []), ...(this.agent ? ["--agent", this.agent] : []), ...(this.autoApprove ? ["--auto"] : []), "--title", `augment-${request.operation}`, "--", prompt];
     const stdout = await this.run(args);
@@ -108,11 +108,11 @@ export class OpenCodeCliRuntime implements ModelRuntime {
 function operationContract(request: ModelCallRequest): string {
   switch (request.operation) {
     case "generate-domain":
-      return `{"candidates":[{"label":"short approach","rationale":"why materially distinct","touchedPaths":["src/example.ts"]}]} (1-7 candidates)`;
+      return `{"candidates":[{"label":"short approach","rationale":"why materially distinct","confidence":75,"touchedPaths":["src/example.ts"]}]} (1-7 candidates; confidence is an integer 0-100 estimate that this approach solves the node)`;
     case "challenge-domain":
       return `Accept: {"kind":"accept"}; missing family: {"kind":"missing-candidate","candidate":{...},"reason":"..."}; omitted path: {"kind":"missing-path","path":"src/example.ts","reason":"..."}`;
     case "refine-node":
-      return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"...","obligations":[{"kind":"test|documentation|check|todo","description":"..."}],"diff":{"patch":"..."}}]} (1-16 children)`;
+      return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"...","obligations":[{"kind":"test|documentation|check|todo","description":"..."}],"diff":{"patch":"..."}}]} (1-16 children; never generate descendant candidate domains; lockedPaths are immutable)`;
     case "draft-patch":
     case "repair-patch":
       return `{"patch":"unified diff text","assumptions":["explicit assumption"]}`;

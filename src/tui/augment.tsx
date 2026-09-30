@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput, useWindowSize } from "ink";
 import type { PlanTask, PlannedDiff } from "../augment/types.js";
+import { pathIsLocked } from "../augment/state.js";
 import { AugmentTuiController, candidatesForEntry, type PlannedTreeRow, type TuiActionState } from "./controller.js";
 
 const theme = {
@@ -37,38 +38,51 @@ function entryName(entry: PlannedTreeRow["entry"]): string {
   return entry.kind === "dir" ? `${entry.name}/` : entry.name;
 }
 
-function entryState(task: PlanTask | undefined, entry: PlannedTreeRow["entry"]): { indicator: string; state: string; color: string } {
+function entryState(task: PlanTask | undefined, row: PlannedTreeRow): { indicator: string; state: string; color: string } {
+  const entry = row.entry;
   const candidates = candidatesForEntry(task, entry);
   const selected = candidates.find((candidate) => candidate.status === "selected");
   const possible = candidates.filter((candidate) => candidate.status === "possible");
-  const hasDraft = entry.diffIds.length > 0;
+  const firstDiff = entry.diffIds.map((id) => task?.diffs[id]).find(Boolean);
   const blocked = entry.nodeIds.some((id) => ["stale", "blocked"].includes(task?.nodes[id]?.status ?? ""));
   const ready = entry.nodeIds.some((id) => task?.nodes[id]?.status === "ready");
+  const locked = task && entry.path !== "." && pathIsLocked(task, entry.path);
 
+  if (locked) return { indicator: "#", state: "locked", color: theme.error };
   if (blocked) return { indicator: "!", state: "needs refresh", color: theme.error };
-  if (hasDraft) return { indicator: "▤", state: "draft patch", color: theme.success };
-  if (entry.nodeIds.length && entry.kind !== "root") return { indicator: "~", state: "planned", color: theme.text };
-  if (ready) return { indicator: "●", state: "ready", color: theme.success };
-  if (entry.kind !== "root" && (selected || possible.length)) {
+  if (firstDiff) {
+    const kind = firstDiff.kind;
     return {
-      indicator: "◇",
-      state: selected ? "in chosen approach" : "possible approach",
-      color: selected ? theme.secondary : theme.warning,
+      indicator: kind === "new" ? "+" : kind === "delete" ? "-" : kind === "modify" ? "~" : "▤",
+      state: kind,
+      color: theme.success,
     };
   }
-  if (selected) return { indicator: "◆", state: crop(`chosen: ${selected.label}`, 34), color: theme.secondary };
-  if (possible.length) return { indicator: "◇", state: `${possible.length} choices`, color: theme.warning };
+  if (entry.nodeIds.length && entry.kind !== "root") return { indicator: "~", state: "planned", color: theme.text };
+  if (ready) return { indicator: "●", state: "ready", color: theme.success };
+  if (selected && entry.kind !== "root") return { indicator: "◇", state: `in chosen ${selected.confidence}%`, color: theme.secondary };
+  if (selected) return { indicator: "◆", state: `chosen ${selected.confidence}%`, color: theme.secondary };
+  if (possible.length) {
+    const best = Math.max(...possible.map((candidate) => candidate.confidence));
+    return { indicator: "◇", state: `${possible.length} choices · best ${best}%`, color: theme.warning };
+  }
+  if (row.repositoryOnly) return { indicator: "·", state: "unchanged", color: theme.muted };
   return { indicator: "·", state: "suggested", color: theme.muted };
 }
 
 function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number }) {
-  const state = entryState(props.task, props.row.entry);
+  const state = entryState(props.task, props.row);
   return (
     <Box backgroundColor={props.selected ? theme.selected : undefined}>
       <Text wrap="truncate-end">
         {props.row.branch}
         <Text color={state.color}>{state.indicator}</Text>{" "}
-        <Text color={props.row.entry.kind === "dir" ? theme.accent : theme.text} bold>{entryName(props.row.entry)}</Text>
+        <Text
+          color={props.row.repositoryOnly ? theme.muted : props.row.entry.kind === "dir" ? theme.accent : theme.text}
+          bold={!props.row.repositoryOnly}
+        >
+          {entryName(props.row.entry)}
+        </Text>
         {" "}
         <Text color={theme.muted}>{state.state}</Text>
       </Text>
@@ -80,8 +94,8 @@ function DiffDetail(props: { diff: PlannedDiff }) {
   return (
     <Box flexDirection="column" gap={1} paddingX={1}>
       <Box gap={1}>
-        <Text color={theme.success} bold>▤ {props.diff.path || props.diff.id}</Text>
-        <Text color={theme.muted}>draft · {props.diff.basisRevision}</Text>
+        <Text color={theme.success} bold>{props.diff.kind === "new" ? "+" : props.diff.kind === "delete" ? "-" : props.diff.kind === "modify" ? "~" : "▤"} {props.diff.path || props.diff.id}</Text>
+        <Text color={theme.muted}>{props.diff.kind} · {props.diff.basisRevision}</Text>
       </Box>
       <Text>{props.diff.patch}</Text>
     </Box>
@@ -114,7 +128,7 @@ function EntryDetail(props: { state: TuiActionState; row?: PlannedTreeRow }) {
   const notes = useMemo(() => constraintsForEntry(task, row?.entry), [row, task]);
 
   if (!row) return <Text color={theme.muted}>  Describe a change to see affected files.</Text>;
-  const state = entryState(task, row.entry);
+  const state = entryState(task, row);
 
   return (
     <Box flexDirection="column" gap={1} paddingX={1}>
@@ -134,7 +148,7 @@ function EntryDetail(props: { state: TuiActionState; row?: PlannedTreeRow }) {
       {candidates.map((candidate, index) => (
         <Box key={candidate.id} flexDirection="column">
           <Text color={statusColor(candidate.status)}>
-            {candidate.status === "possible" ? `${index + 1}` : " "} {candidate.status === "selected" ? "◆" : candidate.status === "eliminated" ? "×" : "◇"} {candidate.label}
+            {candidate.status === "possible" ? `${index + 1}` : " "} {candidate.status === "selected" ? "◆" : candidate.status === "eliminated" ? "×" : "◇"} {candidate.label} · {candidate.confidence}%
           </Text>
           <Text color={theme.muted}>  {candidate.rationale}</Text>
           <Text color={theme.accent}>  {candidate.touchedPaths.join(", ")}</Text>
@@ -149,7 +163,7 @@ function EntryDetail(props: { state: TuiActionState; row?: PlannedTreeRow }) {
       {diffs.length ? <Text color={theme.muted}>PATCH</Text> : null}
       {diffs.map((diff) => <DiffDetail key={diff.id} diff={diff} />)}
 
-      <Text color={theme.primary}>[Enter] message about this path</Text>
+      <Text color={theme.primary}>[Enter] message/regenerate this path · [L] lock/unlock</Text>
     </Box>
   );
 }
@@ -276,6 +290,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     else if (command === "g") run(props.controller.rethink());
     else if (command === "f") run(props.controller.refine());
     else if (command === "d") run(props.controller.draftPatch());
+    else if (command === "l") run(props.controller.toggleLock());
     else if (command === "o") beginInput("reopen");
     else if (command === "s") beginInput("stale");
   });
@@ -336,6 +351,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.primary}> draft · </Text>
           <Text color={theme.primary} bold>[G]</Text>
           <Text color={theme.primary}> rethink · </Text>
+          <Text color={theme.primary} bold>[L]</Text>
+          <Text color={theme.primary}> lock · </Text>
           <Text color={theme.primary} bold>[N]</Text>
           <Text color={theme.primary}> new · </Text>
           <Text color={theme.muted} bold>[Tab]</Text>

@@ -22,8 +22,8 @@ function task(): PlanTask {
 describe("augment kernel", () => {
   it("generates, challenges, adds one missing candidate, and accepts a domain", async () => {
     const model = runtime([
-      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest change", touchedPaths: ["src/auth/session.ts"] }] }),
-      () => ({ kind: "missing-candidate", candidate: { label: "Deadline", rationale: "honor deadline", touchedPaths: ["src/auth/deadline.ts"] }, reason: "fixed count ignores cancellation" }),
+      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest change", confidence: 78, touchedPaths: ["src/auth/session.ts"] }] }),
+      () => ({ kind: "missing-candidate", candidate: { label: "Deadline", rationale: "honor deadline", confidence: 72, touchedPaths: ["src/auth/deadline.ts"] }, reason: "fixed count ignores cancellation" }),
       () => ({ kind: "accept" }),
     ]);
     const result = await crystallizeNode(model, task(), { taskId: "task:kernel", nodeId: "node:root", temperature: "normal", lod: "architecture" });
@@ -36,7 +36,7 @@ describe("augment kernel", () => {
 
   it("does not collapse during crystallization", async () => {
     const model = runtime([
-      () => ({ candidates: [{ label: "Only", rationale: "one materially distinct family", touchedPaths: ["src/a.ts"] }] }),
+      () => ({ candidates: [{ label: "Only", rationale: "one materially distinct family", confidence: 75, touchedPaths: ["src/a.ts"] }] }),
       () => ({ kind: "accept" }),
     ]);
     const result = await crystallizeNode(model, task(), { taskId: "task:kernel", nodeId: "node:root", temperature: "low", lod: "architecture" });
@@ -46,7 +46,7 @@ describe("augment kernel", () => {
   it("allows explicit controller selection only after challenge acceptance", async () => {
     const initial = task();
     const model = runtime([
-      () => ({ candidates: [{ label: "Only", rationale: "one family", touchedPaths: ["src/a.ts"] }] }),
+      () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 80, touchedPaths: ["src/a.ts"] }] }),
       () => ({ kind: "accept" }),
     ]);
     const generated = await crystallizeNode(model, initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "architecture" });
@@ -57,7 +57,7 @@ describe("augment kernel", () => {
   it("refines selected nodes through typed model output", async () => {
     const initial = task();
     const generated = await crystallizeNode(runtime([
-      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest", touchedPaths: ["src/auth/session.ts"] }] }),
+      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest", confidence: 76, touchedPaths: ["src/auth/session.ts"] }] }),
       () => ({ kind: "accept" }),
     ]), initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "file" });
     const selected = selectCandidate(generated, { taskId: generated.id, expectedRevision: generated.revision, nodeId: generated.rootNodeId, candidateId: generated.nodes[generated.rootNodeId]!.candidateIds[0]! });
@@ -70,7 +70,7 @@ describe("augment kernel", () => {
   it("attaches a model patch to a refined file node", async () => {
     const initial = task();
     const generated = await crystallizeNode(runtime([
-      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest", touchedPaths: ["src/auth/session.ts"] }] }),
+      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest", confidence: 76, touchedPaths: ["src/auth/session.ts"] }] }),
       () => ({ kind: "accept" }),
     ]), initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "file" });
     const selected = selectCandidate(generated, { taskId: generated.id, expectedRevision: generated.revision, nodeId: generated.rootNodeId, candidateId: generated.nodes[generated.rootNodeId]!.candidateIds[0]! });

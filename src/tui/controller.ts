@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
-import { planTree } from "../augment/state.js";
+import { pathIsLocked, planTree } from "../augment/state.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
@@ -9,6 +11,7 @@ export type PlannedTreeRow = {
   depth: number;
   branch: string;
   entry: PlanTreeEntry;
+  repositoryOnly: boolean;
 };
 
 export interface TuiActionState {
@@ -27,17 +30,112 @@ export interface AugmentTuiControllerOptions {
   defaultLod?: LOD;
 }
 
-export function plannedTreeRows(task: PlanTask): PlannedTreeRow[] {
+const MAX_REPOSITORY_ENTRIES = 5_000;
+
+function repositoryPaths(directory: string): string[] {
+  try {
+    const output = execFileSync("git", ["-C", directory, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+      encoding: "utf8",
+      maxBuffer: 8 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return output.split("\0").filter(Boolean).sort();
+  } catch {
+    const paths: string[] = [];
+    const visit = (directoryPath: string) => {
+      if (paths.length > MAX_REPOSITORY_ENTRIES) return;
+      for (const entry of fs.readdirSync(directoryPath, { withFileTypes: true })) {
+        if (entry.name === ".git" || entry.name === "node_modules") continue;
+        const absolute = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) visit(absolute);
+        else paths.push(path.relative(directory, absolute).split(path.sep).join("/"));
+      }
+    };
+    visit(directory);
+    return paths.sort();
+  }
+}
+
+function emptyTreeEntry(entryPath: string, kind: PlanTreeEntry["kind"]): PlanTreeEntry {
+  return {
+    path: entryPath,
+    name: entryPath === "." ? "/" : entryPath.slice(entryPath.lastIndexOf("/") + 1),
+    kind,
+    status: "unresolved",
+    nodeIds: [],
+    candidateIds: [],
+    diffIds: [],
+    obligationIds: [],
+    children: [],
+  };
+}
+
+function ensureTreeEntry(root: PlanTreeEntry, entryPath: string, kind: PlanTreeEntry["kind"]): PlanTreeEntry {
+  if (entryPath === ".") return root;
+  const parentPath = entryPath.includes("/") ? entryPath.slice(0, entryPath.lastIndexOf("/")) : ".";
+  const parent = ensureTreeEntry(root, parentPath, "dir");
+  let child = parent.children.find((candidate) => candidate.path === entryPath);
+  if (!child) {
+    child = emptyTreeEntry(entryPath, kind);
+    parent.children.push(child);
+    parent.children.sort((left, right) => left.path.localeCompare(right.path));
+  }
+  return child;
+}
+
+export function repositoryTree(directory: string): PlanTreeEntry {
+  const root = emptyTreeEntry(".", "root");
+  for (const filePath of repositoryPaths(directory).slice(0, MAX_REPOSITORY_ENTRIES)) {
+    ensureTreeEntry(root, filePath, filePath.endsWith("/") ? "dir" : "file");
+  }
+  return root;
+}
+
+function mergePlanTree(repository: PlanTreeEntry, plan: PlanTreeEntry): PlanTreeEntry {
+  const merge = (source: PlanTreeEntry) => {
+    const target = source.path === "." ? repository : ensureTreeEntry(repository, source.path, source.kind);
+    target.kind = source.path === "." ? "root" : source.kind === "dir" ? "dir" : source.kind;
+    target.nodeIds = [...new Set([...target.nodeIds, ...source.nodeIds])];
+    target.candidateIds = [...new Set([...target.candidateIds, ...source.candidateIds])];
+    target.diffIds = [...new Set([...target.diffIds, ...source.diffIds])];
+    target.obligationIds = [...new Set([...target.obligationIds, ...source.obligationIds])];
+    target.selectedCandidateId ??= source.selectedCandidateId;
+    target.status = source.status;
+    for (const child of source.children) merge(child);
+  };
+  merge(plan);
+  const sortChildren = (entry: PlanTreeEntry) => {
+    entry.children.sort((left, right) => left.path.localeCompare(right.path));
+    entry.children.forEach(sortChildren);
+  };
+  sortChildren(repository);
+  return repository;
+}
+
+function entryHasPlan(entry: PlanTreeEntry): boolean {
+  return entry.nodeIds.length > 0 || entry.candidateIds.length > 0 || entry.diffIds.length > 0 || entry.obligationIds.length > 0;
+}
+
+function rowsFromTree(root: PlanTreeEntry): PlannedTreeRow[] {
   const rows: PlannedTreeRow[] = [];
   const visit = (entry: PlanTreeEntry, depth: number, branch: string, prefix: string) => {
-    rows.push({ kind: "entry", id: `entry:${entry.path}`, depth, branch, entry });
+    rows.push({ kind: "entry", id: `entry:${entry.path}`, depth, branch, entry, repositoryOnly: !entryHasPlan(entry) });
     entry.children.forEach((child, index) => {
       const last = index === entry.children.length - 1;
       visit(child, depth + 1, `${prefix}${last ? "└─ " : "├─ "}`, `${prefix}${last ? "   " : "│  "}`);
     });
   };
-  visit(planTree(task), 0, "", "");
+  visit(root, 0, "", "");
   return rows;
+}
+
+export function plannedTreeRowsFromRepository(repository: PlanTreeEntry): PlannedTreeRow[] {
+  return rowsFromTree(repository);
+}
+
+export function plannedTreeRows(task: PlanTask, repository?: PlanTreeEntry): PlannedTreeRow[] {
+  const root = repository ? mergePlanTree(structuredClone(repository), planTree(task)) : planTree(task);
+  return rowsFromTree(root);
 }
 
 export function candidatesForEntry(task: PlanTask | undefined, entry: PlanTreeEntry | undefined): PlanCandidate[] {
@@ -50,6 +148,7 @@ export class AugmentTuiController {
   private readonly runtime?: ModelRuntime;
   private readonly server: AugmentServer;
   private readonly defaultLod: LOD;
+  private readonly repository: PlanTreeEntry;
   private task?: PlanTask;
   private rows: PlannedTreeRow[] = [];
   private selectedRowId?: string;
@@ -63,6 +162,8 @@ export class AugmentTuiController {
     this.runtime = options.runtime;
     this.server = new AugmentServer({ runtime: options.runtime });
     this.defaultLod = options.defaultLod ?? "file";
+    this.repository = repositoryTree(options.directory);
+    this.refresh();
   }
 
   cancel(): void {
@@ -171,6 +272,8 @@ export class AugmentTuiController {
 
   async constrain(text: string): Promise<void> {
     const task = this.requireTask();
+    const row = this.selectedRow();
+    const targetPath = row?.entry.path ?? ".";
     const nodeId = this.selectedNodeId();
     if (!text.trim()) {
       this.error = "Message text is required.";
@@ -180,21 +283,44 @@ export class AugmentTuiController {
       this.error = "Select a path first.";
       return;
     }
-    await this.dispatch("Attaching message", async () => {
-      const response = await this.server.handle({ jsonrpc: "2.0", id: 6, method: "node/constrain", params: { taskId: task.id, expectedRevision: task.revision, nodeId, text: text.trim() } });
-      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    await this.dispatch("Applying message to subtree", async () => {
+      const constrained = await this.server.handle({
+        jsonrpc: "2.0",
+        id: 6,
+        method: "node/constrain",
+        params: { taskId: task.id, expectedRevision: task.revision, nodeId, path: targetPath === "." ? undefined : targetPath, text: text.trim() },
+      });
+      let current = expectResult(constrained, PlanTaskLike.is) as PlanTask;
+      this.task = current;
       this.refresh();
-      const node = nodeId ? this.task?.nodes[nodeId] : undefined;
-      this.message = node && ["unresolved", "domain"].includes(node.status)
-        ? "Message attached. Rethinking approaches..."
-        : `Message attached to ${node?.path ?? "plan"}. It will constrain the next draft.`;
-      if (nodeId) this.selectNodeEntry(nodeId);
-      if (node && ["unresolved", "domain"].includes(node.status)) {
-        const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 9, method: "crystallize", params: { taskId: this.task!.id, expectedRevision: this.task!.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true } });
+
+      const node = current.nodes[nodeId]!;
+      if (node.selectedCandidateId || Object.values(current.nodes).some((child) => child.parent === nodeId)) {
+        const reopened = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 9,
+          method: "node/reopen",
+          params: { taskId: current.id, expectedRevision: current.revision, nodeId, reason: `Path message: ${text.trim()}` },
+        });
+        current = expectResult(reopened, PlanTaskLike.is) as PlanTask;
+        this.task = current;
+        this.refresh();
+      }
+
+      if (this.runtime) {
+        const regenerated = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 10,
+          method: "crystallize",
+          params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true },
+        });
         this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
         this.refresh();
         this.selectNodeEntry(nodeId);
         this.message = "Approaches updated from your message. Choose one with keys 1-7.";
+      } else {
+        this.selectNodeEntry(nodeId);
+        this.message = `Message saved for ${targetPath}. No model is configured to regenerate it.`;
       }
     });
   }
@@ -233,6 +359,28 @@ export class AugmentTuiController {
     });
   }
 
+  async toggleLock(): Promise<void> {
+    const task = this.requireTask();
+    const row = this.selectedRow();
+    const targetPath = row?.entry.path;
+    if (!targetPath || targetPath === ".") {
+      this.error = "Select a file or directory to lock.";
+      return;
+    }
+    const locked = pathIsLocked(task, targetPath);
+    await this.dispatch(locked ? "Unlocking path" : "Locking path", async () => {
+      const response = await this.server.handle({
+        jsonrpc: "2.0",
+        id: 12,
+        method: "path/lock",
+        params: { taskId: task.id, expectedRevision: task.revision, path: targetPath, locked: !locked },
+      });
+      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+      this.refresh();
+      this.message = `${targetPath} is ${locked ? "unlocked" : "locked"} for this run.`;
+    });
+  }
+
   async markStale(path: string): Promise<void> {
     const task = this.requireTask();
     if (!path.trim()) {
@@ -265,12 +413,7 @@ export class AugmentTuiController {
   }
 
   private refresh(): void {
-    if (!this.task) {
-      this.rows = [];
-      this.selectedRowId = undefined;
-      return;
-    }
-    this.rows = plannedTreeRows(this.task);
+    this.rows = this.task ? plannedTreeRows(this.task, this.repository) : plannedTreeRowsFromRepository(this.repository);
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
   }
 

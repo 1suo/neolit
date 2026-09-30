@@ -1,4 +1,4 @@
-import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode } from "../augment/state.js";
+import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, setPathLock } from "../augment/state.js";
 import { crystallizeNode, draftPatchWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
 import type { LOD, ModelRuntime, PlanTask, Temperature } from "../augment/types.js";
 
@@ -172,6 +172,17 @@ export class AugmentServer {
         const base = taskMutation(params);
         const input = object(params);
         const updated = markPathStale(this.requireTask(base.taskId), { ...base, path: string(input.path, "path") });
+        this.tasks.set(updated.id, updated);
+        return updated;
+      }
+      case "path/lock": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const updated = setPathLock(this.requireTask(base.taskId), {
+          ...base,
+          path: string(input.path, "path"),
+          locked: input.locked !== false,
+        });
         this.tasks.set(updated.id, updated);
         return updated;
       }

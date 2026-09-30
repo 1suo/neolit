@@ -4,30 +4,40 @@
 
 ## Layout
 
-The left pane is a filesystem tree, not a graph or status board. Only paths that are candidates for change, planned nodes, or drafted patches appear.
+The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible as unchanged; planned and drafted paths are marked in place.
 
 ```text
 FILES
-◆ repo/                 chosen: fixed retries
-└─ src/                 planned
-   └─ auth/             planned
-      └─ session.ts     draft patch
-      └─ retry.test.ts  planned
-└─ README.md            planned
+◆ repo/                   chosen 78%
+└─ src/
+   ├─ augment/            unchanged
+   │  └─ state.ts         modify
+   ├─ auth/               planned
+   │  └─ session.ts       new
+   └─ tui/
+      └─ augment.tsx      unchanged
+├─ test/
+│  └─ state.test.ts       modify
+├─ package.json           locked
+└─ README.md              delete
 ```
 
 Indicators:
 
 ```text
-◇ N choices  paths suggested by possible approaches
-◆ chosen     selected approach
+· unchanged  repository-only path
+◇ possible   path appears in a possible approach
+◆ chosen     selected approach, with model confidence
 ~ planned    concrete path in the current plan
-▤ draft      patch text exists
++ new        drafted new file
+~ modify     drafted modification
+- delete     drafted deletion
 ! stale      repository basis changed
+# locked     path cannot change in this run
 ● ready      path and obligations are complete
 ```
 
-The right pane explains the selected path: why it is included, available approaches, user messages, and patch text.
+The right pane explains the selected path: why it is included, available approaches with model confidence estimates, user messages, and exact patch text. Confidence is a model estimate for presentation only; the controller never selects an approach from it.
 
 ## Flow
 
@@ -46,11 +56,12 @@ After a task is entered and a model is configured, the TUI automatically generat
 
 ```text
 N  start a new plan
-Enter  attach a message to the selected path
+Enter  attach a message and regenerate this path/subtree
 1-7  choose the numbered approach
 F  expand the chosen approach into files
 D  draft the selected file patch
 G  rethink the selected path
+L  lock/unlock the selected file or directory
 O  reopen selected node with a reason
 S  mark a real path changed outside the plan
 Tab  switch pane

@@ -94,6 +94,7 @@ function context(task: PlanTask, node: PlanNode): ModelContextPacket {
     constraints: [...constraintIds].map((id) => task.constraints[id]!).filter(Boolean),
     obligations: node.obligationIds.map((id) => task.obligations[id]!).filter(Boolean),
     diffs: node.diffIds.map((id) => task.diffs[id]!).filter(Boolean),
+    lockedPaths: task.lockedPaths,
     rejectedCandidates: rejected,
   };
 }
@@ -159,6 +160,7 @@ export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, inp
       candidate: {
         label: `Cover ${challenge.path}`,
         rationale: challenge.reason,
+        confidence: 0,
         touchedPaths: [challenge.path],
       },
       reason: `challenge reported missing path ${challenge.path}: ${challenge.reason}`,

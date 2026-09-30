@@ -27,7 +27,7 @@ function modelRuntime(): ModelRuntime {
   return {
     async call(request: ModelCallRequest) {
       if (request.operation === "generate-domain") {
-        return { value: { candidates: [{ label: "Fixed retry count", rationale: "Smallest change", touchedPaths: ["src/auth/session.ts"] }] } };
+        return { value: { candidates: [{ label: "Fixed retry count", rationale: "Smallest change", confidence: 78, touchedPaths: ["src/auth/session.ts"] }] } };
       }
       if (request.operation === "challenge-domain") return { value: { kind: "accept" } };
       if (request.operation === "refine-node") {
@@ -54,13 +54,13 @@ describe("augment TUI controller", () => {
 
     await controller.crystallize();
     let state = controller.snapshot();
-    expect(state.rows.map((row) => row.id)).toContain("entry:src/auth/session.ts");
-    expect(state.rows.every((row) => row.kind === "entry")).toBe(true);
+    expect(state.rows.map((row) => row.id)).not.toContain("entry:src/auth/session.ts");
+    expect(state.rows.some((row) => row.repositoryOnly)).toBe(true);
 
-    expect(controller.selectedRow()?.kind).toBe("entry");
     const candidateId = state.task!.nodes[state.task!.rootNodeId]!.candidateIds[0]!;
     await controller.selectCandidate(candidateId);
     expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "collapsed" });
+    expect(controller.snapshot().rows.map((row) => row.id)).toContain("entry:src/auth/session.ts");
 
     await controller.refine();
     state = controller.snapshot();
@@ -71,8 +71,37 @@ describe("augment TUI controller", () => {
     await controller.draftPatch();
     const patched = controller.snapshot();
     expect(Object.values(patched.task?.diffs ?? {})).toHaveLength(1);
+    expect(Object.values(patched.task?.diffs ?? {})[0]).toMatchObject({ kind: "modify", path: "src/auth/session.ts" });
     expect(patched.error).toBeUndefined();
     expect(patched.message).toContain("Draft change ready");
+  });
+
+  it("shows the complete repository tree and enforces path locks", async () => {
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") {
+          return { value: { candidates: [{ label: "Edit package", rationale: "forbidden", confidence: 90, touchedPaths: ["package.json"] }] } };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("change package metadata", "commit:1");
+    const initial = controller.snapshot();
+    expect(initial.rows.map((row) => row.id)).toContain("entry:src/augment/state.ts");
+    expect(initial.rows.map((row) => row.id)).toContain("entry:package.json");
+    expect(initial.rows.find((row) => row.id === "entry:src/augment/state.ts")?.repositoryOnly).toBe(true);
+
+    controller.select("entry:package.json");
+    await controller.toggleLock();
+    expect(controller.snapshot().task?.lockedPaths).toEqual(["package.json"]);
+    await controller.crystallize();
+    expect(controller.snapshot().error).toContain("touches locked path");
+
+    await controller.toggleLock();
+    expect(controller.snapshot().task?.lockedPaths).toEqual([]);
+    await controller.crystallize();
+    expect(controller.snapshot().error).toBeUndefined();
   });
 
   it("keeps selection stable when possible and reports action errors", async () => {
@@ -108,6 +137,27 @@ describe("augment TUI controller", () => {
     ]));
   });
 
+  it("regenerates only the selected path subtree from a message", async () => {
+    const generatedNodeIds: string[] = [];
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") generatedNodeIds.push(request.context.node.id);
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
+    controller.select("entry:src/auth/session.ts");
+    await controller.constrain("Preserve the retry API.");
+    expect(generatedNodeIds).toEqual([task.rootNodeId, fileNode.id]);
+    expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
+  });
+
   it("projects candidates and patches under their filesystem entries", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");
@@ -137,7 +187,7 @@ describe("augment TUI rendering", () => {
     const runtime: ModelRuntime = {
       call: async () => {
         expect(controller.snapshot()).toMatchObject({ busy: true, operation: "Generating approaches" });
-        return { value: { candidates: [{ label: "Only", rationale: "one", touchedPaths: ["src/a.ts"] }] } };
+        return { value: { candidates: [{ label: "Only", rationale: "one", confidence: 80, touchedPaths: ["src/a.ts"] }] } };
       },
     };
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
@@ -155,6 +205,9 @@ describe("augment TUI rendering", () => {
     expect(output).toContain("FILES");
     expect(output).toContain("SELECTED PATH");
     expect(output).toContain("NO MODEL");
+    expect(output).toContain("package.json");
+    expect(output).toContain("augment/");
+    expect(output).toContain("unchanged");
     expect(output).toContain("Press [N] to describe a change.");
   });
 });
@@ -174,6 +227,7 @@ describe("OpenCode CLI runtime parsing", () => {
         constraints: [],
         obligations: [],
         diffs: [],
+        lockedPaths: [],
         rejectedCandidates: [],
       },
       temperature: "normal",

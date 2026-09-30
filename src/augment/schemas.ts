@@ -5,6 +5,7 @@ const pathPattern = z.string().min(1).max(512).refine((value) => !value.includes
 export const DomainCandidateSchema = z.object({
   label: z.string().min(1).max(240),
   rationale: z.string().min(1).max(4000),
+  confidence: z.number().int().min(0).max(100),
   touchedPaths: z.array(pathPattern).min(1).max(64),
 });
 

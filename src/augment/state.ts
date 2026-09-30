@@ -17,6 +17,7 @@ import {
   type PlanTask,
   type PlanTreeEntry,
   type PlannedDiff,
+  type PlannedDiffKind,
 } from "./types.js";
 
 export const MAX_CANDIDATES_PER_NODE = 7;
@@ -39,6 +40,7 @@ export interface CreatePlanTaskInput {
 export interface DomainCandidateInput {
   label: string;
   rationale: string;
+  confidence: number;
   touchedPaths: PathPattern[];
 }
 
@@ -116,6 +118,13 @@ export interface MarkStaleInput {
   path: string;
 }
 
+export interface SetPathLockInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  path: string;
+  locked: boolean;
+}
+
 function clone<T extends PlanTask>(task: T): T {
   return structuredClone(task);
 }
@@ -170,6 +179,59 @@ function pathInside(parent: PathPattern | undefined, child: string): boolean {
   return child.startsWith(`${parent}/`);
 }
 
+function globToRegExp(pattern: string): RegExp {
+  let expression = "^";
+  for (let index = 0; index < pattern.length; index++) {
+    const character = pattern[index]!;
+    if (character === "*") {
+      if (pattern[index + 1] === "*") {
+        expression += "[\\s\\S]*";
+        index++;
+        if (pattern[index + 1] === "/") index++;
+      } else {
+        expression += "[^/]*";
+      }
+    } else if (character === "?") {
+      expression += "[^/]";
+    } else {
+      expression += character.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+    }
+  }
+  return new RegExp(`${expression}$`);
+}
+
+export function pathIsLocked(task: PlanTask, path: string): boolean {
+  const normalized = normalizePath(path);
+  if (normalized === ROOT_PATH) return task.lockedPaths.length > 0;
+  return task.lockedPaths.some((locked) => {
+    if (normalized === locked || normalized.startsWith(`${locked}/`)) return true;
+    return globToRegExp(locked).test(normalized);
+  });
+}
+
+function patternTouchesLockedPath(task: PlanTask, pattern: PathPattern): boolean {
+  const normalized = normalizePath(pattern);
+  return task.lockedPaths.some((locked) => {
+    if (normalized === locked || normalized.startsWith(`${locked}/`) || locked.startsWith(`${normalized}/`)) return true;
+    return globToRegExp(normalized).test(locked);
+  });
+}
+
+function requireUnlockedPattern(task: PlanTask, label: string, pattern: PathPattern): void {
+  if (patternTouchesLockedPath(task, pattern)) throw new PlanStateError(`Candidate ${label} touches locked path: ${pattern}`);
+}
+
+function requireUnlockedPath(task: PlanTask, path: string): void {
+  if (pathIsLocked(task, path)) throw new PlanStateError(`Path is locked for this run: ${path}`);
+}
+
+export function classifyPatchKind(patch: string): PlannedDiffKind {
+  if (/(^|\n)new file mode\b/i.test(patch) || /(^|\n)---\s+\/dev\/null\b/.test(patch)) return "new";
+  if (/(^|\n)deleted file mode\b/i.test(patch) || /(^|\n)\+\+\+\s+\/dev\/null\b/.test(patch)) return "delete";
+  if (/(^|\n)(diff --git|---\s+[^\n]+\n\+\+\+\s+[^\n]+)/.test(patch)) return "modify";
+  return "unknown";
+}
+
 export function createPlanTask(input: CreatePlanTaskInput): PlanTask {
   if (!input.id.trim()) throw new PlanStateError("Task ID is required.");
   if (!input.objective.trim()) throw new PlanStateError("Task objective is required.");
@@ -196,6 +258,7 @@ export function createPlanTask(input: CreatePlanTaskInput): PlanTask {
     basisRevision: input.basisRevision,
     revision: 1,
     rootNodeId: root.id,
+    lockedPaths: [],
     nodes: { [root.id]: root },
     candidates: {},
     constraints: {},
@@ -232,6 +295,7 @@ function candidateInputsValid(candidates: DomainCandidateInput[]): void {
     if (labels.has(key)) throw new PlanStateError(`Duplicate candidate label: ${candidate.label}`);
     labels.add(key);
     if (!candidate.rationale.trim()) throw new PlanStateError(`Candidate ${candidate.label} requires a rationale.`);
+    if (!Number.isSafeInteger(candidate.confidence) || candidate.confidence < 0 || candidate.confidence > 100) throw new PlanStateError(`Candidate ${candidate.label} confidence must be an integer from 0 through 100.`);
     if (!candidate.touchedPaths.length) throw new PlanStateError(`Candidate ${candidate.label} must touch at least one path.`);
     for (const path of candidate.touchedPaths) validatePathPattern(path);
   }
@@ -244,6 +308,7 @@ function addCandidateRecord(task: PlanTask, node: PlanNode, input: DomainCandida
     nodeId: node.id,
     label: input.label.trim(),
     rationale: input.rationale.trim(),
+    confidence: input.confidence,
     touchedPaths: [...new Set(input.touchedPaths.map(validatePathPattern))].sort(),
     status: "possible",
   };
@@ -276,6 +341,13 @@ export function generateDomain(task: PlanTask, input: GenerateDomainInput): Plan
   requireRevision(next, input.expectedRevision);
   const node = requireNode(next, input.nodeId);
   candidateInputsValid(input.candidates);
+  for (const candidate of input.candidates) {
+    for (const rawPath of candidate.touchedPaths) {
+      const candidatePath = validatePathPattern(rawPath);
+      if (node.path && node.kind !== "root" && !pathInside(node.path, candidatePath)) throw new PlanStateError(`Candidate ${candidate.label} escapes ${node.id} scope ${node.path}: ${candidatePath}`);
+      requireUnlockedPattern(next, candidate.label, candidatePath);
+    }
+  }
   if (node.status === "stale" || node.status === "blocked") throw new PlanStateError(`Cannot generate a domain for ${node.id} while it is ${node.status}.`);
   if (node.selectedCandidateId) throw new PlanStateError(`Cannot replace the collapsed domain for ${node.id}; reopen it first.`);
   const existingPossible = node.candidateIds.map((id) => next.candidates[id]!).filter((candidate) => candidate.status === "possible");
@@ -313,6 +385,11 @@ export function addCandidate(task: PlanTask, input: AddCandidateInput): PlanTask
   requireRevision(next, input.expectedRevision);
   const node = requireNode(next, input.nodeId);
   candidateInputsValid([input.candidate]);
+  for (const rawPath of input.candidate.touchedPaths) {
+    const candidatePath = validatePathPattern(rawPath);
+    if (node.path && node.kind !== "root" && !pathInside(node.path, candidatePath)) throw new PlanStateError(`Candidate ${input.candidate.label} escapes ${node.id} scope ${node.path}: ${candidatePath}`);
+    requireUnlockedPattern(next, input.candidate.label, candidatePath);
+  }
   if (node.selectedCandidateId) throw new PlanStateError(`Cannot add a candidate to collapsed node ${node.id}.`);
   const count = node.candidateIds.map((id) => next.candidates[id]!).filter((candidate) => candidate.status === "possible").length;
   if (count >= MAX_CANDIDATES_PER_NODE) throw new PlanStateError(`Node ${node.id} already has the maximum ${MAX_CANDIDATES_PER_NODE} live candidates.`);
@@ -366,6 +443,7 @@ export function collapseNode(task: PlanTask, input: CollapseInput): PlanTask {
   const node = requireNode(next, input.nodeId);
   const candidate = next.candidates[input.candidateId];
   if (!candidate || candidate.nodeId !== node.id) throw new PlanStateError(`Candidate ${input.candidateId} does not belong to ${node.id}.`);
+  for (const path of candidate.touchedPaths) requireUnlockedPattern(next, candidate.label, path);
   if (candidate.status !== "possible") throw new PlanStateError(`Only a possible candidate can collapse ${node.id}; ${candidate.id} is ${candidate.status}.`);
   if (!node.acceptedDomain) throw new PlanStateError(`Domain for ${node.id} must be challenged and accepted before collapse.`);
   for (const siblingId of node.candidateIds) {
@@ -387,6 +465,7 @@ export function collapseNode(task: PlanTask, input: CollapseInput): PlanTask {
 function createRefinementChild(task: PlanTask, parent: PlanNode, input: RefinementChildInput, ordinal: number): PlanNode {
   const path = validateConcretePath(input.path, input.kind);
   if (!pathInside(parent.path, path ?? ROOT_PATH) && input.kind !== "virtual") throw new PlanStateError(`Refined path ${path} escapes parent scope ${parent.path}.`);
+  if (path && input.kind !== "virtual") requireUnlockedPath(task, path);
   if (input.kind !== "virtual") {
     const duplicate = Object.values(task.nodes).some((node) => node.path === path && node.kind === input.kind && node.parent === parent.id);
     if (duplicate) throw new PlanStateError(`Refinement already contains ${input.kind} ${path}.`);
@@ -417,7 +496,7 @@ function createRefinementChild(task: PlanTask, parent: PlanNode, input: Refineme
   }
   if (input.diff) {
     const diffId = nextId("diff:", Object.keys(task.diffs));
-    task.diffs[diffId] = { id: diffId, nodeId: id, path: path ?? "", patch: input.diff.patch, basisRevision: task.basisRevision };
+    task.diffs[diffId] = { id: diffId, nodeId: id, path: path ?? "", patch: input.diff.patch, kind: classifyPatchKind(input.diff.patch), basisRevision: task.basisRevision };
     child.diffIds.push(diffId);
   }
   return child;
@@ -500,7 +579,9 @@ export function replacePatch(task: PlanTask, input: ReplacePatchInput): PlanTask
   const node = requireNode(next, diff.nodeId);
   if (node.status === "stale" || node.status === "blocked") throw new PlanStateError(`Cannot repair a patch on ${node.id} while it is ${node.status}.`);
   if (!input.patch.trim()) throw new PlanStateError("A replacement patch may not be empty.");
+  if (node.path) requireUnlockedPath(next, node.path);
   diff.patch = input.patch;
+  diff.kind = classifyPatchKind(input.patch);
   diff.failedCheck = input.failedCheck;
   next.revision = nextRevision(next);
   emit(next, { type: "patch-attached", revision: next.revision, nodeId: node.id, diffId: diff.id });
@@ -514,8 +595,9 @@ export function attachPatch(task: PlanTask, input: AttachPatchInput): PlanTask {
   if (node.status === "stale" || node.status === "blocked") throw new PlanStateError(`Cannot attach a patch to ${node.id} while it is ${node.status}.`);
   if (node.kind === "dir" || node.kind === "root") throw new PlanStateError(`A patch must target a file, hunk, or virtual node, not ${node.kind}.`);
   if (!input.patch.trim()) throw new PlanStateError("A planned patch may not be empty.");
+  if (node.path) requireUnlockedPath(next, node.path);
   const id = nextId("diff:", Object.keys(next.diffs));
-  const diff: PlannedDiff = { id, nodeId: node.id, path: node.path ?? "", patch: input.patch, basisRevision: next.basisRevision };
+  const diff: PlannedDiff = { id, nodeId: node.id, path: node.path ?? "", patch: input.patch, kind: classifyPatchKind(input.patch), basisRevision: next.basisRevision };
   next.diffs[id] = diff;
   node.diffIds.push(id);
   next.revision = nextRevision(next);
@@ -544,6 +626,26 @@ function markSubtreeStale(task: PlanTask, nodeId: PlanNodeId, path: string): Pla
   };
   visit(nodeId);
   return affected;
+}
+
+export function setPathLock(task: PlanTask, input: SetPathLockInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const path = normalizePath(input.path);
+  if (path === ROOT_PATH) throw new PlanStateError("Lock the repository root is not supported; lock specific top-level paths.");
+  const index = next.lockedPaths.indexOf(path);
+  if (input.locked && index >= 0) return next;
+  if (!input.locked && index < 0) return next;
+  if (input.locked) {
+    next.lockedPaths = [...next.lockedPaths.filter((candidate) => candidate !== path && !candidate.startsWith(`${path}/`)), path].sort();
+    next.revision = nextRevision(next);
+    emit(next, { type: "path-locked", revision: next.revision, path });
+    return next;
+  }
+  next.lockedPaths = next.lockedPaths.filter((candidate) => candidate !== path);
+  next.revision = nextRevision(next);
+  emit(next, { type: "path-unlocked", revision: next.revision, path });
+  return next;
 }
 
 export function markPathStale(task: PlanTask, input: MarkStaleInput): PlanTask {
@@ -630,7 +732,7 @@ export function planTree(task: PlanTask): PlanTreeEntry {
   const state: TreeBuildState = { entries: new Map() };
   for (const node of Object.values(task.nodes)) addNodeToEntry(state, node, task);
   for (const candidate of Object.values(task.candidates)) {
-    if (candidate.status === "eliminated") continue;
+    if (candidate.status !== "selected") continue;
     for (const path of candidate.touchedPaths) {
       const normalized = normalizePath(path);
       const entry = ensureEntry(state, normalized, normalized.endsWith("/") ? "dir" : "file");

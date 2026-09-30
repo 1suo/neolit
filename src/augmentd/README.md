@@ -27,6 +27,7 @@ node/select
 node/reject
 node/reopen
 node/stale
+path/lock
 crystallize
 refine
 patch/draft
@@ -34,7 +35,7 @@ diff/get
 shutdown
 ```
 
-Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state.
+Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. `path/lock` records task-local controller authority: candidates, refinement children, and patches cannot modify a locked path or its descendants.
 
 ## Model runtime
 
