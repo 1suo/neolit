@@ -97,6 +97,7 @@ AUGMENT_OPENCODE_CHALLENGE_MODEL  (optional faster model for challenge-domain co
 AUGMENT_OPENCODE_AGENT
 AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after this budget)
 AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh OpenCode session for every call)
+AUGMENT_OPENCODE_RETRIES       (default 2; extra attempts for rate limits, disconnects, and unparseable output)
 AUGMENT_CHALLENGE_ROUNDS       (0-2, default 2; 0 skips challenge rounds for much faster domains)
 AUGMENT_TUI_NO_MODEL=1
 ```
@@ -106,6 +107,12 @@ from the run's event stream and continued with `--session`, with a fresh
 session as fallback when continuation fails — so repeat operations keep the
 model's earlier exploration instead of cold-starting each call. Each prompt
 still states that its context packet is the current authoritative state.
+Session mappings persist to `$XDG_STATE_HOME/neolit/augment-sessions.json`
+(default `~/.local/state/neolit/`, newest 64 tasks), so a restarted TUI
+continues the same sessions. Transient provider failures (rate limits,
+disconnects, timeouts) and unparseable model output retry up to
+`AUGMENT_OPENCODE_RETRIES` extra times with linear backoff; validation
+failures still fail fast.
 
 `AUGMENT_OPENCODE_DRAFT_MODEL` optionally routes only `draft-patch` and
 `repair-patch` to a faster model. Draft and repair calls embed the target

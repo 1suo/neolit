@@ -1,8 +1,53 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { ModelCallRequest, ModelRuntime } from "../augment/types.js";
 import { preflightPatches } from "./apply.js";
+
+const TRANSIENT_ERROR = /rate limit|429|overloaded|econnreset|etimedout|socket hang up|temporarily unavailable|timed out/i;
+
+function isRetryable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return TRANSIENT_ERROR.test(message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function noJsonObjectMessage(operation: string, text: string): string {
+  const trimmed = text.trim();
+  const truncated = trimmed && !trimmed.endsWith("}") && !trimmed.endsWith("```")
+    ? " The response looks truncated before completing the JSON object; ask for terser output or press the key again to retry."
+    : "";
+  return `OpenCode returned no JSON object for ${operation}:${truncated}\n${text.slice(0, 2000)}`;
+}
+
+function sessionsStorePath(): string {
+  const base = process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim()
+    ? process.env.XDG_STATE_HOME
+    : path.join(os.homedir(), ".local", "state");
+  return path.join(base, "neolit", "augment-sessions.json");
+}
+
+function loadSessions(): Map<string, string> {
+  try {
+    const raw = JSON.parse(fs.readFileSync(sessionsStorePath(), "utf8")) as Record<string, unknown>;
+    return new Map(Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].startsWith("ses_")));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveSessions(sessions: Map<string, string>): void {
+  try {
+    fs.mkdirSync(path.dirname(sessionsStorePath()), { recursive: true });
+    fs.writeFileSync(sessionsStorePath(), `${JSON.stringify(Object.fromEntries(sessions), null, 2)}\n`, "utf8");
+  } catch {
+    // Persistence is best-effort; the in-memory mapping keeps working.
+  }
+}
 
 const DRAFT_FILE_EMBED_LIMIT = 64_000;
 const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch"]);
@@ -68,6 +113,8 @@ export interface OpenCodeCliRuntimeOptions {
   agent?: string;
   timeoutMs?: number;
   autoApprove?: boolean;
+  retries?: number;
+  retryDelayMs?: number;
 }
 
 interface OpenCodeCliResult {
@@ -98,7 +145,9 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   private readonly timeoutMs: number;
   private readonly autoApprove: boolean;
   private readonly continueSessions: boolean;
-  private readonly sessions = new Map<string, string>();
+  private readonly retries: number;
+  private readonly retryDelayMs: number;
+  private readonly sessions: Map<string, string> = loadSessions();
 
   constructor(options: OpenCodeCliRuntimeOptions) {
     this.directory = options.directory;
@@ -110,25 +159,41 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     this.timeoutMs = options.timeoutMs ?? Number(process.env.AUGMENT_OPENCODE_TIMEOUT_MS ?? 600_000);
     this.autoApprove = options.autoApprove ?? process.env.AUGMENT_OPENCODE_AUTO !== "0";
     this.continueSessions = process.env.AUGMENT_OPENCODE_SESSIONS !== "0";
+    this.retries = options.retries ?? Number(process.env.AUGMENT_OPENCODE_RETRIES ?? 2);
+    if (!Number.isSafeInteger(this.retries) || this.retries < 0) throw new Error("OpenCode runtime retries must be a non-negative integer.");
+    this.retryDelayMs = options.retryDelayMs ?? 4_000;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("OpenCode runtime timeout must be a positive integer.");
   }
 
   async call(request: ModelCallRequest): Promise<OpenCodeCliResult> {
-    let text = await this.prompt(request);
-    let value = extractJsonOnly(text);
-    const correction = DRAFT_OPERATIONS.has(request.operation) ? draftCorrection(value, this.directory) : undefined;
-    if (correction) {
-      text = await this.prompt(request, correction);
-      value = extractJsonOnly(text);
+    let completed = await this.complete(request);
+    const correction = DRAFT_OPERATIONS.has(request.operation) ? draftCorrection(completed.value, this.directory) : undefined;
+    if (correction) completed = await this.complete(request, correction);
+    return { value: completed.value, text: completed.text, stdout: completed.text };
+  }
+
+  /**
+   * One bounded attempt loop shared by first tries and corrective retries:
+   * transient provider failures (rate limits, disconnects, timeouts) and
+   * unparseable output are retried up to `retries` extra times with linear
+   * backoff; everything else fails fast.
+   */
+  private async complete(request: ModelCallRequest, correction?: string): Promise<{ text: string; value: unknown }> {
+    const attempts = 1 + this.retries;
+    let failure: unknown;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) await sleep(this.retryDelayMs * attempt);
+      try {
+        const text = await this.prompt(request, correction);
+        const value = extractJsonOnly(text);
+        if (value !== undefined) return { text, value };
+        failure = new Error(noJsonObjectMessage(request.operation, text));
+      } catch (error) {
+        if (!isRetryable(error) || attempt === attempts - 1) throw error;
+        failure = error;
+      }
     }
-    if (value === undefined) {
-      const trimmed = text.trim();
-      const truncated = trimmed && !trimmed.endsWith("}") && !trimmed.endsWith("```")
-        ? " The response looks truncated before completing the JSON object; ask for terser output or press the key again to retry."
-        : "";
-      throw new Error(`OpenCode returned no JSON object for ${request.operation}:${truncated}\n${text.slice(0, 2000)}`);
-    }
-    return { value, text, stdout: text };
+    throw failure;
   }
 
   private async prompt(request: ModelCallRequest, correction?: string): Promise<string> {
@@ -154,6 +219,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
         return extractAssistantText(stdout);
       } catch {
         this.sessions.delete(taskId);
+        saveSessions(this.sessions);
       }
     }
     const stdout = await this.run(this.invocation(request, baseParts.join("\n\n")));
@@ -183,7 +249,13 @@ export class OpenCodeCliRuntime implements ModelRuntime {
 
   private rememberSession(taskId: string, stdout: string): void {
     const session = stdout.match(SESSION_ID_PATTERN)?.[1];
-    if (session) this.sessions.set(taskId, session);
+    if (!session) return;
+    this.sessions.set(taskId, session);
+    if (this.sessions.size > 64) {
+      const oldest = this.sessions.keys().next().value;
+      if (oldest !== undefined) this.sessions.delete(oldest);
+    }
+    saveSessions(this.sessions);
   }
 
   private run(args: string[]): Promise<string> {
