@@ -56,7 +56,20 @@ describe("augmentd protocol", () => {
   });
 
   it("lets the host replace a drafted patch with its own edit", async () => {
-    const { server, task } = await started();
+    const runtime: ModelRuntime = {
+      call: async (call) => {
+        if (call.operation === "refine-node") {
+          return { value: { children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "retry cutoff" }] } };
+        }
+        if (call.operation === "draft-patch") {
+          return { value: { patch: "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -1,1 +1,2 @@\n alpha\n+model line\n", assumptions: [] } };
+        }
+        return model().call(call);
+      },
+    };
+    const server = new AugmentServer({ runtime });
+    const started = await server.handle(request(1, "task/start", { taskId: "task:1", objective: "make retries bounded", basisRevision: "commit:1" }));
+    const task = (started as { result: { id: string; revision: number; rootNodeId: string } }).result;
     const crystallized = await server.handle(request(2, "crystallize", { taskId: task.id, expectedRevision: task.revision, nodeId: task.rootNodeId, temperature: "normal", lod: "file" }));
     const domain = (crystallized as { result: { id: string; revision: number; rootNodeId: string; nodes: Record<string, { candidateIds: string[] }> } }).result;
     const candidateId = domain.nodes[domain.rootNodeId]!.candidateIds[0]!;

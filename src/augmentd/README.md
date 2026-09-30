@@ -32,6 +32,7 @@ path/lock
 crystallize
 refine
 patch/draft
+patch/set
 diff/get
 shutdown
 ```
