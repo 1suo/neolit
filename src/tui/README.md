@@ -50,7 +50,7 @@ Every frame derives its vertical budget from the exported `frameLayout()`: fixed
 
 ## Flow
 
-After a task is entered and a model is configured, the TUI automatically generates approaches. The intended flow is:
+After a task is entered and a model is configured, the TUI automatically generates approaches. A domain with exactly one viable candidate is adopted automatically (through a real `node/select`), so `F` works immediately; multiple candidates still ask for `1-7`. The intended flow is:
 
 ```text
 1. describe the change
@@ -122,13 +122,14 @@ The TUI requires an interactive terminal (`process.stdin.isTTY`). It edits plann
 
 `controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `apply.ts` owns the host-side apply transaction (preflighted, atomic, uncommitted `git apply`). `augment.tsx` renders the controller snapshot with Ink/React. This keeps interaction testable separately from rendering.
 
-Rendering is incremental: the Ink/React tree repaints only rows whose snapshot content
-changed, and `frameLayout` in `augment.tsx` keeps every frame inside the viewport: the
-root box is pinned to the window height, and the fixed chrome (root padding 2, header 1,
-legend 2, status line 1 or the bordered input box 3) plus each pane's borders and labels
-(3) is subtracted before the file tree and detail pane get their row limits. A frame
-taller than the viewport makes Ink clear and scroll the terminal, which reads as a
-flash on every repaint.
+Frames paint incrementally: `tuiRenderOptions()` in `augment.tsx` enables Ink's
+`incrementalRendering`, so a repaint rewrites only the lines whose content changed
+instead of erasing the previous frame and rewriting it whole, and `alternateScreen`
+keeps the plan in a dedicated terminal buffer. `frameLayout` keeps every frame inside
+the viewport: the root box is pinned to the window height, and the fixed chrome (root
+padding 2, header 1, legend 2, status line 1 or the bordered input box 3) plus each
+pane's borders and labels (3) is subtracted before the file tree and detail pane get
+their row limits. A frame taller than the viewport would still make Ink clear and scroll the terminal.
 
 ## Validation
 

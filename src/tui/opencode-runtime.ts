@@ -242,7 +242,7 @@ function draftCorrection(value: unknown, directory: string): string | undefined 
 function operationContract(request: ModelCallRequest): string {
   switch (request.operation) {
     case "generate-domain":
-      return `{"candidates":[{"label":"short approach","rationale":"why materially distinct","confidence":75,"touchedPaths":["src/example.ts"]}]} (exactly 1-5 initial candidates; every candidate MUST list 1-64 real repository paths it would touch in touchedPaths — an empty touchedPaths array is invalid and rejected; keep each label <= 80 characters and each rationale <= 240 characters; confidence is an integer 0-100 estimate; reserve capacity for challenge counterexamples)`;
+      return `{"candidates":[{"label":"short approach","rationale":"why materially distinct","confidence":75,"touchedPaths":["src/example.ts"]}]} (1-5 candidates; return EXACTLY ONE when only one approach is genuinely viable — a singleton accepted domain is adopted automatically without a user choice; otherwise every candidate MUST list 1-64 real repository paths it would touch in touchedPaths — an empty touchedPaths array is invalid and rejected; keep each label <= 80 characters and each rationale <= 240 characters; confidence is an integer 0-100 estimate; reserve capacity for challenge counterexamples)`;
     case "challenge-domain":
       return `Accept: {"kind":"accept"}; missing family: {"kind":"missing-candidate","candidate":{...},"reason":"..."}; omitted path: {"kind":"missing-path","path":"src/example.ts","reason":"..."} (reasons <= 240 characters; accept as soon as the domain covers the objective)`;
     case "refine-node":

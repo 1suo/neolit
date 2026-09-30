@@ -157,7 +157,7 @@ npm run build
 AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
-After a change task is entered, the TUI automatically generates approaches for the root node. Lower nodes receive candidates only when explicitly opened. Then:
+After a change task is entered, the TUI automatically generates approaches for the root node; a single viable approach is adopted automatically, multiple approaches ask for `1-7`. Lower nodes receive candidates only when explicitly opened. Then:
 
 ```text
 Enter  message/regenerate selected path and its descendants

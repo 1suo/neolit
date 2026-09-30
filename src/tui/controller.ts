@@ -305,9 +305,12 @@ export class AugmentTuiController {
     await this.dispatch("Generating approaches", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod, challengeRounds: this.challengeRounds } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
-      this.refresh();
+      await this.adoptSingletonIfViable(nodeId);
       const generatedNode = this.task.nodes[nodeId]!;
-      if (generatedNode.challengeExhausted) {
+      if (generatedNode.status === "collapsed") {
+        this.message = "Single viable approach adopted. Press F to expand it into files.";
+      }
+      else if (generatedNode.challengeExhausted) {
         this.message = "Approaches ready after bounded challenge. Choose 1-7, or press [G] to rethink.";
       } else {
         this.message = "Approaches ready. Choose one with keys 1-7.";
@@ -443,9 +446,12 @@ export class AugmentTuiController {
           params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true, challengeRounds: this.challengeRounds },
         });
         this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
+        await this.adoptSingletonIfViable(nodeId);
         this.refresh();
         this.selectNodeEntry(nodeId);
-        this.message = "Approaches updated from your message. Choose one with keys 1-7.";
+        this.message = this.task.nodes[nodeId]?.status === "collapsed"
+          ? "Approaches updated from your message; single viable approach adopted. Press F to expand it."
+          : "Approaches updated from your message. Choose one with keys 1-7.";
       } else {
         this.selectNodeEntry(nodeId);
         this.message = `Message saved for ${targetPath}. No model is configured to regenerate it.`;
@@ -477,9 +483,12 @@ export class AugmentTuiController {
       }
       const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 11, method: "crystallize", params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true, challengeRounds: this.challengeRounds } });
       this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
+      await this.adoptSingletonIfViable(nodeId);
       this.refresh();
       this.selectNodeEntry(nodeId);
-      this.message = text ? "Approaches regenerated from your note. Choose one with keys 1-7." : "Approaches regenerated. Choose one with keys 1-7.";
+      const adopted = this.task.nodes[nodeId]?.status === "collapsed";
+      if (text) this.message = adopted ? "Approaches regenerated from your note; single viable approach adopted. Press F to expand it." : "Approaches regenerated from your note. Choose one with keys 1-7.";
+      else this.message = adopted ? "Approaches regenerated; single viable approach adopted. Press F to expand it." : "Approaches regenerated. Choose one with keys 1-7.";
     }, nodeId);
   }
 
@@ -549,6 +558,29 @@ export class AugmentTuiController {
     const child = Object.values(task?.nodes ?? {}).find((node) => node.parent === nodeId && node.kind !== "virtual");
     if (child?.path) this.selectedRowId = `entry:${child.path}`;
     else this.selectNodeEntry(nodeId);
+  }
+
+  /**
+   * A domain with exactly one possible candidate and no unproven omissions is
+   * adopted automatically: the model already decided only one approach is
+   * viable, so asking the user to press 1 over 1 is ceremony. The kernel still
+   * records the selection through node/select.
+   */
+  private async adoptSingletonIfViable(nodeId: string): Promise<void> {
+    const task = this.task;
+    if (!task) return;
+    const node = task.nodes[nodeId];
+    if (!node || node.status !== "domain" || node.challengeExhausted) return;
+    const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
+    if (possible.length !== 1) return;
+    const response = await this.server.handle({
+      jsonrpc: "2.0",
+      id: 17,
+      method: "node/select",
+      params: { taskId: task.id, expectedRevision: task.revision, nodeId, candidateId: possible[0]!.id },
+    });
+    this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    this.refresh();
   }
 
   private selectNodeEntry(nodeId: string): void {

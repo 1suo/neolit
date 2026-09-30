@@ -99,12 +99,11 @@ describe("augment TUI controller", () => {
 
     await controller.crystallize();
     let state = controller.snapshot();
-    expect(state.rows.map((row) => row.id)).not.toContain("entry:src/auth/session.ts");
+    expect(state.rows.map((row) => row.id)).toContain("entry:src/auth/session.ts");
     expect(state.rows.some((row) => row.repositoryOnly)).toBe(true);
 
-    const candidateId = state.task!.nodes[state.task!.rootNodeId]!.candidateIds[0]!;
-    await controller.selectCandidate(candidateId);
-    expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "collapsed" });
+    expect(state.message).toBe("Single viable approach adopted. Press F to expand it into files.");
+    expect(state.task?.nodes[state.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
     expect(controller.snapshot().rows.map((row) => row.id)).toContain("entry:src/auth/session.ts");
 
     await controller.refine();
@@ -298,10 +297,26 @@ describe("augment TUI controller", () => {
   });
 
   it("tells the user to choose an approach before refining a domain path", async () => {
-    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    const twoCandidates: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") {
+          return {
+            value: {
+              candidates: [
+                { label: "First approach", rationale: "one family", confidence: 70, touchedPaths: ["src/auth/session.ts"] },
+                { label: "Second approach", rationale: "another family", confidence: 60, touchedPaths: ["src/auth/session.ts"] },
+              ],
+            },
+          };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: twoCandidates });
     await controller.start("bounded retries", "commit:1");
     await controller.crystallize();
     const task = controller.snapshot().task!;
+    expect(task.nodes[task.rootNodeId]).toMatchObject({ status: "domain" });
     await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
     await controller.refine();
     const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
@@ -309,7 +324,7 @@ describe("augment TUI controller", () => {
     await controller.constrain("Preserve the retry API.");
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
     await controller.refine();
-    expect(controller.snapshot().error).toBe("This path has 1 approach — choose one with keys 1-7, then press F to expand it.");
+    expect(controller.snapshot().error).toBe("This path has 2 approaches — choose one with keys 1-7, then press F to expand it.");
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
   });
 
@@ -340,16 +355,14 @@ describe("augment TUI controller", () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");
     await controller.crystallize();
-    const task = controller.snapshot().task!;
-    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
     await controller.rethink("avoid touching the kernel scheduler");
     const snapshot = controller.snapshot();
     expect(snapshot.error).toBeUndefined();
     expect(Object.values(snapshot.task?.constraints ?? {}).some((constraint) => constraint.text.includes("avoid touching the kernel scheduler"))).toBe(true);
-    expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "domain" });
+    expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
     expect(snapshot.message).toContain("regenerated from your note");
     await controller.rethink();
-    expect(controller.snapshot().message).toBe("Approaches regenerated. Choose one with keys 1-7.");
+    expect(controller.snapshot().message).toBe("Approaches regenerated; single viable approach adopted. Press F to expand it.");
   });
 
   it("carries path messages into descendant patch context", async () => {
@@ -386,13 +399,12 @@ describe("augment TUI controller", () => {
     await controller.start("bounded retries", "commit:1");
     await controller.crystallize();
     const task = controller.snapshot().task!;
-    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
     await controller.refine();
     const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
     controller.select("entry:src/auth/session.ts");
     await controller.constrain("Preserve the retry API.");
     expect(generatedNodeIds).toEqual([task.rootNodeId, fileNode.id]);
-    expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
+    expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "collapsed" });
   });
 
   it("projects candidates and patches under their filesystem entries", async () => {
