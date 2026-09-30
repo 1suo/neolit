@@ -135,6 +135,7 @@ crystallize
 refine
 patch/draft
 patch/repair
+patch/set
 diff/get
 shutdown
 ```

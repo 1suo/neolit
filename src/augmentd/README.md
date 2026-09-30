@@ -36,7 +36,7 @@ diff/get
 shutdown
 ```
 
-Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches. `path/lock` records task-local controller authority: candidates, refinement children, and patches cannot modify a locked path or its descendants.
+Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches. `path/lock` records task-local controller authority: candidates, refinement children, and patches cannot modify a locked path or its descendants. `patch/set` lets a host overwrite a drafted patch with its own edited text (for example, saved from an editor buffer); it reclassifies the diff, bumps the revision, and is rejected for stale revisions, unknown diffs, or locked paths.
 
 ## Model runtime
 

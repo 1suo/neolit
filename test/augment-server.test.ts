@@ -55,6 +55,33 @@ describe("augmentd protocol", () => {
     expect((unchanged as { result: { revision: number } }).result.revision).toBe(task.revision);
   });
 
+  it("lets the host replace a drafted patch with its own edit", async () => {
+    const { server, task } = await started();
+    const crystallized = await server.handle(request(2, "crystallize", { taskId: task.id, expectedRevision: task.revision, nodeId: task.rootNodeId, temperature: "normal", lod: "file" }));
+    const domain = (crystallized as { result: { id: string; revision: number; rootNodeId: string; nodes: Record<string, { candidateIds: string[] }> } }).result;
+    const candidateId = domain.nodes[domain.rootNodeId]!.candidateIds[0]!;
+    const selected = await server.handle(request(3, "node/select", { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId }));
+    const collapsed = (selected as { result: { id: string; revision: number; rootNodeId: string } }).result;
+    const refined = await server.handle(request(4, "refine", { taskId: collapsed.id, expectedRevision: collapsed.revision, nodeId: collapsed.rootNodeId, temperature: "normal", lod: "hunk" }));
+    const expanded = (refined as { result: { id: string; revision: number; nodes: Record<string, { kind: string; id: string }> } }).result;
+    const fileNode = Object.values(expanded.nodes).find((node) => node.kind === "file")!;
+    const drafted = await server.handle(request(5, "patch/draft", { taskId: expanded.id, expectedRevision: expanded.revision, nodeId: fileNode.id, temperature: "low" }));
+    const withPatch = (drafted as { result: { id: string; revision: number; diffs: Record<string, { id: string; patch: string }> } }).result;
+    const diff = Object.values(withPatch.diffs)[0]!;
+
+    const edited = "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -1,1 +1,2 @@\n alpha\n+host-edited line\n";
+    const replaced = await server.handle(request(6, "patch/set", { taskId: withPatch.id, expectedRevision: withPatch.revision, diffId: diff.id, patch: edited }));
+    const hostEdited = (replaced as { result: { revision: number; diffs: Record<string, { patch: string; kind: string }> } }).result;
+    expect(hostEdited.diffs[diff.id]!.patch).toBe(edited);
+    expect(hostEdited.diffs[diff.id]!.kind).toBe("modify");
+    expect(hostEdited.revision).toBeGreaterThan(withPatch.revision);
+
+    const stale = await server.handle(request(7, "patch/set", { taskId: hostEdited.id, expectedRevision: withPatch.revision, diffId: diff.id, patch: edited }));
+    expect(stale).toMatchObject({ id: 7, error: { code: -32000, message: expect.stringMatching(/Stale task revision/u) } });
+    const unknown = await server.handle(request(8, "patch/set", { taskId: hostEdited.id, expectedRevision: hostEdited.revision, diffId: "diff:missing", patch: edited }));
+    expect(unknown).toMatchObject({ id: 8, error: { message: expect.stringMatching(/Unknown planned diff/u) } });
+  });
+
   it("reports unknown methods and tasks", async () => {
     const server = new AugmentServer({ runtime: model() });
     expect(await server.handle(request(1, "not-a-method"))).toMatchObject({ id: 1, error: { code: -32601 } });

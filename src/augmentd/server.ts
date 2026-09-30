@@ -1,4 +1,4 @@
-import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, setPathLock } from "../augment/state.js";
+import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, replacePatch, setPathLock } from "../augment/state.js";
 import { crystallizeNode, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
 import type { LOD, ModelRuntime, PlanTask, Temperature } from "../augment/types.js";
 
@@ -243,6 +243,18 @@ export class AugmentServer {
           diffId: string(input.diffId, "diffId"),
           failedCheck: string(input.failedCheck, "failedCheck"),
           temperature: temperature(input.temperature),
+        });
+        this.tasks.set(updated.id, updated);
+        return updated;
+      }
+      case "patch/set": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const updated = replacePatch(this.requireTask(base.taskId), {
+          taskId: base.taskId,
+          expectedRevision: base.expectedRevision,
+          diffId: string(input.diffId, "diffId"),
+          patch: string(input.patch, "patch"),
         });
         this.tasks.set(updated.id, updated);
         return updated;
