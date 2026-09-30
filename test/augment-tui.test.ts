@@ -291,6 +291,29 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
   });
 
+  it("carries already-drafted task diffs into later draft context", async () => {
+    const draftContexts: unknown[] = [];
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "draft-patch") draftContexts.push(request.context);
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+    controller.select("entry:test/auth/retry.test.ts");
+    await controller.draftPatch();
+    expect(draftContexts).toHaveLength(2);
+    const second = draftContexts[1] as { taskDiffs: Array<{ path: string }> };
+    expect(second.taskDiffs.map((diff) => diff.path)).toEqual(["src/auth/session.ts"]);
+  });
+
   it("carries path messages into descendant patch context", async () => {
     const patchConstraints: unknown[] = [];
     const runtime: ModelRuntime = {

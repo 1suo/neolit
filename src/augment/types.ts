@@ -172,6 +172,7 @@ export interface ModelContextPacket {
   constraints: PlanConstraint[];
   obligations: PlanObligation[];
   diffs: PlannedDiff[];
+  taskDiffs: PlannedDiff[];
   lockedPaths: string[];
   rejectedCandidates: Array<{ label: string; reason: string }>;
 }

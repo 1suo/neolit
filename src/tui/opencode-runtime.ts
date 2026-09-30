@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import type { ModelCallRequest, ModelRuntime } from "../augment/types.js";
+import { preflightPatches } from "./apply.js";
 
 const DRAFT_FILE_EMBED_LIMIT = 64_000;
 const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch"]);
@@ -106,8 +107,9 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   async call(request: ModelCallRequest): Promise<OpenCodeCliResult> {
     let text = await this.prompt(request);
     let value = extractJsonOnly(text);
-    if (DRAFT_OPERATIONS.has(request.operation) && isEmptyDraft(value)) {
-      text = await this.prompt(request, "Your previous answer is unusable: the patch field must be a non-empty string holding the complete single-file unified diff with JSON-escaped line breaks. Return the full JSON object again with the real patch.");
+    const correction = DRAFT_OPERATIONS.has(request.operation) ? draftCorrection(value, this.directory) : undefined;
+    if (correction) {
+      text = await this.prompt(request, correction);
       value = extractJsonOnly(text);
     }
     if (value === undefined) {
@@ -131,7 +133,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
       ...(fileSection ? [fileSection] : []),
       ...(correction ? [correction] : []),
-      `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed:\n${JSON.stringify(request.context, null, 2)}`,
+      `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed; diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context, null, 2)}`,
     ].join("\n\n");
     const args = ["run", "--format", "json", ...(model ? ["--model", model] : []), ...(this.agent ? ["--agent", this.agent] : []), ...(this.autoApprove ? ["--auto"] : []), "--title", `augment-${request.operation}`, "--", prompt];
     const stdout = await this.run(args);
@@ -173,6 +175,22 @@ function isEmptyDraft(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
   const patch = (value as { patch?: unknown }).patch;
   return typeof patch !== "string" || patch.trim().length === 0;
+}
+
+/**
+ * Deterministic draft gate: a patch must parse as a unified diff git would
+ * accept against the current working tree. git itself is the parser, so the
+ * corrective retry can quote git's exact diagnostic back to the model.
+ */
+function draftCorrection(value: unknown, directory: string): string | undefined {
+  if (isEmptyDraft(value)) {
+    return "Your previous answer is unusable: the patch field must be a non-empty string holding the complete single-file unified diff with JSON-escaped line breaks. Return the full JSON object again with the real patch.";
+  }
+  const patch = (value as { patch?: unknown }).patch;
+  if (typeof patch !== "string") return undefined;
+  const failure = preflightPatches(directory, [patch]);
+  if (!failure) return undefined;
+  return `Your patch does not pass git's unified-diff check: ${failure} Regenerate the complete single-file unified diff with exact @@ header line counts, one leading space on every context line, one leading minus on deletions, and one leading plus on additions.`;
 }
 
 function operationContract(request: ModelCallRequest): string {

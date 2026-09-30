@@ -102,6 +102,7 @@ function context(task: PlanTask, node: PlanNode): ModelContextPacket {
     constraints: [...constraintIds].map((id) => task.constraints[id]!).filter(Boolean),
     obligations: node.obligationIds.map((id) => task.obligations[id]!).filter(Boolean),
     diffs: node.diffIds.map((id) => task.diffs[id]!).filter(Boolean),
+    taskDiffs: Object.values(task.diffs),
     lockedPaths: task.lockedPaths,
     rejectedCandidates: rejected,
   };
