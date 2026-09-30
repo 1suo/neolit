@@ -688,7 +688,7 @@ describe("OpenCode CLI runtime parsing", () => {
     expect(result.value).toEqual({ patch: "--- a/package.json", assumptions: [] });
     const logged = fs.readFileSync(log, "utf8");
     expect(logged).toContain("patch field must be a non-empty string");
-    expect(logged.match(/draft-patch/g)?.length).toBe(2);
+    expect(logged.match(/--title augment-draft-patch/g)?.length).toBe(2);
   });
 
   it("embeds head and tail when the draft target exceeds the embed limit", async () => {
