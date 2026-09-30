@@ -319,4 +319,30 @@ describe("OpenCode CLI runtime parsing", () => {
     expect(extractJsonOnly('prefix {"patch":"diff"} suffix')).toEqual({ patch: "diff" });
     expect(extractJsonOnly("no object")).toBeUndefined();
   });
+
+  it("rejects with an actionable message when the runtime exceeds its timeout", async () => {
+    const file = path.join(os.tmpdir(), `augment-opencode-slow-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, "#!/bin/sh\nsleep 5\n");
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 150 });
+    await expect(runtime.call({
+      operation: "challenge-domain",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: {} as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "normal",
+      lod: "file",
+    })).rejects.toThrow(/timed out after 150ms\. Set AUGMENT_OPENCODE_TIMEOUT_MS/);
+  });
 });

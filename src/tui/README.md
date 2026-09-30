@@ -87,7 +87,7 @@ Select a working model explicitly with `--model provider/model` or `AUGMENT_OPEN
 AUGMENT_OPENCODE_COMMAND
 AUGMENT_OPENCODE_MODEL
 AUGMENT_OPENCODE_AGENT
-AUGMENT_OPENCODE_TIMEOUT_MS
+AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after this budget)
 AUGMENT_TUI_NO_MODEL=1
 ```
 
