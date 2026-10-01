@@ -95,6 +95,21 @@ describe("augmentd protocol", () => {
     expect(unknown).toMatchObject({ id: 8, error: { message: expect.stringMatching(/Unknown planned diff/u) } });
   });
 
+  it("notifies subscribers after every task mutation", async () => {
+    const server = new AugmentServer({ runtime: model() });
+    const changes: Array<{ taskId: string; revision: number }> = [];
+    const unsubscribe = server.onChange((change) => changes.push(change));
+    const started = await server.handle(request(1, "task/start", { taskId: "task:notify", objective: "make retries bounded", basisRevision: "commit:1" }));
+    const task = (started as { result: { id: string; revision: number; rootNodeId: string } }).result;
+    await server.handle(request(2, "crystallize", { taskId: task.id, expectedRevision: task.revision, nodeId: task.rootNodeId, temperature: "normal", lod: "file" }));
+    unsubscribe();
+    const crystallize = await server.handle(request(3, "task/get", { taskId: task.id }));
+    expect((crystallize as { result: { revision: number } }).result.revision).toBeGreaterThan(task.revision);
+    expect(changes.map((change) => change.taskId)).toEqual([task.id, task.id]);
+    expect(changes[1]!.revision).toBeGreaterThan(changes[0]!.revision);
+    expect(changes.length).toBe(2);
+  });
+
   it("restores a task persisted by a host into a fresh server", async () => {
     const server = new AugmentServer({ runtime: model() });
     const started = await server.handle(request(1, "task/start", { taskId: "task:r", objective: "resume me", basisRevision: "commit:1" }));

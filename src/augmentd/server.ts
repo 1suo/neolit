@@ -1,6 +1,6 @@
 import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
 import { crystallizeNode, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
-import type { LOD, ModelRuntime, PlanTask, Temperature } from "../augment/types.js";
+import type { LOD, ModelRuntime, PlanRevision, PlanTask, Temperature } from "../augment/types.js";
 
 export const AUGMENT_PROTOCOL_VERSION = 1;
 
@@ -79,13 +79,41 @@ function taskMutation(value: unknown): TaskMutationParams {
   return { taskId: string(params.taskId, "taskId"), expectedRevision: revision(params.expectedRevision) };
 }
 
+export interface TaskChange {
+  taskId: string;
+  revision: PlanRevision;
+}
+
 export class AugmentServer {
   private readonly tasks = new Map<string, PlanTask>();
   private readonly runtime: ModelRuntime;
+  private readonly changeListeners = new Set<(change: TaskChange) => void>();
   private nextTaskId = 1;
 
   constructor(options: AugmentServerOptions = {}) {
     this.runtime = options.runtime ?? new UnavailableModelRuntime();
+  }
+
+  /**
+   * Push seam for hosts: every task mutation notifies subscribers with the
+   * task id and its new revision, so editors can invalidate their views
+   * instead of polling. Notification delivery is best-effort and synchronous.
+   */
+  onChange(listener: (change: TaskChange) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  private store(task: PlanTask): void {
+    this.tasks.set(task.id, task);
+    const change: TaskChange = { taskId: task.id, revision: task.revision };
+    for (const listener of this.changeListeners) {
+      try {
+        listener(change);
+      } catch {
+        // a broken listener must not break task mutation
+      }
+    }
   }
 
   async handle(request: JsonRpcRequest): Promise<JsonRpcResponse | null> {
@@ -117,7 +145,7 @@ export class AugmentServer {
         if (this.tasks.has(taskId)) throw new ProtocolError(-32002, `Task already exists: ${taskId}`);
         const mode = input.mode === "explanation" ? "explanation" : "change";
         const task = createPlanTask({ id: taskId, objective: string(input.objective, "objective"), basisRevision: string(input.basisRevision, "basisRevision"), mode });
-        this.tasks.set(taskId, task);
+        this.store(task);
         return task;
       }
       case "task/restore": {
@@ -132,7 +160,7 @@ export class AugmentServer {
         }
         const task = candidate as PlanTask;
         if (!task.nodes[task.rootNodeId]) throw new ProtocolError(-32002, "task/restore payload has no root node.");
-        this.tasks.set(task.id, task);
+        this.store(task);
         return task;
       }
       case "task/get": {
@@ -161,35 +189,35 @@ export class AugmentServer {
           path: typeof input.path === "string" ? input.path : undefined,
           text: string(input.text, "text"),
         });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "node/select": {
         const base = taskMutation(params);
         const input = object(params);
         const updated = selectCandidate(this.requireTask(base.taskId), { ...base, nodeId: string(input.nodeId, "nodeId"), candidateId: string(input.candidateId, "candidateId") });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "node/reject": {
         const base = taskMutation(params);
         const input = object(params);
         const updated = rejectCandidate(this.requireTask(base.taskId), { ...base, candidateId: string(input.candidateId, "candidateId"), reason: string(input.reason, "reason") });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "node/reopen": {
         const base = taskMutation(params);
         const input = object(params);
         const updated = reopenNode(this.requireTask(base.taskId), { ...base, nodeId: string(input.nodeId, "nodeId"), reason: string(input.reason, "reason") });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "node/stale": {
         const base = taskMutation(params);
         const input = object(params);
         const updated = markPathStale(this.requireTask(base.taskId), { ...base, path: string(input.path, "path") });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "path/restrict": {
@@ -202,7 +230,7 @@ export class AugmentServer {
           mode,
           marked: input.marked === undefined ? undefined : input.marked !== false,
         });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "explain": {
@@ -213,7 +241,7 @@ export class AugmentServer {
           nodeId: typeof input.nodeId === "string" ? input.nodeId : undefined,
           temperature: temperature(input.temperature),
         });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "crystallize": {
@@ -227,7 +255,7 @@ export class AugmentServer {
           replace: input.replace === true,
           challengeRounds: input.challengeRounds === undefined ? undefined : Math.max(0, Math.min(Number(input.challengeRounds) || 0, 2)),
         });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "refine": {
@@ -239,7 +267,7 @@ export class AugmentServer {
           temperature: temperature(input.temperature),
           lod: lod(input.lod),
         });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "patch/draft": {
@@ -250,7 +278,7 @@ export class AugmentServer {
           nodeId: string(input.nodeId, "nodeId"),
           temperature: temperature(input.temperature),
         });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "patch/repair": {
@@ -262,7 +290,7 @@ export class AugmentServer {
           failedCheck: string(input.failedCheck, "failedCheck"),
           temperature: temperature(input.temperature),
         });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "patch/set": {
@@ -274,7 +302,7 @@ export class AugmentServer {
           diffId: string(input.diffId, "diffId"),
           patch: string(input.patch, "patch"),
         });
-        this.tasks.set(updated.id, updated);
+        this.store(updated);
         return updated;
       }
       case "diff/get": {
@@ -298,6 +326,11 @@ export class AugmentServer {
 export async function runStdioAugmentServer(options: AugmentServerOptions = {}, input: NodeJS.ReadableStream = process.stdin, output: NodeJS.WritableStream = process.stdout): Promise<void> {
   const { createInterface } = await import("node:readline");
   const server = new AugmentServer(options);
+  // Push channel: every task mutation is forwarded as a JSON-RPC notification
+  // line so editor hosts can invalidate views instead of polling.
+  server.onChange((change) => {
+    output.write(`${JSON.stringify({ jsonrpc: "2.0", method: "augment/taskChanged", params: change })}\n`);
+  });
   const lines = createInterface({ input, crlfDelay: Infinity });
   let stopped = false;
   for await (const line of lines) {
