@@ -8,7 +8,7 @@ import { renderToString } from "ink";
 import { cleanup, render as renderInk } from "ink-testing-library";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
-import { AugmentTui, detailLines, frameLayout } from "../src/tui/augment.js";
+import { AugmentTui, detailLines, frameLayout, tuiRenderOptions } from "../src/tui/augment.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
 const temporaryFiles: string[] = [];
@@ -239,6 +239,58 @@ describe("augment TUI controller", () => {
     } finally {
       delete process.env.AUGMENT_CHALLENGE_ROUNDS;
     }
+  });
+
+  it("enforces the allowlist: only allowed paths may change", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    controller.select("entry:src/augment");
+    await controller.toggleAllow();
+    expect(controller.snapshot().pendingAllows).toEqual(["src/augment"]);
+    await controller.start("bounded retries", "commit:1");
+    expect(controller.snapshot().task?.allowedPaths).toEqual(["src/augment"]);
+    await controller.crystallize();
+    expect(controller.snapshot().error).toContain("escapes the allowlist");
+
+    controller.select("entry:src/augment");
+    await controller.toggleAllow();
+    expect(controller.snapshot().task?.allowedPaths).toEqual([]);
+    await controller.crystallize();
+    expect(controller.snapshot().error).toBeUndefined();
+    expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "collapsed" });
+  });
+
+  it("persists the active task and resumes it in a new controller", async () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = state;
+    try {
+      const first = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
+      await first.start("bounded retries", "commit:1");
+      await first.crystallize();
+      const second = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
+      const snapshot = second.snapshot();
+      expect(snapshot.message).toContain("Resumed task: bounded retries");
+      expect(snapshot.task?.objective).toBe("bounded retries");
+      expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
+      expect(JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-tasks.json"), "utf8"))).toHaveLength(1);
+    } finally {
+      if (previous === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
+  it("explains the selected node inside an active change task", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    await controller.develop();
+    controller.select("entry:src/auth/session.ts");
+    await controller.explain("retry policy");
+    const snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    expect(snapshot.task?.mode).toBe("change");
+    expect(Object.keys(snapshot.task?.explanations ?? {})).toHaveLength(2);
+    expect(snapshot.message).toContain("Explained 2 paths around src/auth/session.ts");
   });
 
   it("aggregates directory changes and shows descendant exact patches", async () => {
@@ -531,7 +583,6 @@ describe("augment TUI rendering", () => {
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: false }));
     expect(output).toContain("NEOLIT");
     expect(output).toContain("FILES");
-    expect(output).toContain("SELECTED PATH");
     expect(output).toContain("NO MODEL");
     expect(output).toContain("package.json");
     expect(output).toContain("augment/");
@@ -589,6 +640,10 @@ describe("augment TUI rendering", () => {
     const unknown = frameLayout(undefined, "idle");
     expect(unknown.frameRows).toBeGreaterThan(0);
     expect(IDLE_PANE_CHROME_ROWS + unknown.detailRows).toBeLessThanOrEqual(unknown.frameRows);
+  });
+
+  it("paints frames incrementally inside the alternate screen", () => {
+    expect(tuiRenderOptions()).toMatchObject({ alternateScreen: true, incrementalRendering: true });
   });
 
   it("truncates the tallest tree and the longest patch to the pane budget", async () => {
@@ -669,7 +724,6 @@ describe("selected-path detail model", () => {
     const row = controller.snapshot().rows.find((item) => item.id === "entry:src/auth/session.ts");
     const lines = detailLines(controller.snapshot().task, row).map((line) => line.text);
     expect(lines).toContain("DESCRIPTION");
-    expect(lines).toContain("KEYS");
     expect(lines).toContain("  [D] develop — drafts this file's exact patch · [A] apply after");
   });
 

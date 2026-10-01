@@ -131,6 +131,8 @@ node/select
 node/reject
 node/reopen
 node/stale
+path/lock
+path/allow
 crystallize
 refine
 patch/draft
@@ -165,7 +167,8 @@ Enter  prompt for the selected path — text becomes a message that regenerates 
 D      develop selected path (expand into files, then draft them)
 A      apply drafted patch to working tree
 L      lock/unlock file or directory, before or during a run
-E      explanation task
+W      allow changes only inside selected path (allowlist; empty allowlist = everything allowed)
+E      explain selected path (whole repository when no task is active)
 N      new change task
 Tab    switch pane
 Q      quit

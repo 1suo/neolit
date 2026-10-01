@@ -68,6 +68,7 @@ export interface RepairPatchWithModelInput {
 
 export interface ExplainProjectWithModelInput {
   taskId: string;
+  nodeId?: string;
   temperature: Temperature;
 }
 
@@ -107,6 +108,7 @@ function context(task: PlanTask, node: PlanNode): ModelContextPacket {
     taskDiffs: Object.values(task.diffs),
     taskTree: compactTree(task),
     lockedPaths: task.lockedPaths,
+    allowedPaths: task.allowedPaths,
     rejectedCandidates: rejected,
   };
 }
@@ -224,8 +226,7 @@ export async function draftPatchWithModel(runtime: ModelRuntime, task: PlanTask,
 }
 
 export async function explainProjectWithModel(runtime: ModelRuntime, task: PlanTask, input: ExplainProjectWithModelInput): Promise<PlanTask> {
-  if (task.mode !== "explanation") throw new AugmentModelError("Explanations require an explanation task.");
-  const node = requireNode(task, task.rootNodeId);
+  const node = requireNode(task, input.nodeId ?? task.rootNodeId);
   const proposal = await call(runtime, task, node, "explain-project", input.temperature, "architecture", parseWith(ExplanationProposalSchema));
   return attachExplanations(task, {
     taskId: task.id,

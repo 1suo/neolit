@@ -57,6 +57,7 @@ const modelAvailable = !disableModel && commandAvailable(requested);
 const controller = new AugmentTuiController({
   directory,
   runtime: modelAvailable ? new OpenCodeCliRuntime({ directory, command: requested, model }) : undefined,
+  persistTasks: process.env.AUGMENT_TUI_TASKS !== "0",
 });
 
 if (objective) {

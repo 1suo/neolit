@@ -36,6 +36,7 @@ Indicators:
 ✓ applied    drafted patch was applied to the working tree; nothing is committed
 ! stale      repository basis changed
 # locked     path cannot change in this run
+○ allowed    allowlist entry; while any exist, only allowed paths may change
 ● ready      path and obligations are complete
 ? explained  path is relevant to the current explanation topic
 ```
@@ -65,12 +66,13 @@ After a task is entered and a model is configured, the TUI automatically generat
 
 ```text
 N  start a new change plan
-E  start an explanation task
+E  explain — with an active task it explains the selected path; without one it starts a repository-wide explanation task
 Enter  the universal prompt for the selected path: text becomes a message that regenerates its subtree; submitting empty rethinks it
 1-7  choose the numbered approach
 D  develop the selected path — a chosen approach expands into files, a planned file drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree
 L  lock/unlock the selected file or directory (before a task starts, locks are held for the next task and applied before its first model run; the model sees them as paths it must not change)
+W  allow/disallow the selected path — while the allowlist is non-empty, only allowed paths (and their descendants) may change; emptying it restores full freedom
 O  reopen selected node with a reason
 S  mark a real path changed outside the plan
 Tab  switch pane
@@ -97,6 +99,7 @@ AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after
 AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh OpenCode session for every call)
 AUGMENT_OPENCODE_RETRIES       (default 2; extra attempts for rate limits, disconnects, and unparseable output)
 AUGMENT_CHALLENGE_ROUNDS       (0-2, default 2; 0 skips challenge rounds for much faster domains)
+AUGMENT_TUI_TASKS            (default on; set 0 to disable persisting and resuming the active task)
 AUGMENT_TUI_NO_MODEL=1
 ```
 

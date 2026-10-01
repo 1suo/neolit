@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, render, useApp, useInput, useWindowSize } from "ink";
+import { Box, Text, render, useApp, useInput, useWindowSize, type RenderOptions } from "ink";
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
-import { pathIsLocked } from "../augment/state.js";
+import { pathIsLocked, pathIsAllowed } from "../augment/state.js";
 import { AugmentTuiController, candidatesForEntry, entryHasPlan, type PlannedTreeRow, type TuiActionState } from "./controller.js";
 
 const theme = {
@@ -89,7 +89,7 @@ function diffState(diffs: PlannedDiff[]): { indicator: string; state: string; co
   return { indicator: "Δ", state: parts.join(" "), color: counts.delete ? theme.warning : theme.success };
 }
 
-function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLocks: string[] = [], live?: RowLiveFlags, appliedDiffIds: string[] = []): { indicator: string; state: string; color: string } {
+function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLocks: string[] = [], live?: RowLiveFlags, appliedDiffIds: string[] = [], pendingAllows: string[] = []): { indicator: string; state: string; color: string } {
   const entry = row.entry;
   const candidates = candidatesForEntry(task, entry);
   const selected = candidates.find((candidate) => candidate.status === "selected");
@@ -105,6 +105,9 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLock
   if (live?.active) return { indicator: live.spinner ?? "⠋", state: `${(live.operation ?? "working").toLowerCase()}…`, color: theme.warning };
   if (live?.failed) return { indicator: "×", state: "failed · see preview", color: theme.error };
   if (locked) return { indicator: "#", state: "locked", color: theme.error };
+  if ((task?.allowedPaths.length && entry.path !== "." && pathIsAllowed(task, entry.path)) || pendingAllows.includes(entry.path)) {
+    return { indicator: "○", state: "allowed", color: theme.accent };
+  }
   if (explanations.length) {
     const primary = explanations.some((explanation) => explanation!.role === "primary");
     return { indicator: "?", state: `${primary ? "primary" : "related"} ${explanations.length}`, color: primary ? theme.warning : theme.accent };
@@ -126,8 +129,8 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLock
 
 const STATE_COLUMN = 22;
 
-function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingLocks?: string[]; live?: RowLiveFlags; appliedDiffIds?: string[] }) {
-  const state = entryState(props.task, props.row, props.pendingLocks, props.live, props.appliedDiffIds);
+function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingLocks?: string[]; live?: RowLiveFlags; appliedDiffIds?: string[]; pendingAllows?: string[] }) {
+  const state = entryState(props.task, props.row, props.pendingLocks, props.live, props.appliedDiffIds, props.pendingAllows);
   const leftWidth = Math.max(20, props.width - STATE_COLUMN);
   const prefix = `${props.row.branch}${state.indicator ? `${state.indicator} ` : ""}`;
   const name = entryName(props.row.entry);
@@ -211,7 +214,7 @@ const FOLDER_PATCH_PREVIEW = 4;
  * anything to show. Approaches appear only while a choice is still open on
  * this node; after selection they are history, not hover content.
  */
-export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = [], live?: LiveStatus, appliedDiffIds: string[] = []): DetailLine[] {
+export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = [], live?: LiveStatus, appliedDiffIds: string[] = [], pendingAllows: string[] = []): DetailLine[] {
   const lines: DetailLine[] = [];
   const add = (text: string, color: string, bold = false) => lines.push({ text: text.length ? text : " ", color, bold });
   const label = (text: string) => add(text, theme.muted);
@@ -224,9 +227,9 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     add(`× ${live.failed.operation ?? "Last operation"} failed — press the same key again to retry`, theme.error, true);
     if (live.failed.error) add(`  ${live.failed.error.split(/\r?\n/)[0] ?? ""}`, theme.error);
   }
+  if (task?.allowedPaths.length) add("Allowlist active — only ○ allowed paths may change", theme.accent);
   if (!row) {
-    label("KEYS");
-    add("  [N] describe a change · [E] explain the repository", theme.primary);
+    add("  [N] describe a change · [E] explain the repository", theme.muted);
     return lines;
   }
   const entry = row.entry;
@@ -239,7 +242,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   });
   const notes = constraintsForEntry(task, entry);
   const explanations = explanationsForEntry(task, entry);
-  const state = entryState(task, row, pendingLocks, undefined, appliedDiffIds);
+  const state = entryState(task, row, pendingLocks, undefined, appliedDiffIds, pendingAllows);
   const isDirectory = entry.kind === "dir" || entry.kind === "root";
   const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
 
@@ -269,7 +272,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
           branch: "",
           entry: child,
           repositoryOnly: false,
-        }, pendingLocks, childLive, appliedDiffIds);
+        }, pendingLocks, childLive, appliedDiffIds, pendingAllows);
         const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
         add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${reason}` : ""}`, childState.color);
     }
@@ -322,11 +325,10 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     }
   }
   else {
-    label("KEYS");
-    if (!task) add("  [N] describe a change · [E] explain the repository", theme.primary);
-    else if (possible.length) add(`  1-${possible.length} choose approach · [Enter] rethink (empty submit)`, theme.primary);
-    else if (!isDirectory && nodes.length) add("  [D] develop — drafts this file's exact patch · [A] apply after", theme.primary);
-    else add("  [Enter] message/regenerate · [D] develop selected path", theme.primary);
+    if (!task) add("  [N] describe a change · [E] explain the repository", theme.muted);
+    else if (possible.length) add(`  1-${possible.length} choose approach · [Enter] rethink (empty submit)`, theme.muted);
+    else if (!isDirectory && nodes.length) add("  [D] develop — drafts this file's exact patch · [A] apply after", theme.muted);
+    else add("  [Enter] message/regenerate · [D] develop selected path", theme.muted);
   }
 
   if (nodes.some((node) => node.challengeExhausted)) {
@@ -336,7 +338,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
 }
 
 function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; live?: LiveStatus }) {
-  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds), [props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds]);
+  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds, props.state.pendingAllows), [props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds, props.state.pendingAllows]);
   const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
   const visible = lines.slice(clamped, clamped + props.limit);
   return (
@@ -454,7 +456,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     const activeMode = mode;
     cancelInput();
     if (activeMode === "objective") run(props.controller.start(value));
-    else if (activeMode === "explanation") run(props.controller.startExplanation(value));
+    else if (activeMode === "explanation") run(props.controller.explain(value));
     else if (activeMode === "message") run(props.controller.rethink(value));
     else if (activeMode === "reopen") run(props.controller.reopen(value));
     else if (activeMode === "stale") run(props.controller.markStale(value));
@@ -528,6 +530,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     else if (command === "d") run(props.controller.develop());
     else if (command === "a") run(props.controller.applySelected());
     else if (command === "l") run(props.controller.toggleLock());
+    else if (command === "w") run(props.controller.toggleAllow());
     else if (command === "o") beginInput("reopen");
     else if (command === "s") beginInput("stale");
   });
@@ -581,15 +584,13 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
                 pendingLocks={state.pendingLocks}
                 live={activeRow || failedRow ? { active: activeRow, failed: failedRow, spinner, operation: state.active?.operation } : undefined}
                 appliedDiffIds={state.appliedDiffIds}
+                pendingAllows={state.pendingAllows}
               />
             );
           })}
         </Box>
 
-        <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden">
-          <Box paddingLeft={1}>
-            <Text color={pane === "detail" ? theme.primary : theme.muted} bold>SELECTED PATH</Text>
-          </Box>
+        <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
           <DetailView state={state} row={selectedRow} offset={detailOffset} limit={detailLimit} live={liveStatus} />
         </Box>
       </Box>
@@ -606,6 +607,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.primary}> apply · </Text>
           <Text color={theme.primary} bold>[L]</Text>
           <Text color={theme.primary}> lock · </Text>
+          <Text color={theme.primary} bold>[W]</Text>
+          <Text color={theme.primary}> allow · </Text>
           <Text color={theme.primary} bold>[E]</Text>
           <Text color={theme.primary}> explain · </Text>
           <Text color={theme.primary} bold>[N]</Text>
@@ -633,8 +636,21 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   );
 }
 
+/**
+ * Renderer options for the plan TUI. `incrementalRendering` makes Ink rewrite
+ * only the lines whose content changed instead of erasing the previous frame
+ * and rewriting it whole, so a keypress repaint no longer flashes.
+ * `alternateScreen` keeps the plan in a dedicated terminal buffer.
+ */
+export function tuiRenderOptions(): RenderOptions {
+  return {
+    alternateScreen: true,
+    incrementalRendering: true,
+  };
+}
+
 export async function runAugmentTui(controller: AugmentTuiController, modelAvailable: boolean, modelLabel?: string): Promise<void> {
-  const instance = render(<AugmentTui controller={controller} modelAvailable={modelAvailable} modelLabel={modelLabel} />, { alternateScreen: true });
+  const instance = render(<AugmentTui controller={controller} modelAvailable={modelAvailable} modelLabel={modelLabel} />, tuiRenderOptions());
   await instance.waitUntilExit();
 }
 

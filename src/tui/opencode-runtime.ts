@@ -210,7 +210,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
       ...(draftFileSection(request, this.directory) ? [draftFileSection(request, this.directory)] : []),
       ...(correction ? [correction] : []),
-      `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed; taskTree is the current plan shape (path, kind, status, drafted); diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context)}`,
+      `Context packet (JSON). Paths in lockedPaths and their descendants must not be changed; when allowedPaths is non-empty, propose changes ONLY inside allowed paths; taskTree is the current plan shape (path, kind, status, drafted); diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context)}`,
     ];
     if (previous) {
       try {

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
@@ -24,6 +25,7 @@ export interface TuiActionState {
   message: string;
   error?: string;
   pendingLocks: string[];
+  pendingAllows: string[];
   appliedDiffIds: string[];
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
@@ -33,9 +35,45 @@ export interface AugmentTuiControllerOptions {
   directory: string;
   runtime?: ModelRuntime;
   defaultLod?: LOD;
+  /** Persist the active task to disk and resume the newest one on start. */
+  persistTasks?: boolean;
 }
 
 const MAX_REPOSITORY_ENTRIES = 5_000;
+
+export interface StoredTask {
+  task: PlanTask;
+  appliedDiffIds: string[];
+  savedAt: number;
+}
+
+const MAX_STORED_TASKS = 8;
+
+function tasksStorePath(): string {
+  const base = process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim()
+    ? process.env.XDG_STATE_HOME
+    : path.join(os.homedir(), ".local", "state");
+  return path.join(base, "neolit", "augment-tasks.json");
+}
+
+function loadStoredTasks(): StoredTask[] {
+  try {
+    const raw = JSON.parse(fs.readFileSync(tasksStorePath(), "utf8")) as StoredTask[];
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((entry) => entry && typeof entry === "object" && entry.task?.version === 1 && typeof entry.task.revision === "number");
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredTasks(entries: StoredTask[]): void {
+  try {
+    fs.mkdirSync(path.dirname(tasksStorePath()), { recursive: true });
+    fs.writeFileSync(tasksStorePath(), `${JSON.stringify(entries, null, 2)}\n`, "utf8");
+  } catch {
+    // Persistence is best-effort; the in-memory task keeps working.
+  }
+}
 
 function repositoryPaths(directory: string): string[] {
   try {
@@ -176,9 +214,11 @@ export class AugmentTuiController {
   private readonly server: AugmentServer;
   private readonly defaultLod: LOD;
   private readonly challengeRounds: number | undefined;
+  private readonly persistTasks: boolean;
   private repository: PlanTreeEntry;
   private task?: PlanTask;
   private pendingLocks: string[] = [];
+  private pendingAllows: string[] = [];
   private readonly appliedDiffIds = new Set<string>();
   private activeNodeId?: string;
   private failedNodeId?: string;
@@ -198,7 +238,16 @@ export class AugmentTuiController {
     this.defaultLod = options.defaultLod ?? "file";
     const rounds = Number(process.env.AUGMENT_CHALLENGE_ROUNDS);
     this.challengeRounds = Number.isInteger(rounds) && rounds >= 0 && rounds <= 2 ? rounds : undefined;
+    this.persistTasks = options.persistTasks === true;
     this.repository = repositoryTree(options.directory);
+    if (this.persistTasks) {
+      const stored = loadStoredTasks().sort((left, right) => right.savedAt - left.savedAt)[0];
+      if (stored) {
+        this.task = stored.task;
+        this.appliedDiffIds = new Set(stored.appliedDiffIds);
+        this.message = `Resumed task: ${stored.task.objective}`;
+      }
+    }
     this.refresh();
   }
 
@@ -217,6 +266,7 @@ export class AugmentTuiController {
       message: this.message,
       error: this.error,
       pendingLocks: [...this.pendingLocks],
+      pendingAllows: [...this.pendingAllows],
       appliedDiffIds: [...this.appliedDiffIds],
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
@@ -262,10 +312,50 @@ export class AugmentTuiController {
         });
         this.task = expectResult(locked, PlanTaskLike.is) as PlanTask;
       }
+      for (const allowPath of this.pendingAllows) {
+        const allowed = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 19,
+          method: "path/allow",
+          params: { taskId: this.task.id, expectedRevision: this.task.revision, path: allowPath, allowed: true },
+        });
+        this.task = expectResult(allowed, PlanTaskLike.is) as PlanTask;
+      }
       this.pendingLocks = [];
+      this.pendingAllows = [];
       this.refresh();
       this.message = this.runtime ? "Generating approaches..." : `Plan started at ${this.task.basisRevision}. No model is configured.`;
     });
+  }
+
+  /**
+   * Explains from the cursor: with an active task the selected node is the
+   * focus (its path leads the packet's node), otherwise a fresh
+   * explanation-mode task explains the repository as a whole.
+   */
+  async explain(topic: string, basisRevision = currentRevision(this.directory)): Promise<void> {
+    if (!topic.trim()) {
+      this.error = "Explanation topic is required.";
+      return;
+    }
+    if (this.task) {
+      const task = this.task;
+      const nodeId = this.selectedNodeId() ?? task.rootNodeId;
+      await this.dispatch("Explaining selected path", async () => {
+        const explained = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 21,
+          method: "explain",
+          params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature: "low" },
+        });
+        this.task = expectResult(explained, PlanTaskLike.is) as PlanTask;
+        this.refresh();
+        const explanationCount = Object.keys(this.task.explanations).length;
+        this.message = `Explained ${explanationCount} paths around ${this.task.nodes[nodeId]?.path ?? "the task"}. ? marks show them.`;
+      }, nodeId);
+      return;
+    }
+    await this.startExplanation(topic, basisRevision);
   }
 
   async startExplanation(objective: string, basisRevision = currentRevision(this.directory)): Promise<void> {
@@ -587,6 +677,33 @@ export class AugmentTuiController {
     });
   }
 
+  async toggleAllow(): Promise<void> {
+    const row = this.selectedRow();
+    const targetPath = row?.entry.path;
+    if (!targetPath || targetPath === ".") {
+      this.error = "Select a file or directory to allow.";
+      return;
+    }
+    if (!this.task) {
+      const allowed = this.pendingAllows.includes(targetPath);
+      this.pendingAllows = allowed ? this.pendingAllows.filter((allowedPath) => allowedPath !== targetPath) : [...this.pendingAllows, targetPath];
+      this.message = `${targetPath} is ${allowed ? "back to normal" : "allowed"} for the next task; while the allowlist is non-empty, only allowed paths may change.`;
+      return;
+    }
+    const allowed = this.task.allowedPaths.includes(targetPath);
+    await this.dispatch(allowed ? "Disallowing path" : "Allowing path", async () => {
+      const response = await this.server.handle({
+        jsonrpc: "2.0",
+        id: 20,
+        method: "path/allow",
+        params: { taskId: this.task!.id, expectedRevision: this.task!.revision, path: targetPath, allowed: !allowed },
+      });
+      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+      this.refresh();
+      this.message = `${targetPath} is ${allowed ? "back to normal" : "allowed"} for this run; ${allowed && !this.task.allowedPaths.length ? "the allowlist is now empty, so every path may change again." : "only allowed paths may change."}`;
+    });
+  }
+
   async markStale(path: string): Promise<void> {
     const task = this.requireTask();
     if (!path.trim()) {
@@ -644,6 +761,13 @@ export class AugmentTuiController {
   private refresh(): void {
     this.rows = this.task ? plannedTreeRows(this.task, this.repository) : plannedTreeRowsFromRepository(this.repository);
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
+    if (this.persistTasks && this.task) {
+      const others = loadStoredTasks().filter((entry) => entry.task.id !== this.task!.id);
+      const entries = [...others, { task: this.task, appliedDiffIds: [...this.appliedDiffIds], savedAt: Date.now() }]
+        .sort((left, right) => right.savedAt - left.savedAt)
+        .slice(0, MAX_STORED_TASKS);
+      saveStoredTasks(entries);
+    }
   }
 
   private async dispatch(operation: string, action: () => Promise<void>, nodeId?: string): Promise<void> {

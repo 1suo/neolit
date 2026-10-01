@@ -1,4 +1,4 @@
-import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, replacePatch, setPathLock } from "../augment/state.js";
+import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, replacePatch, setPathAllow, setPathLock } from "../augment/state.js";
 import { crystallizeNode, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
 import type { LOD, ModelRuntime, PlanTask, Temperature } from "../augment/types.js";
 
@@ -188,11 +188,23 @@ export class AugmentServer {
         this.tasks.set(updated.id, updated);
         return updated;
       }
+      case "path/allow": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const updated = setPathAllow(this.requireTask(base.taskId), {
+          ...base,
+          path: string(input.path, "path"),
+          allowed: input.allowed !== false,
+        });
+        this.tasks.set(updated.id, updated);
+        return updated;
+      }
       case "explain": {
         const base = taskMutation(params);
         const input = object(params);
         const updated = await explainProjectWithModel(this.runtime, this.requireTask(base.taskId), {
           taskId: base.taskId,
+          nodeId: typeof input.nodeId === "string" ? input.nodeId : undefined,
           temperature: temperature(input.temperature),
         });
         this.tasks.set(updated.id, updated);
