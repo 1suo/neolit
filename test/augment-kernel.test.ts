@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { crystallizeNode, draftPatchWithModel, refineWithModel, selectCandidate } from "../src/augment/kernel.js";
+import { crystallizeNode, draftPatchWithModel, nextDevelopmentStep, refineWithModel, selectCandidate } from "../src/augment/kernel.js";
 import { acceptDomain, createPlanTask } from "../src/augment/state.js";
 import type { ModelCallRequest, ModelRuntime, PlanTask } from "../src/augment/types.js";
 
@@ -32,6 +32,42 @@ describe("augment kernel", () => {
     expect(root.candidateIds).toHaveLength(2);
     expect(root.challengeRound).toBe(2);
     expect(root.candidateIds.map((id) => result.candidates[id]!.label)).toEqual(["Fixed count", "Deadline"]);
+  });
+
+  it("decides the development frontier as a pure function", async () => {
+    const seeded = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 75, touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]);
+    let task = createPlanTask({ id: "task:frontier", objective: "o", basisRevision: "commit:1" });
+    expect(nextDevelopmentStep(task, task.rootNodeId)).toEqual({ action: "crystallize" });
+
+    const domain = await crystallizeNode(seeded, task, { taskId: task.id, nodeId: task.rootNodeId, temperature: "normal", lod: "file" });
+    expect(nextDevelopmentStep(domain, domain.rootNodeId)).toEqual({ action: "choose", count: 1 });
+
+    const selected = selectCandidate(domain, { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]! });
+    expect(nextDevelopmentStep(selected, selected.rootNodeId)).toEqual({ action: "refine" });
+    const refined = await refineWithModel(runtime([
+      () => ({ children: [
+        { kind: "dir", path: "src/auth", lod: "file", reason: "owns the work" },
+        { kind: "file", path: "TODO.md", lod: "file", reason: "track it" },
+      ] }),
+    ]), selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "file" });
+
+    const rootStep = nextDevelopmentStep(refined, refined.rootNodeId);
+    expect(rootStep).toMatchObject({ action: "descend", path: "TODO.md", step: "draft" });
+
+    const todoNode = Object.values(refined.nodes).find((node) => node.path === "TODO.md")!;
+    expect(nextDevelopmentStep(refined, todoNode.id)).toEqual({ action: "draft" });
+    const drafted = await draftPatchWithModel(runtime([() => ({ patch: "--- a/TODO.md\\n+++ b/TODO.md\\n", assumptions: [] })]), refined, { taskId: refined.id, nodeId: todoNode.id, temperature: "low" });
+    expect(nextDevelopmentStep(drafted, todoNode.id)).toEqual({ action: "already-drafted" });
+
+    const afterTodo = nextDevelopmentStep(drafted, drafted.rootNodeId);
+    expect(afterTodo).toMatchObject({ action: "descend", path: "src/auth", step: "crystallize" });
+
+    const authNode = Object.values(drafted.nodes).find((node) => node.path === "src/auth")!;
+    expect(nextDevelopmentStep(drafted, authNode.id)).toEqual({ action: "crystallize" });
+    expect(nextDevelopmentStep(drafted, "node:missing")).toEqual({ action: "stalled", reason: "Unknown plan node." });
   });
 
   it("records out-of-scope challenge candidates as constraints instead of failing", async () => {

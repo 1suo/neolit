@@ -253,3 +253,57 @@ export async function repairPatchWithModel(runtime: ModelRuntime, task: PlanTask
 export function selectCandidate(task: PlanTask, input: { taskId: string; expectedRevision: PlanRevision; nodeId: string; candidateId: string }): PlanTask {
   return collapseNode(task, input);
 }
+
+export type DevelopmentStep =
+  | { action: "refine" }
+  | { action: "crystallize" }
+  | { action: "draft" }
+  | { action: "choose"; count: number }
+  | { action: "descend"; nodeId: string; path: string; step: "crystallize" | "choose" | "draft" }
+  | { action: "already-drafted" }
+  | { action: "done" }
+  | { action: "stalled"; reason: string };
+
+function descendantsOf(task: PlanTask, nodeId: string): PlanNode[] {
+  return Object.values(task.nodes).filter((candidate) => {
+    if (candidate.id === nodeId) return false;
+    let ancestor = candidate.parent;
+    while (ancestor) {
+      if (ancestor === nodeId) return true;
+      ancestor = task.nodes[ancestor]?.parent;
+    }
+    return false;
+  });
+}
+
+/**
+ * Decides the next deterministic development step for a node — the entire
+ * "what does Develop do here" policy in one pure function. Hosts render the
+ * result; they never re-derive the lifecycle.
+ */
+export function nextDevelopmentStep(task: PlanTask, nodeId: string): DevelopmentStep {
+  const node = task.nodes[nodeId];
+  if (!node) return { action: "stalled", reason: "Unknown plan node." };
+  if (node.status === "stale" || node.status === "blocked") return { action: "stalled", reason: `This path is ${node.status}.` };
+  const isFileTarget = ["file", "hunk", "virtual"].includes(node.kind);
+  if (node.status === "collapsed") return { action: "refine" };
+  if (isFileTarget) return node.diffIds.length > 0 ? { action: "already-drafted" } : { action: "draft" };
+  if (node.status === "unresolved") return { action: "crystallize" };
+  if (node.status === "domain") {
+    const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
+    return possible.length ? { action: "choose", count: possible.length } : { action: "crystallize" };
+  }
+  if (node.status === "refined" || node.status === "ready") {
+    const descendants = descendantsOf(task, nodeId);
+    const nextFile = descendants.find((candidate) => ["file", "hunk", "virtual"].includes(candidate.kind) && candidate.diffIds.length === 0);
+    if (nextFile?.path) return { action: "descend", nodeId: nextFile.id, path: nextFile.path, step: "draft" };
+    const nextDir = descendants.find((candidate) => candidate.kind === "dir" && candidate.diffIds.length === 0 && ["unresolved", "domain"].includes(candidate.status));
+    if (nextDir?.path) {
+      const possible = nextDir.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
+      const step = nextDir.status === "unresolved" || !possible.length ? "crystallize" : "choose";
+      return { action: "descend", nodeId: nextDir.id, path: nextDir.path, step };
+    }
+    return { action: "done" };
+  }
+  return { action: "stalled", reason: `This path is ${node.status}.` };
+}

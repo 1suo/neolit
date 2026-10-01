@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
+import { nextDevelopmentStep } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
@@ -554,64 +555,40 @@ export class AugmentTuiController {
   }
 
   /**
-   * Develops the selected path one step: a collapsed node expands into files,
-   * a refined folder or root advances to its next undrafted file and drafts
-   * it, and a planned file drafts its patch. The distinctions the TUI used
-   * to expose as separate keys are just the node's lifecycle state.
+   * Develops the selected path one step; the policy itself lives in the
+   * kernel's nextDevelopmentStep so hosts never re-derive the lifecycle.
    */
   async develop(): Promise<void> {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
-    const node = task.nodes[nodeId];
-    if (!node) {
-      this.error = "Select a path to develop.";
-      return;
-    }
-    if (node.status === "collapsed") return this.refine();
-    const isFileTarget = ["file", "hunk", "virtual"].includes(node.kind);
-    if (isFileTarget && node.diffIds.length === 0 && !["stale", "blocked"].includes(node.status)) return this.draftPatch();
-    if (node.diffIds.length > 0) {
-      this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it.";
-      return;
-    }
-    if (!isFileTarget && node.status === "unresolved") return this.crystallize();
-    if (!isFileTarget && ["refined", "ready"].includes(node.status)) {
-      const isDescendant = (candidate: PlanTask["nodes"][string]) => {
-        let ancestor = candidate.parent;
-        while (ancestor) {
-          if (ancestor === nodeId) return true;
-          ancestor = task.nodes[ancestor]?.parent;
-        }
-        return false;
-      };
-      const descendants = Object.values(task.nodes).filter((candidate) => candidate.id !== node.id && isDescendant(candidate));
-      const nextFile = descendants.find((candidate) => ["file", "hunk", "virtual"].includes(candidate.kind) && candidate.diffIds.length === 0);
-      if (nextFile?.path) {
-        this.select(`entry:${nextFile.path}`);
+    const step = nextDevelopmentStep(task, nodeId);
+    switch (step.action) {
+      case "refine":
+        return this.refine();
+      case "crystallize":
+        return this.crystallize();
+      case "draft":
         return this.draftPatch();
-      }
-      const nextDir = descendants.find((candidate) => candidate.kind === "dir" && candidate.diffIds.length === 0 && ["unresolved", "domain"].includes(candidate.status));
-      if (nextDir?.path) {
-        this.select(`entry:${nextDir.path}`);
-        if (nextDir.status === "unresolved") return this.crystallize();
-        this.error = `Choose an approach for ${nextDir.path} with keys 1-7, or press Enter to rethink it.`;
+      case "descend": {
+        this.select(`entry:${step.path}`);
+        if (step.step === "draft") return this.draftPatch();
+        if (step.step === "crystallize") return this.crystallize();
+        this.error = `Choose an approach for ${step.path} with keys 1-7, or press Enter to rethink it.`;
         return;
       }
-      this.error = "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
-      return;
+      case "choose":
+        this.error = `Choose one of ${step.count} approaches with keys 1-${step.count}, or press Enter to rethink.`;
+        return;
+      case "already-drafted":
+        this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it.";
+        return;
+      case "done":
+        this.error = "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
+        return;
+      case "stalled":
+        this.error = step.reason;
+        return;
     }
-    if (node.status === "domain") {
-      const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
-      this.error = possible.length
-        ? `Choose one of ${possible.length} approaches with keys 1-${possible.length} first, or press Enter to rethink.`
-        : "Press Enter (empty submit) to generate approaches for this path.";
-      return;
-    }
-    if (node.status === "unresolved") {
-      this.error = "Press Enter (empty submit) to generate approaches for this path.";
-      return;
-    }
-    this.error = `Nothing to develop here: this path is ${node.status}.`;
   }
 
   async rethink(message?: string): Promise<void> {
