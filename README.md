@@ -164,7 +164,7 @@ After a change task is entered, the TUI automatically generates approaches for t
 ```text
 Enter  prompt for the selected path — text becomes a message that regenerates its subtree; empty submit rethinks it
 1-7    choose numbered approach
-D      develop selected path (expand into files, then draft them)
+D      develop selected path (expand into files; on a refined folder, draft its next undrafted file)
 A      apply drafted patch to working tree
 C      commit the session-applied paths only (never unrelated changes)
 L      mark/unmark path in the restriction plain (lock polarity: marked = must not change)

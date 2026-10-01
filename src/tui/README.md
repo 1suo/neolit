@@ -75,7 +75,7 @@ N  start a new change plan
 E  explain — with an active task it explains the selected path; without one it starts a repository-wide explanation task
 Enter  the universal prompt for the selected path: text becomes a message that regenerates its subtree; submitting empty rethinks it
 1-7  choose the numbered approach
-D  develop the selected path — a chosen approach expands into files, a planned file drafts its exact patch
+D  develop the selected path — a chosen approach expands into files; on a refined folder or the root it advances to the next undrafted file, selects it, and drafts it; a planned file drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree
 C  commit exactly the paths this session applied (pathspec commit; unrelated dirty or staged files stay untouched)
 L  mark/unmark the selected path in the restriction plain, lock polarity: marked (`#`, red) paths must not change, everything else may

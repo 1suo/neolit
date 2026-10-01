@@ -368,6 +368,24 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().error).toContain("already has a drafted patch");
   });
 
+  it("develops through a refined folder: D drafts the next undrafted file", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    controller.select("entry:.");
+    await controller.develop();
+    await controller.develop();
+    expect(controller.snapshot().selectedRowId).toBe("entry:src/auth/session.ts");
+    expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(1);
+    controller.select("entry:.");
+    await controller.develop();
+    expect(controller.snapshot().selectedRowId).toBe("entry:test/auth/retry.test.ts");
+    expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(2);
+    controller.select("entry:.");
+    await controller.develop();
+    expect(controller.snapshot().error).toContain("Every file under this path is drafted");
+  });
+
   it("tells the user to choose an approach before refining a domain path", async () => {
     const twoCandidates: ModelRuntime = {
       call: async (request) => {

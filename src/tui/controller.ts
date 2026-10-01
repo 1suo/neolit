@@ -555,8 +555,9 @@ export class AugmentTuiController {
 
   /**
    * Develops the selected path one step: a collapsed node expands into files,
-   * a refined file drafts its exact patch. The distinctions the TUI used to
-   * expose as separate keys are just the node's lifecycle state.
+   * a refined folder or root advances to its next undrafted file and drafts
+   * it, and a planned file drafts its patch. The distinctions the TUI used
+   * to expose as separate keys are just the node's lifecycle state.
    */
   async develop(): Promise<void> {
     const task = this.requireTask();
@@ -572,6 +573,23 @@ export class AugmentTuiController {
     if (node.diffIds.length > 0) {
       this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it.";
       return;
+    }
+    if (!isFileTarget && ["refined", "ready"].includes(node.status)) {
+      const target = Object.values(task.nodes).find((candidate) => {
+        if (!["file", "hunk", "virtual"].includes(candidate.kind) || candidate.diffIds.length > 0) return false;
+        let ancestor = candidate.parent;
+        while (ancestor) {
+          if (ancestor === nodeId) return true;
+          ancestor = task.nodes[ancestor]?.parent;
+        }
+        return false;
+      });
+      if (!target?.path) {
+        this.error = "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
+        return;
+      }
+      this.select(`entry:${target.path}`);
+      return this.draftPatch();
     }
     if (node.status === "domain") {
       const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
