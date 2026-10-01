@@ -13,6 +13,7 @@ Known gaps between shipped behavior and `src/augment/SPEC.md`.
 - [ ] Persist and reload TUI tasks across process restarts.
 - [ ] Add a stable transport address (Unix socket) alongside stdio.
 - [ ] Add protocol change notifications for multi-client tree views.
-- [ ] Add path-aware filesystem indexing and stronger scope validation.
+- [ ] Add path-aware filesystem indexing.
+- [x] Validate patch content scope and locks: patch headers are parsed, one patch stays inside one file node, virtual patches project at their real path, and `task/restore` payloads pass the boundary schema plus referential integrity.
 - [ ] Add user/practice overlays and documentation-derived constraints.
-- [ ] Add bounded re-crystallization with rejected-candidate memory.
+- [x] Add bounded re-crystallization with rejected-candidate memory: stale subtrees end staleness through `node/refresh` (optionally re-anchoring the basis), regeneration stays challenge-bounded, and labels eliminated by rejection or collapse cannot return.

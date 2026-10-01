@@ -132,6 +132,7 @@ node/select
 node/reject
 node/reopen
 node/stale
+node/refresh
 path/restrict
 crystallize
 refine
