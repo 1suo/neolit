@@ -1,8 +1,30 @@
-import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
-import { crystallizeNode, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
+import { assertTaskIntegrity, createPlanTask, addConstraint, markPathStale, planTree, PlanStateError, refreshNode, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
+import { AugmentModelError, crystallizeNode, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
+import { PlanTaskSchema } from "../augment/schemas.js";
 import type { LOD, ModelRuntime, PlanRevision, PlanTask, Temperature } from "../augment/types.js";
 
 export const AUGMENT_PROTOCOL_VERSION = 1;
+
+/**
+ * JSON-RPC codes for controller failures, derived from `PlanStateErrorCode`
+ * so hosts can act without parsing message prose: stale revisions refetch and
+ * retry, scope and lock failures name grantable paths, everything else is a
+ * request or lifecycle problem.
+ */
+const PLAN_ERROR_CODES: Record<PlanStateError["code"], number> = {
+  "stale-revision": -32010,
+  "locked-path": -32011,
+  "scope-escape": -32012,
+  "rejected-candidate": -32013,
+  "unknown-task": -32001,
+  "unknown-node": -32003,
+  "unknown-candidate": -32005,
+  "unknown-diff": -32004,
+  invalid: -32000,
+  "domain-live": -32000,
+  "node-state": -32000,
+  duplicate: -32000,
+};
 
 export class ProtocolError extends Error {
   constructor(
@@ -123,7 +145,13 @@ export class AugmentServer {
       const result = await this.dispatch(request.method, request.params);
       return { jsonrpc: "2.0", id: request.id, result };
     } catch (error) {
-      const code = error instanceof ProtocolError ? error.code : -32000;
+      const code = error instanceof ProtocolError
+        ? error.code
+        : error instanceof PlanStateError
+          ? PLAN_ERROR_CODES[error.code]
+          : error instanceof AugmentModelError
+            ? -32021
+            : -32000;
       const message = error instanceof Error ? error.message : String(error);
       return { jsonrpc: "2.0", id: request.id, error: { code, message } };
     }
@@ -151,15 +179,15 @@ export class AugmentServer {
       case "task/restore": {
         const input = object(params);
         const candidate = input.task;
-        if (!candidate || typeof candidate !== "object"
-          || (candidate as { version?: unknown }).version !== 1
-          || typeof (candidate as { id?: unknown }).id !== "string"
-          || typeof (candidate as { revision?: unknown }).revision !== "number"
-          || typeof (candidate as { rootNodeId?: unknown }).rootNodeId !== "string") {
-          throw new ProtocolError(-32002, "task/restore requires a valid task payload (version 1 with id, revision, rootNodeId).");
+        let task: PlanTask;
+        try {
+          task = PlanTaskSchema.parse(candidate) as unknown as PlanTask;
+          assertTaskIntegrity(task);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message.split("\n")[0] : String(error);
+          throw new ProtocolError(-32002, `task/restore requires a valid task payload (version 1, internally consistent). ${detail}`);
         }
-        const task = candidate as PlanTask;
-        if (!task.nodes[task.rootNodeId]) throw new ProtocolError(-32002, "task/restore payload has no root node.");
+        if (this.tasks.has(task.id)) throw new ProtocolError(-32002, `Task already exists: ${task.id}`);
         this.store(task);
         return task;
       }
@@ -217,6 +245,17 @@ export class AugmentServer {
         const base = taskMutation(params);
         const input = object(params);
         const updated = markPathStale(this.requireTask(base.taskId), { ...base, path: string(input.path, "path") });
+        this.store(updated);
+        return updated;
+      }
+      case "node/refresh": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const updated = refreshNode(this.requireTask(base.taskId), {
+          ...base,
+          nodeId: string(input.nodeId, "nodeId"),
+          basisRevision: typeof input.basisRevision === "string" ? input.basisRevision : undefined,
+        });
         this.store(updated);
         return updated;
       }

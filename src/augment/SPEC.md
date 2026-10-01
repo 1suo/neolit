@@ -22,12 +22,12 @@ A task has two modes: `change` and `explanation`. A change task uses candidate d
 8. Candidate domains are local to one node. Refinement may create descendant work nodes, but it must not generate descendant candidate domains implicitly; a descendant receives candidates only when that node is explicitly crystallized.
 9. The filesystem tree projection must not display the touched paths of unchosen sibling candidates as though they were one plan. Before collapse, alternative paths remain alternative details; after collapse, only the selected candidate's paths project into the tree.
 10. A host may project the plan onto the complete repository file tree. Repository-only paths are visibly unchanged; planned, drafted, new, deleted, stale, and locked paths carry distinct state marks.
-11. A user may lock a repository file or directory for a task. Locked paths are controller authority: no candidate, refinement, or patch may modify a locked path or any descendant. Locks are task-local, inspectable, and reversible.
-8. A planned patch belongs to one file/hunk node and one immutable basis revision.
-9. Real repository change marks the smallest overlapping planned subtree stale.
-10. A stale tree cannot be applied or represented as ready.
-11. User prompts become typed constraints attached to a node or subtree; they are not conversation history.
-12. Every omission of a rejected candidate or path must remain inspectable.
+11. A user may lock a repository file or directory for a task. Locked paths are controller authority: no candidate, refinement, or patch may modify a locked path or any descendant. Locks are task-local, inspectable, and reversible. Patch text is subject to the same authority as declared paths: a patch may touch only the file of its node (or, for a virtual node, paths the restriction plain allows).
+12. A planned patch belongs to one file/hunk node and one immutable basis revision.
+13. Real repository change marks the smallest overlapping planned subtree stale.
+14. A stale tree cannot be applied or represented as ready. Staleness ends only through an explicit refresh that returns each stale node to its last live lifecycle point; a refresh may re-anchor the task to a new basis revision while every existing diff keeps the basis revision it was drafted against.
+15. User prompts become typed constraints attached to a node or subtree; they are not conversation history.
+16. Every omission of a rejected candidate or path must remain inspectable.
 
 ## Model operation contract
 

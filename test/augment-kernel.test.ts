@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { crystallizeNode, draftPatchWithModel, nextDevelopmentStep, refineWithModel, selectCandidate } from "../src/augment/kernel.js";
-import { acceptDomain, createPlanTask } from "../src/augment/state.js";
+import { acceptDomain, createPlanTask, setPathRestriction } from "../src/augment/state.js";
 import type { ModelCallRequest, ModelRuntime, PlanTask } from "../src/augment/types.js";
 
 function runtime(responses: Array<(request: ModelCallRequest) => unknown>): ModelRuntime {
@@ -217,5 +217,40 @@ describe("augment kernel", () => {
     const model: ModelRuntime = { call: async () => ({ value: { candidates: [] } }) };
     await expect(crystallizeNode(model, initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "architecture" })).rejects.toThrow(/invalid/u);
     expect(initial.revision).toBe(1);
+  });
+
+  it("records model patch assumptions as inspectable model constraints", async () => {
+    const initial = task();
+    const generated = await crystallizeNode(runtime([
+      () => ({ candidates: [{ label: "Fixed count", rationale: "smallest", confidence: 76, touchedPaths: ["src/auth/session.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]), initial, { taskId: initial.id, nodeId: initial.rootNodeId, temperature: "normal", lod: "file" });
+    const selected = selectCandidate(generated, { taskId: generated.id, expectedRevision: generated.revision, nodeId: generated.rootNodeId, candidateId: generated.nodes[generated.rootNodeId]!.candidateIds[0]! });
+    const refined = await refineWithModel(runtime([
+      () => ({ children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "retry cutoff" }] }),
+    ]), selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "hunk" });
+    const child = Object.values(refined.nodes).find((node) => node.path === "src/auth/session.ts")!;
+    const patched = await draftPatchWithModel(runtime([
+      () => ({ patch: "@@ -1 +1 @@\n-bounded\n+bounded", assumptions: ["timeout stays 30s", "callers retry idempotently"] }),
+    ]), refined, { taskId: refined.id, nodeId: child.id, temperature: "low" });
+    const assumptions = Object.values(patched.constraints).filter((constraint) => constraint.source === "model");
+    expect(assumptions.map((constraint) => constraint.text)).toEqual(["Draft assumption: timeout stays 30s", "Draft assumption: callers retry idempotently"]);
+    expect(assumptions.every((constraint) => constraint.nodeId === child.id)).toBe(true);
+  });
+
+  it("fails a challenge candidate that touches a locked path instead of noting it", async () => {
+    const initial = createPlanTask({ id: "task:locked", objective: "make retries bounded", basisRevision: "commit:1" });
+    const locked = setPathRestriction(initial, { taskId: initial.id, expectedRevision: initial.revision, path: "src/b.ts", mode: "lock", marked: true });
+    const seeded = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 75, touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "missing-candidate", candidate: { label: "Cover the sibling", rationale: "docs must move too", confidence: 55, touchedPaths: ["src/b.ts"] }, reason: "the change needs src/b.ts as well" }),
+    ]);
+    const generated = await crystallizeNode(seeded, locked, { taskId: locked.id, nodeId: locked.rootNodeId, temperature: "normal", lod: "file", challengeRounds: 0 });
+    const model = runtime([
+      () => ({ candidates: [{ label: "Local fix", rationale: "inside scope", confidence: 70, touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "missing-candidate", candidate: { label: "Cover the sibling", rationale: "docs must move too", confidence: 55, touchedPaths: ["src/b.ts"] }, reason: "the change needs src/b.ts as well" }),
+    ]);
+    await expect(crystallizeNode(model, generated, { taskId: generated.id, nodeId: generated.rootNodeId, temperature: "normal", lod: "file", replace: true }))
+      .rejects.toThrow(/touches locked path: src\/b\.ts/u);
   });
 });

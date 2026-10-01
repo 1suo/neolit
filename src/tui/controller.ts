@@ -151,7 +151,6 @@ function aggregateSubtree(entry: PlanTreeEntry): void {
     append(entry.obligationIds, child.obligationIds);
     entry.selectedCandidateId ??= child.selectedCandidateId;
     if (child.status === "stale") entry.status = "stale";
-    else if (child.status === "blocked" && entry.status !== "stale") entry.status = "blocked";
   }
 }
 

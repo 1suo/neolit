@@ -68,7 +68,7 @@ function statusColor(status: string): string {
   if (["ready", "selected", "possible"].includes(status)) return theme.success;
   if (["domain", "collapsed", "refined"].includes(status)) return theme.secondary;
   if (status === "unresolved") return theme.warning;
-  if (["stale", "blocked", "eliminated"].includes(status)) return theme.error;
+  if (["stale", "eliminated"].includes(status)) return theme.error;
   return theme.muted;
 }
 
@@ -99,7 +99,7 @@ export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view
   const possible = candidates.filter((candidate) => candidate.status === "possible");
   const diffs = entry.diffIds.map((id) => task?.diffs[id]).filter(Boolean) as PlannedDiff[];
   const explanations = entry.explanationIds.map((id) => task?.explanations[id]).filter(Boolean);
-  const blocked = entry.nodeIds.some((id) => ["stale", "blocked"].includes(task?.nodes[id]?.status ?? ""));
+  const blocked = entry.nodeIds.some((id) => task?.nodes[id]?.status === "stale");
   const ready = entry.nodeIds.some((id) => task?.nodes[id]?.status === "ready");
   const mode = task?.restrictionMode ?? pendingMode;
   const marked = entry.path !== "." && (task
@@ -228,7 +228,6 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     label("DESCRIPTION");
     for (const node of nodes) {
       add(`  ${node.reason}`, theme.text);
-      if (node.blockedReason) add(`  ${node.blockedReason}`, theme.error);
     }
   }
 

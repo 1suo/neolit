@@ -43,7 +43,7 @@ text
 ! stale      repository basis changed
 # locked     path cannot change in this run
 ○ allowed    allowlist entry; while any exist, only allowed paths may change
-● ready      path and obligations are complete
+● ready      path has its drafted patch complete
 ? explained  path is relevant to the current explanation topic
 ```
 

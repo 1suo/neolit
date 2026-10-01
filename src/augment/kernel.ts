@@ -17,6 +17,7 @@ import {
   generateDomain,
   refineNode,
   replacePatch,
+  PlanStateError,
 } from "./state.js";
 import type {
   LOD,
@@ -31,8 +32,13 @@ import type {
 
 export const MAX_DOMAIN_CHALLENGE_ROUNDS = 2;
 
+export type AugmentModelErrorCode = "invalid-model-output" | "unknown-node" | "unknown-diff";
+
 export class AugmentModelError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code: AugmentModelErrorCode = "invalid-model-output",
+  ) {
     super(message);
     this.name = "AugmentModelError";
   }
@@ -75,7 +81,7 @@ export interface ExplainProjectWithModelInput {
 
 function requireNode(task: PlanTask, nodeId: string): PlanNode {
   const node = task.nodes[nodeId];
-  if (!node) throw new AugmentModelError(`Unknown plan node: ${nodeId}`);
+  if (!node) throw new AugmentModelError(`Unknown plan node: ${nodeId}`, "unknown-node");
   return node;
 }
 
@@ -155,10 +161,11 @@ export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, inp
   requireNode(task, input.nodeId);
   const proposal = await call(runtime, task, task.nodes[input.nodeId]!, "generate-domain", input.temperature, input.lod, parseWith(DomainProposalSchema));
   const scope = task.nodes[input.nodeId]!.path ?? ".";
+  const escapes = proposal.candidates.map((candidate) => candidateScopeEscapes(task, input.nodeId, candidate.touchedPaths));
   const escaping = proposal.candidates
-    .map((candidate) => ({ label: candidate.label, paths: candidateScopeEscapes(task, input.nodeId, candidate.touchedPaths) }))
+    .map((candidate, index) => ({ label: candidate.label, paths: escapes[index]! }))
     .filter((entry) => entry.paths.length > 0);
-  const inScope = proposal.candidates.filter((candidate) => !escaping.some((entry) => entry.label === candidate.label));
+  const inScope = proposal.candidates.filter((_, index) => escapes[index]!.length === 0);
   if (!inScope.length) {
     throw new AugmentModelError(
       `Every proposed candidate escapes ${scope}: ${escaping.map((entry) => `${entry.label} (${entry.paths.join(", ")})`).join("; ")}. `
@@ -208,9 +215,9 @@ export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, inp
     } catch (error) {
       // A challenger candidate touching paths outside this node's scope is a
       // real dependency, but it cannot become a candidate here. Record it as a
-      // constraint so the omission is not lost and keep going.
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("escapes") && !message.includes("scope")) throw error;
+      // constraint so the omission is not lost and keep going. Locked-path
+      // proposals stay failures: the plain is controller authority.
+      if (!(error instanceof PlanStateError) || error.code !== "scope-escape") throw error;
       current = addConstraint(current, {
         taskId: current.id,
         expectedRevision: current.revision,
@@ -242,7 +249,11 @@ export async function refineWithModel(runtime: ModelRuntime, task: PlanTask, inp
 export async function draftPatchWithModel(runtime: ModelRuntime, task: PlanTask, input: DraftPatchWithModelInput): Promise<PlanTask> {
   const node = requireNode(task, input.nodeId);
   const proposal = await call(runtime, task, node, "draft-patch", input.temperature, node.lod, parseWith(PatchProposalSchema));
-  return attachPatch(task, { taskId: task.id, expectedRevision: task.revision, nodeId: input.nodeId, patch: proposal.patch });
+  let current = attachPatch(task, { taskId: task.id, expectedRevision: task.revision, nodeId: input.nodeId, patch: proposal.patch });
+  for (const assumption of proposal.assumptions) {
+    current = addConstraint(current, { taskId: current.id, expectedRevision: current.revision, nodeId: input.nodeId, text: `Draft assumption: ${assumption}`, source: "model" });
+  }
+  return current;
 }
 
 export async function explainProjectWithModel(runtime: ModelRuntime, task: PlanTask, input: ExplainProjectWithModelInput): Promise<PlanTask> {
@@ -258,16 +269,20 @@ export async function explainProjectWithModel(runtime: ModelRuntime, task: PlanT
 
 export async function repairPatchWithModel(runtime: ModelRuntime, task: PlanTask, input: RepairPatchWithModelInput): Promise<PlanTask> {
   const diff = task.diffs[input.diffId];
-  if (!diff) throw new AugmentModelError(`Unknown planned diff: ${input.diffId}`);
+  if (!diff) throw new AugmentModelError(`Unknown planned diff: ${input.diffId}`, "unknown-diff");
   const node = requireNode(task, diff.nodeId);
   const proposal = await call(runtime, task, node, "repair-patch", input.temperature, node.lod, parseWith(PatchProposalSchema));
-  return replacePatch(task, {
+  let current = replacePatch(task, {
     taskId: task.id,
     expectedRevision: task.revision,
     diffId: input.diffId,
     patch: proposal.patch,
     failedCheck: input.failedCheck,
   });
+  for (const assumption of proposal.assumptions) {
+    current = addConstraint(current, { taskId: current.id, expectedRevision: current.revision, nodeId: node.id, text: `Repair assumption: ${assumption}`, source: "model" });
+  }
+  return current;
 }
 
 export function selectCandidate(task: PlanTask, input: { taskId: string; expectedRevision: PlanRevision; nodeId: string; candidateId: string }): PlanTask {
@@ -304,7 +319,7 @@ function descendantsOf(task: PlanTask, nodeId: string): PlanNode[] {
 export function nextDevelopmentStep(task: PlanTask, nodeId: string): DevelopmentStep {
   const node = task.nodes[nodeId];
   if (!node) return { action: "stalled", reason: "Unknown plan node." };
-  if (node.status === "stale" || node.status === "blocked") return { action: "stalled", reason: `This path is ${node.status}.` };
+  if (node.status === "stale") return { action: "stalled", reason: "This path is stale." };
   const isFileTarget = ["file", "hunk", "virtual"].includes(node.kind);
   if (node.status === "collapsed") return { action: "refine" };
   if (isFileTarget) return node.diffIds.length > 0 ? { action: "already-drafted" } : { action: "draft" };

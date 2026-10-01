@@ -25,7 +25,7 @@ host operation
   -> updated task snapshot
 ```
 
-Model runtimes execute outside this module. `crystallize` and `refine` in `kernel.ts` call the injected `ModelRuntime` port, validate typed proposals with Zod, challenge the candidate domain, and then merge only legal deltas. The standalone OpenCode CLI adapter lives with the TUI host in `src/tui/opencode-runtime.ts`; it is not part of the pure core.
+Model runtimes execute outside this module. `crystallize` and `refine` in `kernel.ts` call the injected `ModelRuntime` port, validate typed proposals with Zod, challenge the candidate domain, and then merge only legal deltas. Patch operations record model-reported assumptions as model-source constraints so they stay inspectable. The standalone OpenCode CLI adapter lives with the TUI host in `src/tui/opencode-runtime.ts`; it is not part of the pure core.
 
 ## Public surface
 
@@ -42,13 +42,19 @@ Model runtimes execute outside this module. `crystallize` and `refine` in `kerne
 - Selection eliminates sibling candidates with an explicit witness.
 - Refinement is legal only after a selected candidate.
 - Patches and refinement carry the task basis revision.
-- A stale node cannot become ready without an explicit refresh.
+- A stale node cannot become ready without an explicit `refreshNode`; refresh restores each stale node to its last live lifecycle point and may re-anchor the task to a new basis revision, while existing diffs keep the basis they record.
 - Candidate and refinement counts are bounded to prevent model-driven bloat.
 - Candidate confidence is presentation metadata and never selects or eliminates a candidate.
-- Initial domains contain at most five candidates; two challenge slots keep the live bound at seven. Exhausting the challenge budget records `challengeExhausted` and permits human selection without claiming acceptance. Any model proposal — initial candidates and challenge additions alike — whose paths escape the node's scope is split by the one `candidateScopeEscapes` predicate: in-scope work proceeds, escaping paths are recorded as constraints on the node ("Out-of-scope dependency") so the omission survives, and only a proposal with nothing in scope fails, with a message naming the escapes. `nextDevelopmentStep` derives the next deterministic step for any node (crystallize, refine, draft, descend, choose, done, stalled) so hosts never re-derive the lifecycle.
+- Initial domains contain at most five candidates; two challenge slots keep the live bound at seven. Exhausting the challenge budget records `challengeExhausted` and permits human selection without claiming acceptance. Any model proposal — initial candidates and challenge additions alike — whose paths escape the node's scope is split by the one `candidateScopeEscapes` predicate: in-scope work proceeds, escaping paths are recorded as constraints on the node ("Out-of-scope dependency") so the omission survives, and only a proposal with nothing in scope fails, with a message naming the escapes. A challenge candidate touching a locked path stays a failure: the restriction plain is controller authority. `nextDevelopmentStep` derives the next deterministic step for any node (crystallize, refine, draft, descend, choose, done, stalled) so hosts never re-derive the lifecycle.
 - Locked paths are controller authority and reject candidate, refinement, or patch mutations inside them.
+- Patch text is validated, not just the node's own path: a file or hunk node's patch may touch exactly its file, a virtual node's patch may touch any concrete path the restriction plain allows, and violations are typed failures naming the paths. Headerless patches keep the legacy node-path check. Virtual diffs derive their projection path from the patch header.
+- A label eliminated by explicit rejection or collapse cannot return as a candidate; labels superseded only by domain regeneration may.
+- Obligations are inspectable refinement metadata; they never gate readiness.
 - Planned diffs preserve exact patch text and derive only presentation kinds (`new`, `modify`, `delete`, `unknown`).
 - Descendant candidate domains are not generated implicitly by refinement; each node is crystallized only when explicitly opened.
+- Controller failures carry a typed `PlanStateError` code; hosts and the protocol branch on codes, never on message prose.
+- Explanations accumulate per topic: re-explaining a topic replaces only that topic's entries.
+- The event log is bounded (`MAX_TASK_EVENTS`); tasks restored from outside pass `PlanTaskSchema` and `assertTaskIntegrity` before entering the controller.
 
 ## Validation
 

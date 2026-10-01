@@ -50,7 +50,7 @@ describe("augmentd protocol", () => {
   it("rejects stale mutations before touching task state", async () => {
     const { server, task } = await started();
     const response = await server.handle(request(2, "node/constrain", { taskId: task.id, expectedRevision: 99, text: "Preserve the public API." }));
-    expect(response).toMatchObject({ jsonrpc: "2.0", id: 2, error: { code: -32000, message: expect.stringMatching(/Stale task revision/u) } });
+    expect(response).toMatchObject({ jsonrpc: "2.0", id: 2, error: { code: -32010, message: expect.stringMatching(/Stale task revision/u) } });
     const unchanged = await server.handle(request(3, "task/get", { taskId: task.id }));
     expect((unchanged as { result: { revision: number } }).result.revision).toBe(task.revision);
   });
@@ -90,7 +90,7 @@ describe("augmentd protocol", () => {
     expect(hostEdited.revision).toBeGreaterThan(withPatch.revision);
 
     const stale = await server.handle(request(7, "patch/set", { taskId: hostEdited.id, expectedRevision: withPatch.revision, diffId: diff.id, patch: edited }));
-    expect(stale).toMatchObject({ id: 7, error: { code: -32000, message: expect.stringMatching(/Stale task revision/u) } });
+    expect(stale).toMatchObject({ id: 7, error: { code: -32010, message: expect.stringMatching(/Stale task revision/u) } });
     const unknown = await server.handle(request(8, "patch/set", { taskId: hostEdited.id, expectedRevision: hostEdited.revision, diffId: "diff:missing", patch: edited }));
     expect(unknown).toMatchObject({ id: 8, error: { message: expect.stringMatching(/Unknown planned diff/u) } });
   });
@@ -121,6 +121,83 @@ describe("augmentd protocol", () => {
     expect(fetched && "result" in fetched).toBe(true);
     const bad = await fresh.handle(request(3, "task/restore", { task: { version: 2 } }));
     expect(bad).toMatchObject({ id: 3, error: { code: -32002, message: expect.stringMatching(/valid task payload/u) } });
+    const again = await fresh.handle(request(4, "task/restore", { task }));
+    expect(again).toMatchObject({ id: 4, error: { code: -32002, message: expect.stringMatching(/already exists/u) } });
+  });
+
+  it("rejects restored tasks with broken internal references", async () => {
+    const server = new AugmentServer({ runtime: model() });
+    const started = await server.handle(request(1, "task/start", { taskId: "task:1", objective: "make retries bounded", basisRevision: "commit:1" }));
+    const crystallized = await server.handle(request(2, "crystallize", { taskId: "task:1", expectedRevision: 1, nodeId: "node:root", temperature: "normal", lod: "file" }));
+    const task = JSON.parse(JSON.stringify((crystallized as { result: unknown }).result)) as { candidates: Record<string, { nodeId: string }> };
+    const candidateId = Object.keys(task.candidates)[0]!;
+    task.candidates[candidateId]!.nodeId = "node:missing";
+    const fresh = new AugmentServer({ runtime: model() });
+    const restored = await fresh.handle(request(1, "task/restore", { task }));
+    expect(restored).toMatchObject({ id: 1, error: { code: -32002, message: expect.stringMatching(/does not belong/u) } });
+  });
+
+  it("refreshes a stale subtree over the protocol", async () => {
+    const runtime: ModelRuntime = {
+      call: async (call) => {
+        if (call.operation === "refine-node") {
+          return { value: { children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "retry cutoff" }] } };
+        }
+        return model().call(call);
+      },
+    };
+    const server = new AugmentServer({ runtime });
+    const started = await server.handle(request(1, "task/start", { taskId: "task:f", objective: "make retries bounded", basisRevision: "commit:1" }));
+    const task = (started as { result: { id: string; revision: number; rootNodeId: string } }).result;
+    const crystallized = await server.handle(request(2, "crystallize", { taskId: task.id, expectedRevision: task.revision, nodeId: task.rootNodeId, temperature: "normal", lod: "file" }));
+    const domain = (crystallized as { result: { id: string; revision: number; rootNodeId: string; nodes: Record<string, { candidateIds: string[] }> } }).result;
+    const selected = await server.handle(request(3, "node/select", { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]! }));
+    const collapsed = (selected as { result: { id: string; revision: number; rootNodeId: string } }).result;
+    const refined = await server.handle(request(4, "refine", { taskId: collapsed.id, expectedRevision: collapsed.revision, nodeId: collapsed.rootNodeId, temperature: "normal", lod: "hunk" }));
+    const expanded = (refined as { result: { id: string; revision: number; nodes: Record<string, { id: string; path?: string; status: string }> } }).result;
+    const fileNode = Object.values(expanded.nodes).find((node) => node.path === "src/auth/session.ts")!;
+
+    const staled = await server.handle(request(5, "node/stale", { taskId: expanded.id, expectedRevision: expanded.revision, path: "src/auth/session.ts" }));
+    const staleTask = (staled as { result: { id: string; revision: number } }).result;
+    expect(staleTask.revision).toBeGreaterThan(expanded.revision);
+
+    const refreshed = await server.handle(request(6, "node/refresh", { taskId: staleTask.id, expectedRevision: staleTask.revision, nodeId: fileNode.id, basisRevision: "commit:2" }));
+    expect(refreshed).toMatchObject({ id: 6, result: { basisRevision: "commit:2" } });
+    const after = await server.handle(request(7, "task/get", { taskId: "task:f" }));
+    const file = Object.values(((after as { result: { nodes: Record<string, { id: string; status: string }> } }).result).nodes).find((node) => node.id === fileNode.id)!;
+    expect(file.status).not.toBe("stale");
+  });
+
+  it("maps controller failures to typed protocol codes", async () => {
+    const runtime: ModelRuntime = {
+      call: async (call) => {
+        if (call.operation === "refine-node") {
+          return { value: { children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "retry cutoff" }] } };
+        }
+        if (call.operation === "draft-patch") {
+          return { value: { patch: "--- a/src/other.ts\n+++ b/src/other.ts\n@@ -1 +1 @@\n-x\n+y", assumptions: [] } };
+        }
+        return model().call(call);
+      },
+    };
+    const server = new AugmentServer({ runtime });
+    const started = await server.handle(request(1, "task/start", { taskId: "task:c", objective: "make retries bounded", basisRevision: "commit:1" }));
+    const task = (started as { result: { id: string; revision: number; rootNodeId: string } }).result;
+    const crystallized = await server.handle(request(2, "crystallize", { taskId: task.id, expectedRevision: task.revision, nodeId: task.rootNodeId, temperature: "normal", lod: "file" }));
+    const domain = (crystallized as { result: { id: string; revision: number; rootNodeId: string; nodes: Record<string, { candidateIds: string[] }> } }).result;
+    const selected = await server.handle(request(3, "node/select", { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]! }));
+    const collapsed = (selected as { result: { id: string; revision: number; rootNodeId: string } }).result;
+    const refined = await server.handle(request(4, "refine", { taskId: collapsed.id, expectedRevision: collapsed.revision, nodeId: collapsed.rootNodeId, temperature: "normal", lod: "hunk" }));
+    const expanded = (refined as { result: { id: string; revision: number; nodes: Record<string, { id: string; path?: string }> } }).result;
+    const fileNode = Object.values(expanded.nodes).find((node) => node.path === "src/auth/session.ts")!;
+
+    const smuggled = await server.handle(request(5, "patch/draft", { taskId: expanded.id, expectedRevision: expanded.revision, nodeId: fileNode.id, temperature: "low" }));
+    expect(smuggled).toMatchObject({ id: 5, error: { code: -32012, message: expect.stringMatching(/touches src\/other\.ts/u) } });
+
+    const locked = await server.handle(request(6, "path/restrict", { taskId: expanded.id, expectedRevision: expanded.revision, path: "src/auth", mode: "lock", marked: true }));
+    const lockedTask = (locked as { result: { id: string; revision: number } }).result;
+    const forbidden = await server.handle(request(7, "patch/draft", { taskId: lockedTask.id, expectedRevision: lockedTask.revision, nodeId: fileNode.id, temperature: "low" }));
+    expect(forbidden).toMatchObject({ id: 7, error: { code: -32011, message: expect.stringMatching(/locked/u) } });
   });
 
   it("reports unknown methods and tasks", async () => {

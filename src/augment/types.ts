@@ -69,7 +69,6 @@ export interface PlanObligation {
   nodeId: PlanNodeId;
   kind: "test" | "documentation" | "check" | "todo";
   description: string;
-  status: "open" | "satisfied";
 }
 
 export type PlanNodeStatus =
@@ -78,7 +77,6 @@ export type PlanNodeStatus =
   | "collapsed"
   | "refined"
   | "ready"
-  | "blocked"
   | "stale";
 
 export interface PlanNode {
@@ -99,7 +97,6 @@ export interface PlanNode {
   obligationIds: PlanObligationId[];
   explanationIds: PlanEvidenceId[];
   diffIds: PlanDiffId[];
-  blockedReason?: string;
 }
 
 export interface PlanTask {
@@ -141,7 +138,7 @@ export type PlanEvent =
   | { type: "path-marked"; revision: PlanRevision; mode: "lock" | "allow"; path: string }
   | { type: "path-unmarked"; revision: PlanRevision; mode: "lock" | "allow"; path: string }
   | { type: "restriction-mode"; revision: PlanRevision; mode: "lock" | "allow" }
-  | { type: "node-blocked"; revision: PlanRevision; nodeId: PlanNodeId; reason: string };
+  | { type: "node-refreshed"; revision: PlanRevision; nodeId: PlanNodeId };
 
 export interface PlanTreeEntry {
   path: string;
