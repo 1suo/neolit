@@ -380,19 +380,24 @@ export function patchPaths(patch: string): string[] {
 /**
  * Controller scope check on patch content, not just the node's own path.
  * A file or hunk node's patch may touch exactly that file; a virtual node
- * may touch any concrete path the restriction plain still allows. Violations
- * are typed failures that name the paths, so a host can offer to relax the
- * plain or regenerate instead of silently accepting out-of-scope work.
+ * may touch any concrete path the restriction plain still allows. Models
+ * often name the file alone (`--- kernel.ts`) instead of the repository-
+ * relative path — that shorthand is accepted for the node's own file and
+ * canonicalized to the node path. Violations are typed failures that name
+ * the paths, so a host can offer to relax the plain or regenerate instead
+ * of silently accepting out-of-scope work.
  */
 function requirePatchPathsChangeable(task: PlanTask, node: PlanNode, patch: string): string[] {
+  const canonical = (path: string): string => (node.path && node.path.endsWith(`/${path}`) ? node.path : path);
   const paths = patchPaths(patch)
     .map((raw) => normalizePath(raw))
-    .filter((path) => path !== ROOT_PATH);
+    .filter((path) => path !== ROOT_PATH)
+    .map(canonical);
   for (const path of paths) {
     if (node.kind !== "virtual" && path !== node.path) {
       throw new PlanStateError(`Patch for ${node.id} touches ${path} but belongs to ${node.path ?? "its own node"}: one patch stays inside one file node.`, "scope-escape");
     }
-    requireChangeablePath(task, path);
+    requireChangeablePath(task, node.kind === "virtual" ? path : node.path ?? path);
   }
   return [...new Set(paths)];
 }

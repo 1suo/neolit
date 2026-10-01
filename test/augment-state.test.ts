@@ -223,6 +223,24 @@ describe("planned diff state", () => {
     expect(Object.values(patched.diffs)[0]).toMatchObject({ nodeId: child.id, path: "src/auth/session.ts" });
   });
 
+  it("accepts basename-only patch headers for the node's own file and rejects other files", () => {
+    const current = collapsed();
+    const refined = refineNode(current, {
+      taskId: current.id,
+      expectedRevision: current.revision,
+      nodeId: current.rootNodeId,
+      children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "cutoff" }],
+    });
+    const child = Object.values(refined.nodes).find((node) => node.path === "src/auth/session.ts")!;
+    const shorthand = "--- session.ts\n+++ session.ts\n@@ -1 +1 @@\n-x\n+y";
+    const patched = attachPatch(refined, { taskId: refined.id, expectedRevision: refined.revision, nodeId: child.id, patch: shorthand });
+    expect(Object.values(patched.diffs)[0]).toMatchObject({ nodeId: child.id, path: "src/auth/session.ts", kind: "modify" });
+
+    const elsewhere = "--- other.ts\n+++ other.ts\n@@ -1 +1 @@\n-x\n+y";
+    expect(() => attachPatch(refined, { taskId: refined.id, expectedRevision: refined.revision, nodeId: child.id, patch: elsewhere }))
+      .toThrow(/touches other\.ts but belongs to src\/auth\/session\.ts/u);
+  });
+
   it("validates and projects virtual-node patches at their real path", () => {
     const current = collapsed();
     const refined = refineNode(current, {
