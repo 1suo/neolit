@@ -80,6 +80,9 @@ function modelRuntime(): ModelRuntime {
         const path = request.context.node.path ?? "src/auth/session.ts";
         return { value: { patch: `--- a/${path}\n+++ b/${path}\n`, assumptions: [] } };
       }
+      if (request.operation === "draft-patches") {
+        return { value: { patches: (request.context.draftTargets ?? []).map((target) => ({ path: target.path, patch: `--- a/${target.path}\n+++ b/${target.path}\n` })) } };
+      }
       if (request.operation === "explain-project") {
         return {
           value: {
@@ -586,6 +589,55 @@ describe("augment TUI controller", () => {
     const second = draftContexts[1] as { taskDiffs: Array<{ path: string }>; taskTree: Array<{ path: string; drafted: boolean }> };
     expect(second.taskDiffs.map((diff) => diff.path)).toEqual(["src/auth/session.ts"]);
     expect(second.taskTree.some((entry) => entry.path === "src/auth/session.ts" && entry.drafted)).toBe(true);
+  });
+
+  it("develops a refined path with one batched draft call for all files", async () => {
+    const calls: string[] = [];
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        calls.push(request.operation);
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    controller.select("entry:.");
+    await controller.develop();
+    const snapshot = controller.snapshot();
+    expect(Object.keys(snapshot.task?.diffs ?? {})).toHaveLength(2);
+    expect(calls.filter((operation) => operation === "draft-patches")).toHaveLength(1);
+    expect(calls.filter((operation) => operation === "draft-patch")).toHaveLength(0);
+    expect(snapshot.message).toContain("Developed 2 files");
+  });
+
+  it("continues developing after a failed batch and after individual file failures", async () => {
+    let failBatch = true;
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "draft-patches" && failBatch) {
+          failBatch = false;
+          return { value: { patches: [{ path: "src/auth/session.ts", patch: "not a diff" }] } };
+        }
+        if (request.operation === "draft-patch" && request.context.node.path === "test/auth/retry.test.ts") {
+          throw new Error("model exploded for this file");
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    controller.select("entry:.");
+    await controller.develop();
+    const snapshot = controller.snapshot();
+    // The batch was rejected wholesale; individual drafts then ran, one file's
+    // bad patch failed (marked ×) and the other still landed.
+    expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "refined" });
+    const drafted = Object.values(snapshot.task?.diffs ?? {});
+    expect(drafted).toHaveLength(1);
+    expect(drafted[0]!.path).toBe("src/auth/session.ts");
+    expect(snapshot.error).toContain("Drafted 1 file; 1 failed");
   });
 
   it("rethinks a file target by drafting or repairing its patch, never approach domains", async () => {

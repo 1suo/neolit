@@ -160,6 +160,7 @@ export type ModelOperation =
   | "refine-node"
   | "draft-patch"
   | "repair-patch"
+  | "draft-patches"
   | "explain-project";
 
 export interface ModelContextPacket {
@@ -178,6 +179,8 @@ export interface ModelContextPacket {
   lockedPaths: string[];
   restrictionMode: "lock" | "allow";
   rejectedCandidates: Array<{ label: string; reason: string }>;
+  /** File targets a `draft-patches` batch must cover, in deterministic order. */
+  draftTargets?: Array<{ path: string }>;
 }
 
 export interface ModelCallRequest {

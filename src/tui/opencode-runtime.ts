@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ModelCallRequest, ModelRuntime } from "../augment/types.js";
+import type { ModelCallRequest, ModelContextPacket, ModelRuntime } from "../augment/types.js";
 import { preflightPatches } from "./apply.js";
 import { backendById, opencodeBackend, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
 
@@ -35,6 +35,8 @@ const NO_ANSWER_TEXT_CORRECTION = "Your previous reply contained no answer text 
 
 const TRUNCATED_REPLY_CORRECTION = "Your previous reply was cut off before the JSON object closed. Return a much shorter answer now: only the minimal hunks the change needs (at most 3 context lines each, never whole paragraphs as context), no prose, no repetition of file content, and finish with the closing brace.";
 
+const DRAFT_MODEL_FALLBACK_NOTE = "The faster draft model could not produce a parseable answer, so you are the reliable fallback. Answer with the JSON object only: minimal hunks, no prose, close the brace.";
+
 function sessionsStorePath(): string {
   const base = process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim()
     ? process.env.XDG_STATE_HOME
@@ -61,7 +63,7 @@ function saveSessions(sessions: Map<string, string>): void {
 }
 
 const DRAFT_FILE_EMBED_LIMIT = 64_000;
-const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch"]);
+const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch", "draft-patches"]);
 
 /**
  * Drafts should behave like auto-complete, not exploration: embed the target
@@ -70,28 +72,18 @@ const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch"]);
  * Oversized files embed head and tail: changes concentrate at the top and the
  * bottom of real source files, and a blind head cut once hid the only region
  * the model needed, producing an honest refusal instead of a patch.
+ * A `draft-patches` batch embeds every target under one shared size budget,
+ * so one prompt stays bounded no matter how many files it carries.
  */
-function draftFileSection(request: ModelCallRequest, directory: string): string | undefined {
-  if (!DRAFT_OPERATIONS.has(request.operation)) return undefined;
-  const target = request.context.node?.path;
-  if (!target || target.includes("..")) return undefined;
-  const root = path.resolve(directory);
-  const absolute = path.resolve(directory, target);
-  if (!absolute.startsWith(`${root}${path.sep}`)) return undefined;
-  let content: string;
-  try {
-    if (!fs.statSync(absolute).isFile()) return undefined;
-    content = fs.readFileSync(absolute, "utf8");
-  } catch {
-    return `Target path ${target} does not exist in the repository; the patch must create it as a new file. Do not read any file or run any tool.`;
-  }
-  const header = `The exact current content of ${target} is embedded below. Do NOT read any file, run any tool, or verify anything — answer from this packet alone in one shot.`;
-  if (content.length <= DRAFT_FILE_EMBED_LIMIT) {
-    return [header, "```", content, "```"].join("\n");
-  }
-  const head = Math.floor(DRAFT_FILE_EMBED_LIMIT * 0.7);
-  const tail = DRAFT_FILE_EMBED_LIMIT - head;
-  const omitted = content.length - DRAFT_FILE_EMBED_LIMIT;
+function embedFile(target: string, content: string | undefined, budget: number): string | undefined {
+  const header = content === undefined
+    ? `Target path ${target} does not exist in the repository; its patch must create it as a new file. Do not read any file or run any tool.`
+    : `The exact current content of ${target} is embedded below. Do NOT read any file, run any tool, or verify anything — answer from this packet alone in one shot.`;
+  if (content === undefined) return header;
+  if (content.length <= budget) return [header, "```", content, "```"].join("\n");
+  const head = Math.floor(budget * 0.7);
+  const tail = budget - head;
+  const omitted = content.length - budget;
   return [
     header,
     `This file is ${content.length} characters, so the middle ${omitted} characters are omitted: the first ${head} and the last ${tail} are shown. If the change you need falls inside the omitted middle, anchor the hunk's context lines to the nearest shown region and estimate the @@ line numbers from it.`,
@@ -103,6 +95,48 @@ function draftFileSection(request: ModelCallRequest, directory: string): string 
     content.slice(content.length - tail),
     "```",
   ].join("\n");
+}
+
+function readRepositoryFile(directory: string, target: string): string | undefined {
+  if (!target || target.includes("..")) return undefined;
+  const root = path.resolve(directory);
+  const absolute = path.resolve(directory, target);
+  if (!absolute.startsWith(`${root}${path.sep}`)) return undefined;
+  try {
+    if (!fs.statSync(absolute).isFile()) return undefined;
+    return fs.readFileSync(absolute, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function draftFileSection(request: ModelCallRequest, directory: string): string | undefined {
+  if (!DRAFT_OPERATIONS.has(request.operation)) return undefined;
+  const targets = request.operation === "draft-patches"
+    ? (request.context.draftTargets ?? []).map((target) => target.path)
+    : [request.context.node?.path].filter((path): path is string => Boolean(path));
+  if (!targets.length) return undefined;
+  const perFileBudget = Math.max(4_096, Math.floor(DRAFT_FILE_EMBED_LIMIT / targets.length));
+  const sections = targets.map((target) => embedFile(target, readRepositoryFile(directory, target), perFileBudget));
+  return [
+    `Target ${targets.length === 1 ? "file" : `files (${targets.length}, listed in order)`}: ${targets.join(", ")}. Each is embedded below under its own header.`,
+    ...sections,
+  ].join("\n\n");
+}
+
+/**
+ * Draft prompts carry a slimmer packet than conversation operations: the
+ * rejected-candidate ledger and the full text of already-drafted patches are
+ * conversation context, not draft inputs — dropping them keeps every draft
+ * call (and the batch) far from output limits. The full packet stays intact
+ * for the runtime's own logic (joint preflight uses complete patch text).
+ */
+export function slimDraftContext(context: ModelContextPacket): ModelContextPacket {
+  return {
+    ...context,
+    rejectedCandidates: [],
+    taskDiffs: (context.taskDiffs ?? []).map((diff) => ({ ...diff, patch: "" })),
+  };
 }
 
 const CONTINUATION_NOTE = "This conversation continues an earlier session for the same task. Earlier context packets in its history are stale: the packet below is the CURRENT authoritative state.";
@@ -198,12 +232,30 @@ export class CliAgentRuntime implements ModelRuntime {
   }
 
   async call(request: ModelCallRequest): Promise<OpenCodeCliResult> {
-    let completed = await this.complete(request);
+    let completed: { text: string; value: unknown };
+    try {
+      completed = await this.complete(request);
+    } catch (error) {
+      // A flaky draft model must not fail the draft: when a different default
+      // model is configured, one bounded retry runs on it. Fast models lose
+      // output discipline under load (truncated JSON); the primary model is
+      // the reliable path.
+      if (!DRAFT_OPERATIONS.has(request.operation) || !this.model || this.modelFor(request.operation) === this.model) throw error;
+      completed = await this.complete(request, [DRAFT_MODEL_FALLBACK_NOTE], this.model);
+    }
     const correction = DRAFT_OPERATIONS.has(request.operation)
       ? draftCorrection(completed.value, this.directory, request.context.taskDiffs, request.context.node?.id)
       : undefined;
     if (correction) completed = await this.complete(request, [correction]);
     return { value: completed.value, text: completed.text, stdout: completed.text };
+  }
+
+  private modelFor(operation: ModelCallRequest["operation"]): string | undefined {
+    return DRAFT_OPERATIONS.has(operation) && this.draftModel
+      ? this.draftModel
+      : operation === "challenge-domain" && this.challengeModel
+        ? this.challengeModel
+        : this.model;
   }
 
   /**
@@ -212,13 +264,13 @@ export class CliAgentRuntime implements ModelRuntime {
    * unparseable output are retried up to `retries` extra times with linear
    * backoff; everything else fails fast.
    */
-  private async complete(request: ModelCallRequest, corrections: string[] = []): Promise<{ text: string; value: unknown }> {
+  private async complete(request: ModelCallRequest, corrections: string[] = [], modelOverride?: string): Promise<{ text: string; value: unknown }> {
     const attempts = 1 + this.retries;
     let failure: unknown;
     for (let attempt = 0; attempt < attempts; attempt++) {
       if (attempt > 0) await sleep(this.retryDelayMs * attempt);
       try {
-        const { text, stdout } = await this.prompt(request, corrections);
+        const { text, stdout } = await this.prompt(request, corrections, modelOverride);
         const value = extractJsonOnly(text);
         if (value !== undefined) return { text, value };
         const reasoningOnly = !text.trim() && /"type":\s*"reasoning"/.test(stdout);
@@ -235,7 +287,7 @@ export class CliAgentRuntime implements ModelRuntime {
     throw failure;
   }
 
-  private async prompt(request: ModelCallRequest, corrections: string[] = []): Promise<{ text: string; stdout: string }> {
+  private async prompt(request: ModelCallRequest, corrections: string[] = [], modelOverride?: string): Promise<{ text: string; stdout: string }> {
     const taskId = request.context.taskId;
     // Drafts are one-shot by design: the target file is embedded in the
     // prompt, so resuming a long-lived session only piles stale history onto
@@ -254,11 +306,13 @@ export class CliAgentRuntime implements ModelRuntime {
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
       ...(draftFileSection(request, this.directory) ? [draftFileSection(request, this.directory)] : []),
       ...corrections,
-      `Context packet (JSON). lockedPaths is the restriction set and restrictionMode its polarity: in "lock" mode never touch them; in "allow" mode propose changes ONLY inside them; taskTree is the current plan shape (path, kind, status, drafted); diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context)}`,
+      DRAFT_OPERATIONS.has(request.operation)
+        ? `Context packet (JSON), slimmed for drafting: rejectedCandidates is empty by design, and taskDiffs lists already-drafted paths with their patch text omitted — do not conflict with those paths:\n${JSON.stringify(slimDraftContext(request.context))}`
+        : `Context packet (JSON). lockedPaths is the restriction set and restrictionMode its polarity: in "lock" mode never touch them; in "allow" mode propose changes ONLY inside them; taskTree is the current plan shape (path, kind, status, drafted); diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context)}`,
     ];
     if (previous) {
       try {
-        const stdout = await this.run(this.invocation(request, [CONTINUATION_NOTE, ...baseParts].join("\n\n"), previous));
+        const stdout = await this.run(this.invocation(request, [CONTINUATION_NOTE, ...baseParts].join("\n\n"), previous, modelOverride));
         this.rememberSession(taskId, stdout);
         return { text: this.backend.parseAssistantText(stdout), stdout };
       } catch {
@@ -266,17 +320,13 @@ export class CliAgentRuntime implements ModelRuntime {
         saveSessions(this.sessions);
       }
     }
-    const stdout = await this.run(this.invocation(request, baseParts.join("\n\n")));
+    const stdout = await this.run(this.invocation(request, baseParts.join("\n\n"), undefined, modelOverride));
     this.rememberSession(taskId, stdout);
     return { text: this.backend.parseAssistantText(stdout), stdout };
   }
 
-  private invocation(request: ModelCallRequest, prompt: string, session?: string): string[] {
-    const model = DRAFT_OPERATIONS.has(request.operation) && this.draftModel
-      ? this.draftModel
-      : request.operation === "challenge-domain" && this.challengeModel
-        ? this.challengeModel
-        : this.model;
+  private invocation(request: ModelCallRequest, prompt: string, session?: string, modelOverride?: string): string[] {
+    const model = modelOverride ?? this.modelFor(request.operation);
     return this.backend.invocation(
       { model, session, prompt, title: `augment-${request.operation}`, autoApprove: this.autoApprove },
       { server: this.serverUrl, agent: this.agent },
@@ -364,6 +414,8 @@ function operationContract(request: ModelCallRequest): string {
     case "draft-patch":
     case "repair-patch":
       return `{"patch":"unified diff text","assumptions":["explicit assumption"]} (the patch must be a single-file unified diff touching ONLY the target path whose content is embedded in this prompt — never a multi-file or diff --git series covering other paths; include only the hunks the node reason requires; keep hunks minimal — at most 3 context lines around each change, never whole paragraphs or sentences as context; keep the ENTIRE reply short: never echo the file, never explain, close the JSON object; at most 3 assumptions, each <= 160 characters; answer in one shot without reading files or running tools)`;
+    case "draft-patches":
+      return `{"patches":[{"path":"exact target path","patch":"unified diff text"}]} (one entry for EVERY target listed in this prompt, in that order — never omit one, never invent an extra; each patch is a single-file unified diff for exactly its own path with the same rules as a single draft: only the hunks its node reason requires, at most 3 context lines around each change, never echo file content, no prose; keep the ENTIRE reply short and close the JSON object; answer in one shot without reading files or running tools)`;
     case "explain-project":
       return `{"topic":"short topic","entries":[{"path":"src/example.ts","role":"primary|supporting|context","summary":"one sentence","detail":"what it is and what it does","confidence":75}]} (1-64 concrete repository paths)`;
   }

@@ -79,7 +79,7 @@ N  start a new change plan
 E  explain — with an active task it explains the selected path; without one it starts a repository-wide explanation task
 Enter  the universal prompt for the selected path — on a file it saves the message and regenerates that file's patch directly (drafted or repaired, never approach options); on the root or a folder it regenerates approaches for that subtree; submitting empty rethinks the same way; folders holding drafted files refuse the auto-rethink and point at [O] instead
 1-7  choose the numbered approach
-D  develop the selected path and everything under it — a chosen approach expands into files, then every undrafted file below is crystallized, refined, and drafted in one run (bounded, stopping only where an approach choice 1-7 needs a human); a file, hunk, or virtual target always drafts its exact patch
+D  develop the selected path and everything under it — a chosen approach expands into files, then every undrafted file below is drafted in ONE batched model call (all files of the subtree in a single prompt; the whole batch is validated all-or-nothing before anything lands); when the batch or a single file fails, files fall back to individual drafts — one file's failure never stops the rest, failures are marked × and summarized ("Drafted 6/9 — press D to retry"). A file, hunk, or virtual target always drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree
 C  commit exactly the paths this session applied (pathspec commit; unrelated dirty or staged files stay untouched)
 L  mark/unmark the selected path in the restriction plain, lock polarity: marked (`#`, red) paths must not change, everything else may

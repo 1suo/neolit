@@ -4,14 +4,15 @@ import {
   ExplanationProposalSchema,
   PatchProposalSchema,
   RefinementProposalSchema,
+  BatchPatchProposalSchema,
 } from "./schemas.js";
 import {
   acceptDomain,
   addCandidate,
   addConstraint,
-  candidateScopeEscapes,
   attachExplanations,
   attachPatch,
+  candidateScopeEscapes,
   collapseNode,
   exhaustDomainChallenge,
   generateDomain,
@@ -32,7 +33,7 @@ import type {
 
 export const MAX_DOMAIN_CHALLENGE_ROUNDS = 2;
 
-export type AugmentModelErrorCode = "invalid-model-output" | "unknown-node" | "unknown-diff";
+export type AugmentModelErrorCode = "invalid-model-output" | "unknown-node" | "unknown-diff" | "node-state";
 
 export class AugmentModelError extends Error {
   constructor(
@@ -139,10 +140,11 @@ async function call<T>(
   temperature: Temperature,
   lod: LOD,
   parse: (value: unknown) => T,
+  extra?: Partial<ModelContextPacket>,
 ): Promise<T> {
   const result = await runtime.call({
     operation,
-    context: context(task, node),
+    context: { ...context(task, node), ...extra },
     temperature,
     lod,
   });
@@ -309,6 +311,47 @@ function descendantsOf(task: PlanTask, nodeId: string): PlanNode[] {
     }
     return false;
   });
+}
+
+/** Undrafted file, hunk, and virtual descendants of a node, in path order. */
+export function undraftedFileTargets(task: PlanTask, nodeId: string): PlanNode[] {
+  return descendantsOf(task, nodeId)
+    .filter((candidate) => ["file", "hunk", "virtual"].includes(candidate.kind) && candidate.diffIds.length === 0 && candidate.path)
+    .sort((left, right) => (left.path ?? "").localeCompare(right.path ?? ""));
+}
+
+export interface DraftPatchesWithModelInput {
+  taskId: string;
+  nodeId: string;
+  temperature: Temperature;
+}
+
+/**
+ * One batched draft for every undrafted file target under a node: the model
+ * sees the whole subtree in one prompt, so imports and shared types stay
+ * coherent and one call replaces N sequential ones. All-or-nothing — every
+ * patch is attached on a chain of pure reducers first, so an invalid or
+ * incomplete batch leaves the task state untouched.
+ */
+export async function draftPatchesWithModel(runtime: ModelRuntime, task: PlanTask, input: DraftPatchesWithModelInput): Promise<PlanTask> {
+  const node = requireNode(task, input.nodeId);
+  const targets = undraftedFileTargets(task, input.nodeId);
+  if (!targets.length) throw new AugmentModelError(`Node ${node.id} has no undrafted file targets to draft.`, "node-state");
+  const proposal = await call(runtime, task, node, "draft-patches", input.temperature, node.lod, parseWith(BatchPatchProposalSchema), {
+    draftTargets: targets.map((target) => ({ path: target.path! })),
+  });
+  const known = new Set(targets.map((target) => target.path!));
+  for (const patch of proposal.patches) {
+    if (!known.has(patch.path)) throw new AugmentModelError(`Batch draft names ${patch.path}, which is not an undrafted target under ${node.id}.`, "invalid-model-output");
+  }
+  const byPath = new Map(proposal.patches.map((patch) => [patch.path, patch.patch]));
+  let current = task;
+  for (const target of targets) {
+    const patch = byPath.get(target.path!);
+    if (!patch) throw new AugmentModelError(`Batch draft omits ${target.path}; a batch must cover every target.`, "invalid-model-output");
+    current = attachPatch(current, { taskId: task.id, expectedRevision: current.revision, nodeId: target.id, patch });
+  }
+  return current;
 }
 
 /**

@@ -44,6 +44,14 @@ export const PatchProposalSchema = z.object({
   assumptions: z.array(z.string().min(1).max(2000)).max(32).default([]),
 });
 
+/** One batched draft per refined node: every target path answered in one call. */
+export const BatchPatchProposalSchema = z.object({
+  patches: z.array(z.object({
+    path: pathPattern,
+    patch: z.string().min(1),
+  })).min(1).max(16),
+});
+
 export const PathExplanationSchema = z.object({
   path: pathPattern,
   role: z.enum(["primary", "supporting", "context"]),
@@ -165,4 +173,5 @@ export type DomainProposal = z.infer<typeof DomainProposalSchema>;
 export type ChallengeDomainProposal = z.infer<typeof ChallengeDomainSchema>;
 export type RefinementProposal = z.infer<typeof RefinementProposalSchema>;
 export type PatchProposal = z.infer<typeof PatchProposalSchema>;
+export type BatchPatchProposal = z.infer<typeof BatchPatchProposalSchema>;
 export type ExplanationProposal = z.infer<typeof ExplanationProposalSchema>;

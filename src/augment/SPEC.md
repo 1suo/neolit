@@ -37,6 +37,7 @@ The runtime is a replaceable port. For each operation it receives a bounded cont
 - `challenge-domain`: acceptance, one missing candidate, or one missing touched path. At most two counterexample rounds run; exhausting that budget records bounded, unproven coverage rather than failing the task.
 - `refine-node`: bounded children and obligations for a selected node.
 - `draft-patch`: one patch for one file/hunk node.
+- `draft-patches`: one batched proposal covering every undrafted file target under a node — all-or-nothing, so an incomplete or invalid batch leaves task state unchanged.
 - `repair-patch`: one replacement patch grounded in an exact failed check.
 - `explain-project`: one bounded set of repository path explanations for the requested topic.
 

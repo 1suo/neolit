@@ -34,6 +34,7 @@ path/restrict
 crystallize
 refine
 patch/draft
+patch/draft-batch
 patch/set
 diff/get
 shutdown

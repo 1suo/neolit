@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
-import { nextDevelopmentStep } from "../augment/kernel.js";
+import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
@@ -670,11 +670,31 @@ export class AugmentTuiController {
   }
 
   /**
+   * One batched draft call for every undrafted file under a node: the model
+   * answers all targets in a single prompt. Returns how many drafts landed.
+   */
+  private async performBatchDraft(nodeId: string): Promise<number> {
+    const task = this.task!;
+    const before = Object.keys(task.diffs).length;
+    const response = await this.server.handle({
+      jsonrpc: "2.0",
+      id: 26,
+      method: "patch/draft-batch",
+      params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature: "low" },
+    });
+    this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    this.refresh();
+    return Object.keys(this.task.diffs).length - before;
+  }
+
+  /**
    * Develops the selected path as far as deterministic policy allows: the
    * kernel's `nextDevelopmentStep` is applied repeatedly — refine, then
    * crystallize, refine, and draft every undrafted file beneath the path —
    * until the subtree is fully drafted or a step needs a human (an approach
-   * choice). One keypress can therefore develop every file under a folder.
+   * choice). Files are drafted in ONE batched model call when possible; a
+   * failed batch or file falls back to individual drafts, and one file's
+   * failure never stops the rest — failures are marked × and summarized.
    */
   async develop(): Promise<void> {
     const task = this.requireTask();
@@ -685,9 +705,38 @@ export class AugmentTuiController {
     }
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
     const startPath = task.nodes[nodeId]?.path ?? "this path";
+    const remaining = () => (this.task ? undraftedFileTargets(this.task, nodeId).length : 0);
     let drafted = 0;
+    let failed = 0;
     let acted = false;
+    let batchTried = false;
     let lastDraftedPath = startPath;
+    const failedNodes = new Set<string>();
+    const draftLabel = () => `Drafting (${drafted + failed + 1}/${drafted + failed + remaining()})`;
+    const recordDraftFailure = (failedNodeId: string) => {
+      failedNodes.add(failedNodeId);
+      failed += 1;
+      drafted -= 1;
+      // Keep the × mark and failed panel content; only clear the halting error
+      // so the run continues with the remaining files.
+      this.error = undefined;
+    };
+    const finish = (stopped: string | undefined): void => {
+      if (failed > 0) {
+        this.error = drafted > 0
+          ? `Drafted ${drafted} ${drafted === 1 ? "file" : "files"}; ${failed} failed (marked ×) — press [D] to retry the failures.`
+          : `All ${failed} drafts failed (marked ×) — press [D] to retry.`;
+        return;
+      }
+      if (stopped !== undefined) {
+        this.error = stopped;
+        return;
+      }
+      if (drafted > 1) this.message = `Developed ${drafted} files under ${startPath}. Nothing is applied yet; [A] applies them.`;
+      else if (drafted === 1) this.message = `Draft change ready for ${lastDraftedPath}. It is not applied to the repository.`;
+      else if (acted) this.message = `Developed ${startPath}. [A] applies drafted changes; [D] continues deeper.`;
+      else this.error = "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
+    };
     for (let guard = 0; guard < MAX_DEVELOP_STEPS; guard++) {
       if (!this.task) return;
       const step = nextDevelopmentStep(this.task, nodeId);
@@ -698,17 +747,53 @@ export class AugmentTuiController {
         acted = true;
         await this.dispatch("Generating approaches", () => this.performCrystallize(nodeId, "normal", this.defaultLod), nodeId);
       } else if (step.action === "draft") {
+        if (failedNodes.has(nodeId)) {
+          finish(undefined);
+          return;
+        }
         acted = true;
         drafted += 1;
         lastDraftedPath = this.task.nodes[nodeId]?.path ?? startPath;
-        await this.dispatch("Drafting changes", () => this.performDraft(nodeId), nodeId);
+        await this.dispatch(draftLabel(), () => this.performDraft(nodeId), nodeId);
+        if (this.error) recordDraftFailure(nodeId);
       } else if (step.action === "descend") {
         this.select(`entry:${step.path}`);
         if (step.step === "draft") {
+          // A file that already failed this run is not retried this run: move
+          // to the next undrafted target instead of spinning on it.
+          if (failedNodes.has(step.nodeId)) {
+            const next = undraftedFileTargets(this.task!, nodeId).find((target) => !failedNodes.has(target.id));
+            if (!next?.path) {
+              finish(undefined);
+              return;
+            }
+            this.select(`entry:${next.path}`);
+            acted = true;
+            drafted += 1;
+            lastDraftedPath = next.path;
+            await this.dispatch(draftLabel(), () => this.performDraft(next.id), next.id);
+            if (this.error) recordDraftFailure(next.id);
+            continue;
+          }
+          if (!batchTried && remaining() >= 2) {
+            // One prompt for every undrafted file under the start node: the
+            // model sees the whole subtree at once and one call replaces N.
+            batchTried = true;
+            acted = true;
+            const targets = remaining();
+            await this.dispatch(`Drafting ${targets} files in one prompt`, async () => {
+              const landed = await this.performBatchDraft(nodeId);
+              drafted += landed;
+              lastDraftedPath = startPath;
+            }, nodeId);
+            if (this.error) this.error = undefined; // fall back to per-file drafts below
+            continue;
+          }
           acted = true;
           drafted += 1;
           lastDraftedPath = step.path;
-          await this.dispatch("Drafting changes", () => this.performDraft(step.nodeId), step.nodeId);
+          await this.dispatch(draftLabel(), () => this.performDraft(step.nodeId), step.nodeId);
+          if (this.error) recordDraftFailure(step.nodeId);
         } else if (step.step === "crystallize") {
           acted = true;
           await this.dispatch("Generating approaches", () => this.performCrystallize(step.nodeId, "normal", this.defaultLod), step.nodeId);
@@ -716,24 +801,23 @@ export class AugmentTuiController {
           acted = true;
           await this.dispatch("Expanding approach into files", () => this.performRefine(step.nodeId, "normal", this.defaultLod), step.nodeId);
         } else {
-          this.error = `Choose an approach for ${step.path} with keys 1-7, or press Enter to rethink it.`;
+          finish(drafted + failed > 0
+            ? `Drafted ${drafted + failed} ${drafted + failed === 1 ? "file" : "files"} under ${startPath}. Choose an approach for ${step.path} with keys 1-7 to develop deeper.`
+            : `Choose an approach for ${step.path} with keys 1-7, or press Enter to rethink it.`);
           return;
         }
       } else if (step.action === "choose") {
-        this.error = `Choose one of ${step.count} approaches with keys 1-${step.count}, or press Enter to rethink.`;
+        finish(`Choose one of ${step.count} approaches with keys 1-${step.count}, or press Enter to rethink.`);
         return;
       } else if (step.action === "done" || step.action === "already-drafted") {
-        // Terminal states are messages when this keypress did work; they are
-        // errors only when nothing changed and the user must act elsewhere.
-        if (drafted > 1) this.message = `Developed ${drafted} files under ${startPath}. Nothing is applied yet; [A] applies them.`;
-        else if (drafted === 1) this.message = `Draft change ready for ${lastDraftedPath}. It is not applied to the repository.`;
-        else if (step.action === "already-drafted") this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it.";
-        else this.error = acted ? `Every file under ${startPath} is drafted. [A] applies them; [O] reopens this path.` : "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
+        if (failed === 0 && drafted === 0 && step.action === "already-drafted") { this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it."; return; }
+        finish(step.action === "already-drafted" && failed === 0 && !acted ? "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it." : undefined);
         return;
       } else {
         this.error = step.reason;
         return;
       }
+      // A failure in a non-draft step (refine, crystallize) stops the run.
       if (this.error) return;
     }
     this.error = `Developing ${startPath} exceeded ${MAX_DEVELOP_STEPS} steps; press [D] to continue.`;

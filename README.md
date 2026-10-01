@@ -137,6 +137,7 @@ path/restrict
 crystallize
 refine
 patch/draft
+patch/draft-batch
 patch/repair
 patch/set
 diff/get

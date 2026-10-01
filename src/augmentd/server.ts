@@ -1,5 +1,5 @@
 import { assertTaskIntegrity, createPlanTask, addConstraint, markPathStale, planTree, PlanStateError, refreshNode, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
-import { AugmentModelError, crystallizeNode, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
+import { AugmentModelError, crystallizeNode, draftPatchesWithModel, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
 import { PlanTaskSchema } from "../augment/schemas.js";
 import type { LOD, ModelRuntime, PlanRevision, PlanTask, Temperature } from "../augment/types.js";
 
@@ -313,6 +313,17 @@ export class AugmentServer {
         const base = taskMutation(params);
         const input = object(params);
         const updated = await draftPatchWithModel(this.runtime, this.requireTask(base.taskId), {
+          taskId: base.taskId,
+          nodeId: string(input.nodeId, "nodeId"),
+          temperature: temperature(input.temperature),
+        });
+        this.store(updated);
+        return updated;
+      }
+      case "patch/draft-batch": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const updated = await draftPatchesWithModel(this.runtime, this.requireTask(base.taskId), {
           taskId: base.taskId,
           nodeId: string(input.nodeId, "nodeId"),
           temperature: temperature(input.temperature),
