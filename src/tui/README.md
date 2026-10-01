@@ -80,6 +80,7 @@ A  apply the selected path's drafted patch(es) to the working tree
 C  commit exactly the paths this session applied (pathspec commit; unrelated dirty or staged files stay untouched)
 L  mark/unmark the selected path in the restriction plain, lock polarity: marked (`#`, red) paths must not change, everything else may
 W  mark/unmark the selected path, allow polarity: marked (`#`, accent) paths are the only ones that may change. One plain, one marked set: pressing the other polarity key inverts it (the set stays, its meaning flips). Marks made before a task starts are applied before its first model run
+M  switch the live runtime's default/draft/challenge model — arrow-key picker over the backend's current catalog, applied without restarting the session
 O  reopen selected node with a reason
 S  mark a real path changed outside the plan
 Tab  switch pane
