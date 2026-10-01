@@ -10,6 +10,7 @@ import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../sr
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
 import { detailLines, frameLayout } from "../src/tui/detail.js";
+import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
 const temporaryFiles: string[] = [];
@@ -1462,6 +1463,24 @@ describe("OpenCode CLI runtime parsing", () => {
   });
 
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {
+    const previous = process.env.XDG_CONFIG_HOME;
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-config-"));
+    process.env.XDG_CONFIG_HOME = state;
+    try {
+      expect(loadAugmentConfig()).toEqual({});
+      saveAugmentConfig({ model: "opencode/x", challengeRounds: 1, server: undefined });
+      expect(loadAugmentConfig()).toEqual({ model: "opencode/x", challengeRounds: 1 });
+      saveAugmentConfig({ draftModel: "opencode/y" });
+      expect(loadAugmentConfig()).toEqual({ model: "opencode/x", draftModel: "opencode/y", challengeRounds: 1 });
+      expect(configFromEnvironment({ AUGMENT_OPENCODE_MODEL: "opencode/env" })).toEqual({ model: "opencode/env" });
+      expect(effectiveConfig({ model: "opencode/x" }, { model: "opencode/env", draftModel: "opencode/env-draft" })).toEqual({ model: "opencode/env", draftModel: "opencode/env-draft" });
+    } finally {
+      if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previous;
+    }
+  });
+
+  it("exits with an actionable message when the runtime exceeds its timeout", async () => {
     const file = path.join(os.tmpdir(), `augment-opencode-slow-${process.pid}-${temporaryFiles.length}.sh`);
     fs.writeFileSync(file, "#!/bin/sh\nsleep 5\n");
     fs.chmodSync(file, 0o755);

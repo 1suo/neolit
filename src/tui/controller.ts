@@ -38,6 +38,8 @@ export interface AugmentTuiControllerOptions {
   defaultLod?: LOD;
   /** Persist the active task to disk and resume the newest one on start. */
   persistTasks?: boolean;
+  /** Challenge rounds per crystallize (0-2); defaults to the environment. */
+  challengeRounds?: number;
 }
 
 const MAX_REPOSITORY_ENTRIES = 5_000;
@@ -237,7 +239,7 @@ export class AugmentTuiController {
     this.runtime = options.runtime;
     this.server = new AugmentServer({ runtime: options.runtime });
     this.defaultLod = options.defaultLod ?? "file";
-    const rounds = Number(process.env.AUGMENT_CHALLENGE_ROUNDS);
+    const rounds = options.challengeRounds ?? Number(process.env.AUGMENT_CHALLENGE_ROUNDS);
     this.challengeRounds = Number.isInteger(rounds) && rounds >= 0 && rounds <= 2 ? rounds : undefined;
     this.persistTasks = options.persistTasks === true;
     this.repository = repositoryTree(options.directory);
