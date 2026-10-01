@@ -136,7 +136,7 @@ The TUI requires an interactive terminal (`process.stdin.isTTY`). It edits plann
 
 ## Architecture
 
-`controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `apply.ts` owns the host-side apply transaction (preflighted, atomic, uncommitted `git apply`). `augment.tsx` renders the controller snapshot with Ink/React. This keeps interaction testable separately from rendering.
+`controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `apply.ts` owns the host-side apply and commit transactions (sequential worktree preflight, pathspec commit). `detail.ts` is the pure view model — theme, per-entry state, the two-section pane content, and the frame budget — with no Ink or React. `augment.tsx` renders the controller snapshot through it. The develop policy itself is not the TUI's: `nextDevelopmentStep` in `src/augment/kernel.ts` decides it and the controller dispatches the result. This keeps interaction testable separately from rendering, and rendering from lifecycle.
 
 Frames paint incrementally: `tuiRenderOptions()` in `augment.tsx` enables Ink's
 `incrementalRendering`, so a repaint rewrites only the lines whose content changed
