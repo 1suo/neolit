@@ -28,8 +28,7 @@ node/select
 node/reject
 node/reopen
 node/stale
-path/lock
-path/allow
+path/restrict
 crystallize
 refine
 patch/draft
@@ -38,7 +37,7 @@ diff/get
 shutdown
 ```
 
-Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches — it accepts an optional `nodeId` to focus the explanation on one path. `path/lock` records task-local controller authority: candidates, refinement children, and patches cannot modify a locked path or its descendants. `path/allow` is the inversion: while a task's allowlist is non-empty, the same mutations must fall inside allowed paths. `patch/set` lets a host overwrite a drafted patch with its own edited text (for example, saved from an editor buffer); it reclassifies the diff, bumps the revision, and is rejected for stale revisions, unknown diffs, or locked paths.
+Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches — it accepts an optional `nodeId` to focus the explanation on one path. `path/restrict` keeps one plain: `lockedPaths` is the marked set and `restrictionMode` its polarity — in lock mode candidates, refinement children, and patches must avoid the set; in allow mode only the set may change. Switching polarity inverts the plain without touching the set. `patch/set` lets a host overwrite a drafted patch with its own edited text (for example, saved from an editor buffer); it reclassifies the diff, bumps the revision, and is rejected for stale revisions, unknown diffs, or locked paths.
 
 ## Model runtime
 

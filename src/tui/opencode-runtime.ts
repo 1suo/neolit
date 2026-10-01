@@ -167,7 +167,9 @@ export class OpenCodeCliRuntime implements ModelRuntime {
 
   async call(request: ModelCallRequest): Promise<OpenCodeCliResult> {
     let completed = await this.complete(request);
-    const correction = DRAFT_OPERATIONS.has(request.operation) ? draftCorrection(completed.value, this.directory) : undefined;
+    const correction = DRAFT_OPERATIONS.has(request.operation)
+      ? draftCorrection(completed.value, this.directory, request.context.taskDiffs, request.context.node?.id)
+      : undefined;
     if (correction) completed = await this.complete(request, correction);
     return { value: completed.value, text: completed.text, stdout: completed.text };
   }
@@ -297,18 +299,23 @@ function isEmptyDraft(value: unknown): boolean {
 
 /**
  * Deterministic draft gate: a patch must parse as a unified diff git would
- * accept against the current working tree. git itself is the parser, so the
- * corrective retry can quote git's exact diagnostic back to the model.
+ * accept against the current working tree AND together with every other
+ * drafted patch in the task, so stored diffs are jointly applicable. git
+ * itself is the parser, so the corrective retry can quote git's exact
+ * diagnostic back to the model.
  */
-function draftCorrection(value: unknown, directory: string): string | undefined {
+function draftCorrection(value: unknown, directory: string, taskDiffs: Array<{ nodeId: string; patch: string }> = [], selfNodeId?: string): string | undefined {
   if (isEmptyDraft(value)) {
     return "Your previous answer is unusable: the patch field must be a non-empty string holding the complete single-file unified diff with JSON-escaped line breaks. Return the full JSON object again with the real patch.";
   }
   const patch = (value as { patch?: unknown }).patch;
   if (typeof patch !== "string") return undefined;
-  const failure = preflightPatches(directory, [patch]);
+  const others = taskDiffs
+    .filter((diff) => diff.nodeId !== selfNodeId && typeof diff.patch === "string" && diff.patch.trim().length > 0)
+    .map((diff) => diff.patch);
+  const failure = preflightPatches(directory, [patch, ...others]);
   if (!failure) return undefined;
-  return `Your patch does not pass git's unified-diff check: ${failure} Regenerate the complete single-file unified diff with exact @@ header line counts, one leading space on every context line, one leading minus on deletions, and one leading plus on additions.`;
+  return `Your patch does not apply cleanly — ${failure} Regenerate the complete single-file unified diff so it stays coherent with the working tree and with this task's other drafted changes.`;
 }
 
 function operationContract(request: ModelCallRequest): string {

@@ -126,9 +126,10 @@ failures still fail fast.
 file's exact content in the prompt and instruct the model to answer in one
 shot without tools, so a small quick model is usually enough; domain
 generation and challenges keep using `AUGMENT_OPENCODE_MODEL`. Drafts are
-also preflighted with `git apply --check` against the working tree and
-retried once with git's diagnostic when the patch is empty or structurally
-invalid, so stored diffs reach `A` already known to apply.
+also preflighted with `git apply --check` against the working tree AND
+together with every other drafted patch in the same task, then retried
+once with git's diagnostic — so stored diffs reach `A` already known to
+apply jointly.
 
 The TUI requires an interactive terminal (`process.stdin.isTTY`). It edits planned state and, on request, applies drafted patches to the working tree through `src/tui/apply.ts`: a shared `git apply --check` preflight followed by one atomic `git apply` for all selected patches. It never stages or commits.
 

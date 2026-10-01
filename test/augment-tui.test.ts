@@ -544,7 +544,7 @@ describe("augment TUI apply", () => {
     await controller.draftPatch();
     await controller.applySelected();
     const snapshot = controller.snapshot();
-    expect(snapshot.error).toContain("git apply --check");
+    expect(snapshot.error).toContain("git apply");
     expect(fs.readFileSync(path.join(directory, "session.ts"), "utf8")).toBe("alpha\nbeta\n");
   });
 });
@@ -1002,7 +1002,7 @@ describe("OpenCode CLI runtime parsing", () => {
     });
     expect(result.value).toEqual({ patch: valid, assumptions: [] });
     const logged = fs.readFileSync(log, "utf8");
-    expect(logged).toContain("does not pass git's unified-diff check");
+    expect(logged).toContain("does not apply cleanly");
     expect(logged.match(/--title augment-draft-patch/g)?.length).toBe(2);
   });
 
@@ -1221,6 +1221,53 @@ describe("OpenCode CLI runtime parsing", () => {
       if (previous === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previous;
     }
+  });
+
+  it("retries when a draft conflicts with the task's other drafted changes", async () => {
+    const directory = tempGitRepo();
+    const otherDiff = { id: "diff:1", nodeId: "node:other", path: "session.ts", patch: "--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,2 @@\n alpha\n-beta\n+X\n", kind: "modify" as const, basisRevision: "commit:1" };
+    const conflicting = "--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,2 @@\n alpha\n-beta\n+Y\n";
+    const compatible = "--- a/session.ts\n+++ b/session.ts\n@@ -1,1 +1,2 @@\n alpha\n+top line\n";
+    const marker = path.join(os.tmpdir(), `augment-retried-${process.pid}-${temporaryFiles.length}.flag`);
+    const log = path.join(os.tmpdir(), `augment-retry-log-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(marker, log);
+    const validOutput = JSON.stringify({ type: "message", parts: [{ type: "text", text: JSON.stringify({ patch: compatible, assumptions: [] }) }] });
+    const conflictingOutput = JSON.stringify({ type: "message", parts: [{ type: "text", text: JSON.stringify({ patch: conflicting, assumptions: [] }) }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, [
+      "#!/bin/sh",
+      `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
+      `if [ -f ${JSON.stringify(marker)} ]; then printf '%s' ${JSON.stringify(validOutput)}; else touch ${JSON.stringify(marker)}; printf '%s' ${JSON.stringify(conflictingOutput)}; fi`,
+      "",
+    ].join("\n"));
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory, command: file, timeoutMs: 5_000 });
+    const result = await runtime.call({
+      operation: "draft-patch",
+      context: {
+        taskId: "task:1",
+        taskRevision: 2,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: { id: "node:self", path: "session.ts", kind: "file" } as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        taskDiffs: [otherDiff],
+        taskTree: [],
+        lockedPaths: [],
+        restrictionMode: "lock",
+        rejectedCandidates: [],
+      },
+      temperature: "low",
+      lod: "hunk",
+    });
+    expect(result.value).toEqual({ patch: compatible, assumptions: [] });
+    const logged = fs.readFileSync(log, "utf8");
+    expect(logged).toContain("other drafted changes");
+    expect(logged.match(/--title augment-draft-patch/g)?.length).toBe(2);
   });
 
   it("rejects with an actionable message when the runtime exceeds its timeout", async () => {

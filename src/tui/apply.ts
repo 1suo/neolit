@@ -11,20 +11,32 @@ import type { PlannedDiff } from "../augment/types.js";
  * changes; nothing is staged or committed.
  */
 export function preflightPatches(directory: string, patches: string[]): string | undefined {
+  const nonEmpty = patches.filter((patch) => patch.trim().length > 0);
+  if (!nonEmpty.length) return undefined;
   const staging = mkdtempSync(path.join(tmpdir(), "augment-preflight-"));
+  const worktree = path.join(staging, "wt");
   try {
-    const files = patches.map((patch, index) => {
+    const files = nonEmpty.map((patch, index) => {
       const file = path.join(staging, `patch-${index}.diff`);
       writeFileSync(file, patch.endsWith("\n") ? patch : `${patch}\n`, "utf8");
       return file;
     });
     try {
-      git(directory, ["apply", "--check", "--whitespace=nowarn", ...files]);
+      // git cannot compose several patches for one file in a single call, so
+      // verification applies the patches sequentially inside a throwaway
+      // worktree — exactly how the real apply will run, order included.
+      git(directory, ["worktree", "add", "--detach", "--quiet", worktree]);
+      for (const file of files) git(worktree, ["apply", "--whitespace=nowarn", file]);
       return undefined;
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
   } finally {
+    try {
+      git(directory, ["worktree", "remove", "--force", worktree]);
+    } catch {
+      // the worktree may never have been created
+    }
     rmSync(staging, { recursive: true, force: true });
   }
 }
@@ -41,7 +53,7 @@ export function applyPlannedDiffs(directory: string, diffs: PlannedDiff[]): stri
       writeFileSync(file, diff.patch.endsWith("\n") ? diff.patch : `${diff.patch}\n`, "utf8");
       return file;
     });
-    git(directory, ["apply", "--whitespace=nowarn", ...files]);
+    for (const file of files) git(directory, ["apply", "--whitespace=nowarn", file]);
     return patches.map((diff) => diff.path || diff.id);
   } finally {
     rmSync(staging, { recursive: true, force: true });
