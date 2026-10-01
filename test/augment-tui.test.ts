@@ -105,7 +105,7 @@ describe("augment TUI controller", () => {
     expect(state.rows.map((row) => row.id)).toContain("entry:src/auth/session.ts");
     expect(state.rows.some((row) => row.repositoryOnly)).toBe(true);
 
-    expect(state.message).toBe("Single viable approach adopted. Press F to expand it into files.");
+    expect(state.message).toBe("Single viable approach adopted. Press D to develop it into files.");
     expect(state.task?.nodes[state.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
     expect(controller.snapshot().rows.map((row) => row.id)).toContain("entry:src/auth/session.ts");
 
@@ -123,7 +123,8 @@ describe("augment TUI controller", () => {
     expect(patched.message).toContain("Draft change ready");
 
     const fileOutput = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
-    expect(fileOutput.indexOf("EXACT DIFF")).toBeGreaterThanOrEqual(0);
+    expect(fileOutput).toContain("CHANGES");
+    expect(fileOutput).not.toContain("EXACT DIFF");
     expect(fileOutput).not.toContain("APPROACHES");
     expect(fileOutput).toContain("--- a/src/auth/session.ts");
   });
@@ -255,19 +256,17 @@ describe("augment TUI controller", () => {
 
     const detail = detailLines(controller.snapshot().task, directory);
     const lines = detail.map((line) => line.text);
-    expect(lines).toContain("CONTENTS · 1 entry");
-    expect(lines.some((line) => line.includes("augment/"))).toBe(false);
     expect(lines.some((line) => line.includes("auth/") && line.includes("retry cutoff"))).toBe(true);
     expect(lines).toContain("CHANGES");
     expect(lines).toContain("1 changed");
     expect(lines.some((line) => line.includes("retry cutoff"))).toBe(true);
     expect(lines.some((line) => line.includes("session.ts"))).toBe(true);
-    expect(lines.indexOf("EXACT DIFF")).toBeGreaterThanOrEqual(0);
     expect(lines.some((line) => line.includes("--- a/src/auth/session.ts"))).toBe(true);
     expect(lines).not.toContain("APPROACHES");
+    expect(lines.filter((line) => line === "DESCRIPTION" || line === "CHANGES" || line === "KEYS")).toEqual(["DESCRIPTION", "CHANGES"]);
 
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
-    expect(output).toContain("CONTENTS");
+    expect(output).toContain("DESCRIPTION");
     expect(output).toContain("--- a/src/auth/session.ts");
   });
 
@@ -295,6 +294,21 @@ describe("augment TUI controller", () => {
 
     await controller.draftPatch();
     expect(controller.snapshot().error).toContain("A patch must target a file, hunk, or virtual node");
+  });
+
+  it("develops a path one step at a time: refine, then draft", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    controller.select("entry:.");
+    await controller.develop();
+    expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "refined" });
+    controller.select("entry:src/auth/session.ts");
+    await controller.develop();
+    const snapshot = controller.snapshot();
+    expect(Object.keys(snapshot.task?.diffs ?? {})).toHaveLength(1);
+    await controller.develop();
+    expect(controller.snapshot().error).toContain("already has a drafted patch");
   });
 
   it("tells the user to choose an approach before refining a domain path", async () => {
@@ -325,7 +339,7 @@ describe("augment TUI controller", () => {
     await controller.constrain("Preserve the retry API.");
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
     await controller.refine();
-    expect(controller.snapshot().error).toBe("This path has 2 approaches — choose one with keys 1-7, then press F to expand it.");
+    expect(controller.snapshot().error).toBe("This path has 2 approaches — choose one with keys 1-7, then press D to develop it.");
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
   });
 
@@ -364,7 +378,7 @@ describe("augment TUI controller", () => {
     expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
     expect(snapshot.message).toContain("regenerated from your note");
     await controller.rethink();
-    expect(controller.snapshot().message).toBe("Approaches regenerated; single viable approach adopted. Press F to expand it.");
+    expect(controller.snapshot().message).toBe("Approaches regenerated; single viable approach adopted. Press D to develop it.");
   });
 
   it("carries path messages into descendant patch context", async () => {
@@ -540,7 +554,7 @@ describe("augment TUI rendering", () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
     await controller.start("bounded retries", "commit:1");
     const instance = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
-    instance.stdin.write("g");
+    instance.stdin.write("\r");
     await new Promise((resolve) => setTimeout(resolve, 30));
     instance.stdin.write("\r");
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -637,7 +651,7 @@ describe("selected-path detail model", () => {
 
     const row = controller.snapshot().rows.find((item) => item.id === "entry:src/auth/session.ts");
     const lines = detailLines(controller.snapshot().task, row).map((line) => line.text);
-    expect(lines).toContain("EXACT DIFF · 28 lines · basis commit:1");
+    expect(lines).toContain("1 changed · 28 lines · basis commit:1");
     expect(lines).toContain("--- a/src/auth/session.ts");
     expect(lines).toContain("+changed line 1");
     expect(lines).toContain("-changed line 24");
@@ -656,7 +670,7 @@ describe("selected-path detail model", () => {
     const lines = detailLines(controller.snapshot().task, row).map((line) => line.text);
     expect(lines).toContain("DESCRIPTION");
     expect(lines).toContain("KEYS");
-    expect(lines).toContain("  [D] draft this file's exact patch · [A] apply it after drafting");
+    expect(lines).toContain("  [D] develop — drafts this file's exact patch · [A] apply after");
   });
 
   it("summarizes folder contents when a directory is selected", async () => {
@@ -672,8 +686,6 @@ describe("selected-path detail model", () => {
 
     const row = controller.snapshot().rows.find((item) => item.id === "entry:src/auth");
     const lines = detailLines(controller.snapshot().task, row).map((line) => line.text);
-    expect(lines).toContain("CONTENTS · 1 entry");
-    expect(lines.some((line) => line.includes("session.ts") && line.includes("changed"))).toBe(true);
     expect(lines.some((line) => line.includes("session.ts") && line.includes("retry cutoff"))).toBe(true);
   });
 

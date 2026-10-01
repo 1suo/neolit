@@ -308,10 +308,10 @@ export class AugmentTuiController {
       await this.adoptSingletonIfViable(nodeId);
       const generatedNode = this.task.nodes[nodeId]!;
       if (generatedNode.status === "collapsed") {
-        this.message = "Single viable approach adopted. Press F to expand it into files.";
+        this.message = "Single viable approach adopted. Press D to develop it into files.";
       }
       else if (generatedNode.challengeExhausted) {
-        this.message = "Approaches ready after bounded challenge. Choose 1-7, or press [G] to rethink.";
+        this.message = "Approaches ready after bounded challenge. Choose 1-7, or press Enter to rethink.";
       } else {
         this.message = "Approaches ready. Choose one with keys 1-7.";
       }
@@ -335,7 +335,7 @@ export class AugmentTuiController {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 3, method: "node/select", params: { taskId: task.id, expectedRevision: task.revision, nodeId: candidate.nodeId, candidateId: chosen } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
-      this.message = `Using: ${candidate.label}. Press F to expand it into files.`;
+      this.message = `Using: ${candidate.label}. Press D to develop it into files.`;
     });
   }
 
@@ -346,10 +346,10 @@ export class AugmentTuiController {
     if (node && node.status !== "collapsed") {
       const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
       if (node.status === "domain" && possible.length) {
-        this.error = `This path has ${possible.length} approach${possible.length === 1 ? "" : "es"} — choose one with keys 1-7, then press F to expand it.`;
+        this.error = `This path has ${possible.length} approach${possible.length === 1 ? "" : "es"} — choose one with keys 1-7, then press D to develop it.`;
       }
       else if (node.status === "unresolved") {
-        this.error = "Approaches are not generated for this path yet. Press G to generate them, choose 1-7, then press F.";
+        this.error = "Approaches are not generated for this path yet. Press Enter (empty submit) to generate them, choose 1-7, then press D.";
       }
       else {
         this.error = `This path is ${node.status}; only a path with a chosen approach can be expanded with F.`;
@@ -360,7 +360,7 @@ export class AugmentTuiController {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 4, method: "refine", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
-      this.message = "Planned files ready. Select a file and press D to draft its change.";
+      this.message = "Planned files ready. Select a file and press D again to draft it.";
       this.selectFirstChild(nodeId);
     }, nodeId);
   }
@@ -450,7 +450,7 @@ export class AugmentTuiController {
         this.refresh();
         this.selectNodeEntry(nodeId);
         this.message = this.task.nodes[nodeId]?.status === "collapsed"
-          ? "Approaches updated from your message; single viable approach adopted. Press F to expand it."
+          ? "Approaches updated from your message; single viable approach adopted. Press D to develop it."
           : "Approaches updated from your message. Choose one with keys 1-7.";
       } else {
         this.selectNodeEntry(nodeId);
@@ -459,12 +459,65 @@ export class AugmentTuiController {
     }, nodeId);
   }
 
+  /**
+   * Develops the selected path one step: a collapsed node expands into files,
+   * a refined file drafts its exact patch. The distinctions the TUI used to
+   * expose as separate keys are just the node's lifecycle state.
+   */
+  async develop(): Promise<void> {
+    const task = this.requireTask();
+    const nodeId = this.selectedNodeId() ?? task.rootNodeId;
+    const node = task.nodes[nodeId];
+    if (!node) {
+      this.error = "Select a path to develop.";
+      return;
+    }
+    if (node.status === "collapsed") return this.refine();
+    const isFileTarget = ["file", "hunk", "virtual"].includes(node.kind);
+    if (isFileTarget && node.diffIds.length === 0 && !["stale", "blocked"].includes(node.status)) return this.draftPatch();
+    if (node.diffIds.length > 0) {
+      this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it.";
+      return;
+    }
+    if (node.status === "domain") {
+      const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
+      this.error = possible.length
+        ? `Choose one of ${possible.length} approaches with keys 1-${possible.length} first, or press Enter to rethink.`
+        : "Press Enter (empty submit) to generate approaches for this path.";
+      return;
+    }
+    if (node.status === "unresolved") {
+      this.error = "Press Enter (empty submit) to generate approaches for this path.";
+      return;
+    }
+    this.error = `Nothing to develop here: this path is ${node.status}.`;
+  }
+
   async rethink(message?: string): Promise<void> {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
     const node = task.nodes[nodeId];
     if (!node) return;
     const text = message?.trim();
+    if (!this.runtime) {
+      if (!text) {
+        this.error = "No model is configured; there is nothing to rethink.";
+        return;
+      }
+      const row = this.selectedRow();
+      await this.dispatch("Saving message", async () => {
+        const constrained = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 18,
+          method: "node/constrain",
+          params: { taskId: task.id, expectedRevision: task.revision, nodeId, path: row?.entry.path && row.entry.path !== "." ? row.entry.path : undefined, text },
+        });
+        this.task = expectResult(constrained, PlanTaskLike.is) as PlanTask;
+        this.refresh();
+        this.message = `Message saved for ${row?.entry.path ?? "the task"}. No model is configured to regenerate it.`;
+      }, nodeId);
+      return;
+    }
     await this.dispatch("Rethinking selected path", async () => {
       let current = task;
       if (text) {
@@ -487,8 +540,8 @@ export class AugmentTuiController {
       this.refresh();
       this.selectNodeEntry(nodeId);
       const adopted = this.task.nodes[nodeId]?.status === "collapsed";
-      if (text) this.message = adopted ? "Approaches regenerated from your note; single viable approach adopted. Press F to expand it." : "Approaches regenerated from your note. Choose one with keys 1-7.";
-      else this.message = adopted ? "Approaches regenerated; single viable approach adopted. Press F to expand it." : "Approaches regenerated. Choose one with keys 1-7.";
+      if (text) this.message = adopted ? "Approaches regenerated from your note; single viable approach adopted. Press D to develop it." : "Approaches regenerated from your note. Choose one with keys 1-7.";
+      else this.message = adopted ? "Approaches regenerated; single viable approach adopted. Press D to develop it." : "Approaches regenerated. Choose one with keys 1-7.";
     }, nodeId);
   }
 

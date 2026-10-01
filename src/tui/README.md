@@ -56,8 +56,8 @@ After a task is entered and a model is configured, the TUI automatically generat
 1. describe the change
 2. inspect the suggested file tree
 3. choose an approach with 1-7
-4. press F to expand it into concrete files
-5. select a file and press D to draft its patch
+4. press D to develop the chosen approach into concrete files
+5. select a file and press D again to draft its patch
 6. press Enter on any path to attach a message/constraint
 ```
 
@@ -66,12 +66,10 @@ After a task is entered and a model is configured, the TUI automatically generat
 ```text
 N  start a new change plan
 E  start an explanation task
-Enter  attach a message and regenerate this path/subtree
+Enter  the universal prompt for the selected path: text becomes a message that regenerates its subtree; submitting empty rethinks it
 1-7  choose the numbered approach
-F  expand the chosen approach into files
-D  draft the selected file patch
+D  develop the selected path — a chosen approach expands into files, a planned file drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree
-G  rethink the selected path (prompts for an optional guiding message; submitting empty rethinks without one)
 L  lock/unlock the selected file or directory (before a task starts, locks are held for the next task and applied before its first model run; the model sees them as paths it must not change)
 O  reopen selected node with a reason
 S  mark a real path changed outside the plan

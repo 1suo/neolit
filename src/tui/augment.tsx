@@ -18,7 +18,7 @@ const theme = {
   text: "#c0caf5",
 };
 
-type InputMode = "idle" | "objective" | "explanation" | "message" | "rethink" | "reopen" | "stale";
+type InputMode = "idle" | "objective" | "explanation" | "message" | "reopen" | "stale";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -243,7 +243,8 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   const isDirectory = entry.kind === "dir" || entry.kind === "root";
   const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
 
-  if (nodes.length) {
+  const plannedChildren = isDirectory ? entry.children.filter((child) => entryHasPlan(child)) : [];
+  if (nodes.length || plannedChildren.length || possible.length || explanations.length || notes.length) {
     label("DESCRIPTION");
     for (const node of nodes) {
       add(`  ${node.reason}`, theme.text);
@@ -251,11 +252,8 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     }
   }
 
-  if (isDirectory) {
-    const plannedChildren = entry.children.filter((child) => entryHasPlan(child));
-    if (plannedChildren.length) {
-      label(`CONTENTS · ${plannedChildren.length} ${plannedChildren.length === 1 ? "entry" : "entries"}`);
-      for (const child of plannedChildren.slice(0, FOLDER_CONTENT_PREVIEW)) {
+  if (plannedChildren.length) {
+    for (const child of plannedChildren.slice(0, FOLDER_CONTENT_PREVIEW)) {
         const childLive: RowLiveFlags | undefined = live
           ? {
               active: entryTouchesNode(child, live.active?.nodeId),
@@ -274,15 +272,13 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
         }, pendingLocks, childLive, appliedDiffIds);
         const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
         add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${reason}` : ""}`, childState.color);
-      }
-      if (plannedChildren.length > FOLDER_CONTENT_PREVIEW) {
-        add(`  + ${plannedChildren.length - FOLDER_CONTENT_PREVIEW} more entries`, theme.muted);
-      }
+    }
+    if (plannedChildren.length > FOLDER_CONTENT_PREVIEW) {
+      add(`  + ${plannedChildren.length - FOLDER_CONTENT_PREVIEW} more entries`, theme.muted);
     }
   }
 
   if (possible.length) {
-    label("APPROACHES");
     possible.forEach((candidate, index) => {
       add(`  ${index + 1} ◇ ${candidate.label} · ${candidate.confidence}%`, statusColor(candidate.status));
       add(`  ${candidate.rationale}`, theme.muted);
@@ -290,28 +286,21 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     });
   }
 
-  if (explanations.length) {
-    label("EXPLANATION");
-    for (const explanation of explanations.slice(0, 8)) {
-      add(`? ${explanation.path} · ${explanation.role} · ${explanation.confidence}%`, explanation.role === "primary" ? theme.warning : theme.accent);
-      add(`  ${explanation.summary}`, theme.text);
-      add(`  ${explanation.detail}`, theme.muted);
-    }
-    if (explanations.length > 8) add(`  + ${explanations.length - 8} more related paths`, theme.muted);
+  for (const explanation of explanations.slice(0, 8)) {
+    add(`? ${explanation.path} · ${explanation.role} · ${explanation.confidence}%`, explanation.role === "primary" ? theme.warning : theme.accent);
+    add(`  ${explanation.summary}`, theme.text);
+    add(`  ${explanation.detail}`, theme.muted);
   }
+  if (explanations.length > 8) add(`  + ${explanations.length - 8} more related paths`, theme.muted);
 
-  if (notes.length) {
-    label("MESSAGES");
-    for (const note of notes) add(`  ${note.text}`, theme.warning);
-  }
+  for (const note of notes) add(`  ${note.text}`, theme.warning);
 
   if (diffs.length) {
     const appliedCount = diffs.filter((diff) => appliedDiffIds.includes(diff.id)).length;
     const appliedSuffix = appliedCount === diffs.length ? " · applied, not committed" : appliedCount ? ` · ${appliedCount}/${diffs.length} applied` : "";
-    label("CHANGES");
-    add(changeSummary(diffs) + appliedSuffix, state.color, true);
     if (isDirectory) {
-      label("EXACT DIFF");
+      label("CHANGES");
+      add(changeSummary(diffs) + appliedSuffix, state.color, true);
       for (const diff of diffs.slice(0, 3)) {
         add(`  ${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " · applied" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
         if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
@@ -323,7 +312,8 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     }
     else {
       const totalLines = diffs.reduce((count, diff) => count + diff.patch.split(/\r?\n/).length, 0);
-      label(`EXACT DIFF · ${totalLines} lines · basis ${diffs[0]!.basisRevision.slice(0, 12)}`);
+      label("CHANGES");
+      add(`${changeSummary(diffs)}${appliedSuffix} · ${totalLines} lines · basis ${diffs[0]!.basisRevision.slice(0, 12)}`, state.color, true);
       for (const diff of diffs) {
         add(`${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " · applied" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
         if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
@@ -334,9 +324,9 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   else {
     label("KEYS");
     if (!task) add("  [N] describe a change · [E] explain the repository", theme.primary);
-    else if (possible.length) add(`  1-${possible.length} choose approach · [G] rethink`, theme.primary);
-    else if (!isDirectory && nodes.length) add("  [D] draft this file's exact patch · [A] apply it after drafting", theme.primary);
-    else add("  [Enter] message/regenerate · [G] rethink · [D] draft selected file", theme.primary);
+    else if (possible.length) add(`  1-${possible.length} choose approach · [Enter] rethink (empty submit)`, theme.primary);
+    else if (!isDirectory && nodes.length) add("  [D] develop — drafts this file's exact patch · [A] apply after", theme.primary);
+    else add("  [Enter] message/regenerate · [D] develop selected path", theme.primary);
   }
 
   if (nodes.some((node) => node.challengeExhausted)) {
@@ -358,11 +348,10 @@ function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset
   );
 }
 
-function inputTitle(mode: InputMode): string {
+function inputTitle(mode: InputMode, target = "repo"): string {
   if (mode === "objective") return "What should change?";
   if (mode === "explanation") return "Explain what repository topic?";
-  if (mode === "message") return "Message about selected path";
-  if (mode === "rethink") return "Rethink how? (empty = fresh rethink)";
+  if (mode === "message") return `${target} · message (empty = rethink)`;
   if (mode === "reopen") return "Reason for reopening selected node";
   if (mode === "stale") return "Changed repository path";
   return "Message";
@@ -466,8 +455,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     cancelInput();
     if (activeMode === "objective") run(props.controller.start(value));
     else if (activeMode === "explanation") run(props.controller.startExplanation(value));
-    else if (activeMode === "message") run(props.controller.constrain(value));
-    else if (activeMode === "rethink") run(props.controller.rethink(value));
+    else if (activeMode === "message") run(props.controller.rethink(value));
     else if (activeMode === "reopen") run(props.controller.reopen(value));
     else if (activeMode === "stale") run(props.controller.markStale(value));
   };
@@ -537,9 +525,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
     else if (command === "n") beginInput("objective");
     else if (command === "e") beginInput("explanation");
-    else if (command === "g") beginInput("rethink");
-    else if (command === "f") run(props.controller.refine());
-    else if (command === "d") run(props.controller.draftPatch());
+    else if (command === "d") run(props.controller.develop());
     else if (command === "a") run(props.controller.applySelected());
     else if (command === "l") run(props.controller.toggleLock());
     else if (command === "o") beginInput("reopen");
@@ -611,17 +597,13 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       <Box paddingTop={1} flexShrink={0}>
         <Text wrap="truncate-end">
           <Text color={theme.primary} bold>[Enter]</Text>
-          <Text color={theme.primary}> message · </Text>
+          <Text color={theme.primary}> prompt/regenerate · </Text>
           <Text color={theme.primary} bold>[1-7]</Text>
           <Text color={theme.primary}> choose approach · </Text>
-          <Text color={theme.primary} bold>[F]</Text>
-          <Text color={theme.primary}> files · </Text>
           <Text color={theme.primary} bold>[D]</Text>
-          <Text color={theme.primary}> draft · </Text>
+          <Text color={theme.primary}> develop · </Text>
           <Text color={theme.primary} bold>[A]</Text>
           <Text color={theme.primary}> apply · </Text>
-          <Text color={theme.primary} bold>[G]</Text>
-          <Text color={theme.primary}> rethink · </Text>
           <Text color={theme.primary} bold>[L]</Text>
           <Text color={theme.primary}> lock · </Text>
           <Text color={theme.primary} bold>[E]</Text>
@@ -643,8 +625,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         </Box>
       ) : (
         <Box borderStyle="round" borderColor={theme.borderActive} paddingX={1} flexShrink={0}>
-          <Text color={theme.primary} bold>{inputTitle(mode)} › </Text>
-          <Text>{inputValue}<Text inverse> </Text>{inputValue ? "" : inputTitle(mode)}</Text>
+          <Text color={theme.primary} bold>{inputTitle(mode, selectedRow?.entry.path && selectedRow.entry.path !== "." ? selectedRow.entry.path : "repo")} › </Text>
+          <Text>{inputValue}<Text inverse> </Text>{inputValue ? "" : inputTitle(mode, selectedRow?.entry.path && selectedRow.entry.path !== "." ? selectedRow.entry.path : "repo")}</Text>
         </Box>
       )}
     </Box>
