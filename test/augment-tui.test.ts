@@ -368,18 +368,46 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().error).toContain("already has a drafted patch");
   });
 
-  it("develops through a refined folder: D drafts the next undrafted file", async () => {
-    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+  it("develops through refined directories: crystallize the next undrafted dir, then refine and draft it", async () => {
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") {
+          return { value: { candidates: [{ label: "Direct edit", rationale: "one family", confidence: 75, touchedPaths: ["src/auth/session.ts"] }] } };
+        }
+        if (request.operation === "challenge-domain") return { value: { kind: "accept" } };
+        if (request.operation === "refine-node") {
+          const parent = request.context.node.path;
+          if (parent === ".") {
+            return { value: { children: [
+              { kind: "dir", path: "src/auth", lod: "file", reason: "owns the session work" },
+              { kind: "file", path: "TODO-augment.md", lod: "file", reason: "track the gap" },
+            ] } };
+          }
+          return { value: { children: [{ kind: "file", path: "src/auth/session.ts", lod: "hunk", reason: "retry cutoff" }] } };
+        }
+        if (request.operation === "draft-patch") {
+          const path = request.context.node.path ?? "src/auth/session.ts";
+          return { value: { patch: `--- a/${path}\n+++ b/${path}\n`, assumptions: [] } };
+        }
+        throw new Error(`unexpected operation ${request.operation}`);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
     await controller.start("bounded retries", "commit:1");
     await controller.crystallize();
     controller.select("entry:.");
     await controller.develop();
+    expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "refined" });
+    expect(controller.snapshot().selectedRowId).toBe("entry:src/auth");
+    await controller.develop();
+    expect(controller.snapshot().message ?? controller.snapshot().error).toContain("Single viable approach adopted");
     await controller.develop();
     expect(controller.snapshot().selectedRowId).toBe("entry:src/auth/session.ts");
+    await controller.develop();
     expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(1);
     controller.select("entry:.");
     await controller.develop();
-    expect(controller.snapshot().selectedRowId).toBe("entry:test/auth/retry.test.ts");
+    expect(controller.snapshot().selectedRowId).toBe("entry:TODO-augment.md");
     expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(2);
     controller.select("entry:.");
     await controller.develop();

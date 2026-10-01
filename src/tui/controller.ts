@@ -574,22 +574,31 @@ export class AugmentTuiController {
       this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it.";
       return;
     }
+    if (!isFileTarget && node.status === "unresolved") return this.crystallize();
     if (!isFileTarget && ["refined", "ready"].includes(node.status)) {
-      const target = Object.values(task.nodes).find((candidate) => {
-        if (!["file", "hunk", "virtual"].includes(candidate.kind) || candidate.diffIds.length > 0) return false;
+      const isDescendant = (candidate: PlanTask["nodes"][string]) => {
         let ancestor = candidate.parent;
         while (ancestor) {
           if (ancestor === nodeId) return true;
           ancestor = task.nodes[ancestor]?.parent;
         }
         return false;
-      });
-      if (!target?.path) {
-        this.error = "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
+      };
+      const descendants = Object.values(task.nodes).filter((candidate) => candidate.id !== node.id && isDescendant(candidate));
+      const nextFile = descendants.find((candidate) => ["file", "hunk", "virtual"].includes(candidate.kind) && candidate.diffIds.length === 0);
+      if (nextFile?.path) {
+        this.select(`entry:${nextFile.path}`);
+        return this.draftPatch();
+      }
+      const nextDir = descendants.find((candidate) => candidate.kind === "dir" && candidate.diffIds.length === 0 && ["unresolved", "domain"].includes(candidate.status));
+      if (nextDir?.path) {
+        this.select(`entry:${nextDir.path}`);
+        if (nextDir.status === "unresolved") return this.crystallize();
+        this.error = `Choose an approach for ${nextDir.path} with keys 1-7, or press Enter to rethink it.`;
         return;
       }
-      this.select(`entry:${target.path}`);
-      return this.draftPatch();
+      this.error = "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
+      return;
     }
     if (node.status === "domain") {
       const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
