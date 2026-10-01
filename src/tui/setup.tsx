@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Box, Text, render, useInput } from "ink";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { agentBackends, backendById } from "./agent-backends.js";
 import { saveAugmentConfig, type AugmentConfig } from "./config.js";
 
@@ -24,7 +24,7 @@ export function pickerWindow(length: number, cursor: number, height: number = PI
   return { start, end: start + height };
 }
 
-function Picker(props: {
+export function Picker(props: {
   title: string;
   items: PickerItem[];
   currentId?: string;
@@ -39,11 +39,11 @@ function Picker(props: {
   const visible = filtered.slice(start, end);
 
   useInput((input, key) => {
-    if (key.upArrow || input === "k") {
+    if (key.upArrow) {
       setCursor(Math.max(0, safeCursor - 1));
       return;
     }
-    if (key.downArrow || input === "j") {
+    if (key.downArrow) {
       setCursor(Math.min(filtered.length - 1, safeCursor + 1));
       return;
     }
@@ -53,6 +53,11 @@ function Picker(props: {
       return;
     }
     if (key.escape) {
+      if (query) {
+        setQuery("");
+        setCursor(0);
+        return;
+      }
       props.onDone(undefined);
       return;
     }
@@ -75,7 +80,7 @@ function Picker(props: {
         const index = start + windowIndex;
         const selected = index === safeCursor;
         return (
-          <Box key={item.id} backgroundColor={selected ? "#24283b" : undefined}>
+          <Box key={`${start + windowIndex}:${item.id}`} backgroundColor={selected ? "#24283b" : undefined}>
             <Text wrap="truncate-end">
               <Text color={selected ? "#7aa2f7" : "#838aa0"}>{selected ? "❯ " : "  "}</Text>
               <Text color={item.id === props.currentId ? "#9ece6a" : "#c0caf5"} bold={selected}>{item.label}</Text>
@@ -90,7 +95,7 @@ function Picker(props: {
         <Text color="#838aa0">filter: </Text>
         <Text color="#c0caf5">{query || "—"}</Text>
       </Box>
-      <Text color="#838aa0">↑↓/jk move · type to filter · Enter select · Esc keep current</Text>
+      <Text color="#838aa0">↑↓ move · type to filter · Enter select · Esc clears filter, then keeps current</Text>
     </Box>
   );
 }
@@ -134,11 +139,29 @@ export function selectFromList(options: {
   });
 }
 
+/** Collapses duplicate catalog ids (providers repeat model ids) into picker items. */
+export function toPickerItems(models: string[]): PickerItem[] {
+  const seen = new Set<string>();
+  const items: PickerItem[] = [];
+  for (const id of models) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    items.push({ id, label: id });
+  }
+  return items;
+}
+
 /** Model ids a backend account actually offers; source explains where they came from. */
-export function availableModels(backendId: string, command: string): { models: string[]; source: string } {
+export async function availableModels(backendId: string, command: string): Promise<{ models: string[]; source: string }> {
+  const run = (args: string[]) => new Promise<string>((resolve, reject) => {
+    execFile(command, args, { timeout: 30_000 }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(String(stdout));
+    });
+  });
   if (backendId === "opencode") {
     try {
-      const stdout = execFileSync(command, ["api", "get", "/api/model"], { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "ignore"] });
+      const stdout = await run(["api", "get", "/api/model"]);
       const parsed = JSON.parse(stdout) as { data?: Array<{ modelID?: string; name?: string }> };
       const listed = (parsed.data ?? []).filter((entry) => typeof entry.modelID === "string");
       return { models: listed.map((entry) => entry.modelID!), source: `${command} api get /api/model` };
@@ -148,7 +171,7 @@ export function availableModels(backendId: string, command: string): { models: s
   }
   if (backendId === "claude") {
     try {
-      const stdout = execFileSync(command, ["model", "list"], { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "ignore"] });
+      const stdout = await run(["model", "list"]);
       const ids = stdout.split(/\r?\n/).map((line) => line.trim().split(/\s+/)[0]).filter((token) => token && !token.startsWith("("));
       if (ids.length) return { models: [...new Set(ids)], source: `${command} model list` };
     } catch {
@@ -185,8 +208,8 @@ export async function runSetupUi(config: AugmentConfig): Promise<AugmentConfig> 
   const backend = backendById(backendId);
   process.stdout.write(`agent → ${backendId}\n`);
 
-  const { models, source } = availableModels(backendId, backend.defaultCommand);
-  const items: PickerItem[] = models.map((id) => ({ id, label: id }));
+  const { models, source } = await availableModels(backendId, backend.defaultCommand);
+  const items: PickerItem[] = toPickerItems(models);
   const pickModel = async (role: string, current?: string): Promise<string | undefined> => {
     if (!items.length) return undefined;
     const chosen = await selectFromList({

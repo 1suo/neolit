@@ -258,6 +258,24 @@ export class AugmentTuiController {
     this.refresh();
   }
 
+  /** The active agent backend, for hosts that offer live model switching. */
+  runtimeAgent(): { backendId: string; command: string } | undefined {
+    const runtime = this.runtime as { backendId?: string; commandName?: string } | undefined;
+    return runtime?.backendId && runtime?.commandName ? { backendId: runtime.backendId, command: runtime.commandName } : undefined;
+  }
+
+  /** Reconfigure the live runtime's models without restarting the session. */
+  configureModels(update: { model?: string; draftModel?: string; challengeModel?: string }): void {
+    const runtime = this.runtime as { setModels?: (update: { model?: string; draftModel?: string; challengeModel?: string }) => void } | undefined;
+    if (!runtime?.setModels) {
+      this.error = "The active runtime does not support live model switching.";
+      return;
+    }
+    runtime.setModels(update);
+    const changed = Object.entries(update).filter(([, value]) => value !== undefined).map(([role, value]) => `${role}=${value}`);
+    this.message = `Models updated: ${changed.join(", ")}`;
+  }
+
   cancel(): void {
     const cancellable = this.runtime as { cancel?: () => void } | undefined;
     cancellable?.cancel?.();

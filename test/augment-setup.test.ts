@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Readable } from "node:stream";
-import { filterItems, pickerWindow, selectFromList } from "../src/tui/setup.js";
+import { filterItems, pickerWindow, selectFromList, toPickerItems } from "../src/tui/setup.js";
 
 describe("setup picker", () => {
   it("filters items across id, label, and hint", () => {
@@ -35,5 +35,37 @@ describe("setup picker", () => {
     await new Promise((resolve) => setImmediate(resolve));
     input.push("2\n");
     await expect(promise).resolves.toBe("claude");
+  });
+});
+
+describe("picker interaction fixes", () => {
+  it("collapses duplicate catalog model ids into unique items", () => {
+    const items = toPickerItems(["space-bunny-free", "glm-flash", "space-bunny-free", "space-bunny-free"]);
+    expect(items.map((item) => item.id)).toEqual(["space-bunny-free", "glm-flash"]);
+  });
+
+  it("lets j and k reach the filter instead of moving the cursor", async () => {
+    const { render: renderInk, cleanup } = await import("ink-testing-library");
+    const React = (await import("react")).default;
+    const Picker = (await import("../src/tui/setup.js")).Picker;
+    const instance = renderInk(React.createElement(Picker, {
+      title: "pick",
+      items: [
+        { id: "oak", label: "oak" },
+        { id: "jk-rowling", label: "jk-rowling" },
+      ],
+      onDone: () => {},
+    }));
+    instance.stdin.write("j");
+    instance.stdin.write("k");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(instance.lastFrame()).toContain("filter:");
+    expect(instance.lastFrame()).toContain("jk");
+    expect(instance.lastFrame()).toContain("jk-rowling");
+    instance.stdin.write("\u001b"); // Esc clears the filter first…
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(instance.lastFrame()).toContain("oak");
+    instance.unmount();
+    cleanup();
   });
 });

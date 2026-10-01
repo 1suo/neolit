@@ -142,6 +142,21 @@ interface OpenCodeCliResult {
  * routing while the planned-diff core remains host-neutral.
  */
 export class CliAgentRuntime implements ModelRuntime {
+  get backendId(): string {
+    return this.backend.id;
+  }
+
+  get commandName(): string {
+    return this.command;
+  }
+
+  /** Live model reconfiguration for hosts that switch models mid-session. */
+  setModels(update: { model?: string; draftModel?: string; challengeModel?: string }): void {
+    if (update.model !== undefined) this.model = update.model;
+    if (update.draftModel !== undefined) this.draftModel = update.draftModel;
+    if (update.challengeModel !== undefined) this.challengeModel = update.challengeModel;
+  }
+
   cancel(): void {
     for (const child of activeChildren) {
       if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
@@ -150,9 +165,9 @@ export class CliAgentRuntime implements ModelRuntime {
   readonly directory: string;
   private readonly backend: CliAgentBackend;
   private readonly command: string;
-  private readonly model?: string;
-  private readonly draftModel?: string;
-  private readonly challengeModel?: string;
+  private model?: string;
+  private draftModel?: string;
+  private challengeModel?: string;
   private readonly agent?: string;
   private readonly timeoutMs: number;
   private readonly autoApprove: boolean;
