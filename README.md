@@ -174,6 +174,8 @@ F      fold/unfold the selected directory
 H      toggle related-only view: just planned and marked paths, or the full repository
 E      explain selected path (whole repository when no task is active)
 N      new change task
+O      reopen selected node with a reason (discards its subtree and drafts)
+S      mark a repository path changed outside the plan (stale)
 Tab    switch pane
 Q      quit
 ```
