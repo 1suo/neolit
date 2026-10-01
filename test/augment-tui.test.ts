@@ -145,12 +145,12 @@ describe("augment TUI controller", () => {
     expect(initial.rows.find((row) => row.id === "entry:src/augment/state.ts")?.repositoryOnly).toBe(true);
 
     controller.select("entry:package.json");
-    await controller.toggleLock();
+    await controller.toggleRestriction("lock");
     expect(controller.snapshot().task?.lockedPaths).toEqual(["package.json"]);
     await controller.crystallize();
     expect(controller.snapshot().error).toContain("touches locked path");
 
-    await controller.toggleLock();
+    await controller.toggleRestriction("lock");
     expect(controller.snapshot().task?.lockedPaths).toEqual([]);
     await controller.crystallize();
     expect(controller.snapshot().error).toBeUndefined();
@@ -167,19 +167,19 @@ describe("augment TUI controller", () => {
     };
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
     controller.select("entry:package.json");
-    await controller.toggleLock();
+    await controller.toggleRestriction("lock");
     let snapshot = controller.snapshot();
     expect(snapshot.task).toBeUndefined();
-    expect(snapshot.pendingLocks).toEqual(["package.json"]);
+    expect(snapshot.pendingMarks).toEqual(["package.json"]);
 
-    await controller.toggleLock();
-    expect(controller.snapshot().pendingLocks).toEqual([]);
-    await controller.toggleLock();
-    expect(controller.snapshot().pendingLocks).toEqual(["package.json"]);
+    await controller.toggleRestriction("lock");
+    expect(controller.snapshot().pendingMarks).toEqual([]);
+    await controller.toggleRestriction("lock");
+    expect(controller.snapshot().pendingMarks).toEqual(["package.json"]);
 
     await controller.start("change package metadata", "commit:1");
     snapshot = controller.snapshot();
-    expect(snapshot.pendingLocks).toEqual([]);
+    expect(snapshot.pendingMarks).toEqual([]);
     expect(snapshot.task?.lockedPaths).toEqual(["package.json"]);
     await controller.crystallize();
     expect(controller.snapshot().error).toContain("touches locked path");
@@ -241,20 +241,22 @@ describe("augment TUI controller", () => {
     }
   });
 
-  it("enforces the allowlist: only allowed paths may change", async () => {
+  it("enforces one restriction plain: marks, polarity, and inversion", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     controller.select("entry:src/augment");
-    await controller.toggleAllow();
-    expect(controller.snapshot().pendingAllows).toEqual(["src/augment"]);
+    await controller.toggleRestriction("allow");
+    expect(controller.snapshot().pendingMarks).toEqual(["src/augment"]);
+    expect(controller.snapshot().pendingMode).toBe("allow");
     await controller.start("bounded retries", "commit:1");
-    expect(controller.snapshot().task?.allowedPaths).toEqual(["src/augment"]);
+    expect(controller.snapshot().task?.restrictionMode).toBe("allow");
+    expect(controller.snapshot().task?.lockedPaths).toEqual(["src/augment"]);
     await controller.crystallize();
-    expect(controller.snapshot().error).toContain("escapes the allowlist");
+    expect(controller.snapshot().error).toContain("escapes the allowed paths");
 
-    controller.select("entry:src/augment");
-    await controller.toggleAllow();
-    expect(controller.snapshot().task?.allowedPaths).toEqual([]);
-    await controller.crystallize();
+    await controller.toggleRestriction("lock");
+    expect(controller.snapshot().task?.restrictionMode).toBe("lock");
+    expect(controller.snapshot().task?.lockedPaths).toEqual(["src/augment"]);
+    await controller.rethink();
     expect(controller.snapshot().error).toBeUndefined();
     expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "collapsed" });
   });
@@ -522,11 +524,11 @@ describe("augment TUI apply", () => {
 
     const appliedRow = snapshot.rows.find((row) => row.id === "entry:session.ts");
     const detail = detailLines(snapshot.task, appliedRow, [], undefined, snapshot.appliedDiffIds).map((line) => line.text);
-    expect(detail.join("\n")).toContain("applied, not committed");
-    expect(detail.some((line) => line.includes("session.ts · changed · applied"))).toBe(true);
+    expect(detail.join("\n")).toContain("1 changed ✓");
+    expect(detail.some((line) => line.includes("session.ts · changed ✓"))).toBe(true);
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
     expect(output).toContain("✓ session.ts");
-    expect(output).toContain("applied");
+    expect(output).toContain("Applied 1 drafted change");
   });
 
   it("rejects the whole apply when the preflight fails and leaves the tree untouched", async () => {

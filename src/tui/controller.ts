@@ -24,8 +24,8 @@ export interface TuiActionState {
   operation?: string;
   message: string;
   error?: string;
-  pendingLocks: string[];
-  pendingAllows: string[];
+  pendingMarks: string[];
+  pendingMode: "lock" | "allow";
   appliedDiffIds: string[];
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
@@ -217,8 +217,8 @@ export class AugmentTuiController {
   private readonly persistTasks: boolean;
   private repository: PlanTreeEntry;
   private task?: PlanTask;
-  private pendingLocks: string[] = [];
-  private pendingAllows: string[] = [];
+  private pendingMarks: string[] = [];
+  private pendingMode: "lock" | "allow" = "lock";
   private readonly appliedDiffIds = new Set<string>();
   private activeNodeId?: string;
   private failedNodeId?: string;
@@ -265,8 +265,8 @@ export class AugmentTuiController {
       operation: this.operation,
       message: this.message,
       error: this.error,
-      pendingLocks: [...this.pendingLocks],
-      pendingAllows: [...this.pendingAllows],
+      pendingMarks: [...this.pendingMarks],
+      pendingMode: this.pendingMode,
       appliedDiffIds: [...this.appliedDiffIds],
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
@@ -303,26 +303,26 @@ export class AugmentTuiController {
     await this.dispatch("Starting plan", async () => {
       const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision, mode: "change" } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
-      for (const lockPath of this.pendingLocks) {
-        const locked = await this.server.handle({
+      if (this.pendingMode !== "lock" || this.pendingMarks.length) {
+        const restricted = await this.server.handle({
           jsonrpc: "2.0",
           id: 15,
-          method: "path/lock",
-          params: { taskId: this.task.id, expectedRevision: this.task.revision, path: lockPath, locked: true },
+          method: "path/restrict",
+          params: { taskId: this.task.id, expectedRevision: this.task.revision, mode: this.pendingMode },
         });
-        this.task = expectResult(locked, PlanTaskLike.is) as PlanTask;
+        this.task = expectResult(restricted, PlanTaskLike.is) as PlanTask;
+        for (const markPath of this.pendingMarks) {
+          const marked = await this.server.handle({
+            jsonrpc: "2.0",
+            id: 19,
+            method: "path/restrict",
+            params: { taskId: this.task.id, expectedRevision: this.task.revision, path: markPath, mode: this.pendingMode, marked: true },
+          });
+          this.task = expectResult(marked, PlanTaskLike.is) as PlanTask;
+        }
       }
-      for (const allowPath of this.pendingAllows) {
-        const allowed = await this.server.handle({
-          jsonrpc: "2.0",
-          id: 19,
-          method: "path/allow",
-          params: { taskId: this.task.id, expectedRevision: this.task.revision, path: allowPath, allowed: true },
-        });
-        this.task = expectResult(allowed, PlanTaskLike.is) as PlanTask;
-      }
-      this.pendingLocks = [];
-      this.pendingAllows = [];
+      this.pendingMarks = [];
+      this.pendingMode = "lock";
       this.refresh();
       this.message = this.runtime ? "Generating approaches..." : `Plan started at ${this.task.basisRevision}. No model is configured.`;
     });
@@ -650,57 +650,45 @@ export class AugmentTuiController {
     });
   }
 
-  async toggleLock(): Promise<void> {
+  /**
+   * The single restriction control. Pressing the other polarity inverts the
+   * plain (the marked set stays, its meaning flips); pressing the current
+   * polarity toggles the selected path's mark. On the repository root only
+   * the polarity flips — that is the invert action.
+   */
+  async toggleRestriction(mode: "lock" | "allow"): Promise<void> {
     const row = this.selectedRow();
-    const targetPath = row?.entry.path;
-    if (!targetPath || targetPath === ".") {
-      this.error = "Select a file or directory to lock.";
-      return;
-    }
+    const targetPath = row?.entry.path && row.entry.path !== "." ? row.entry.path : undefined;
     if (!this.task) {
-      const locked = this.pendingLocks.includes(targetPath);
-      this.pendingLocks = locked ? this.pendingLocks.filter((lockedPath) => lockedPath !== targetPath) : [...this.pendingLocks, targetPath];
-      this.message = `${targetPath} is ${locked ? "unlocked" : "locked"} for the next task; the model will be told not to change it.`;
+      const inverts = this.pendingMode !== mode && this.pendingMarks.length > 0;
+      this.pendingMode = mode;
+      if (!inverts && targetPath) {
+        this.pendingMarks = this.pendingMarks.includes(targetPath)
+          ? this.pendingMarks.filter((mark) => mark !== targetPath)
+          : [...this.pendingMarks, targetPath];
+      }
+      const noun = this.pendingMode === "lock" ? "Locked" : "Allowed";
+      this.message = this.pendingMarks.length
+        ? `${noun}: ${this.pendingMarks.join(", ")}`
+        : this.pendingMode === "lock" ? "No marks; everything may change." : "Allow mode with no marks; nothing may change.";
       return;
     }
-    const locked = pathIsLocked(this.task, targetPath);
-    await this.dispatch(locked ? "Unlocking path" : "Locking path", async () => {
+    const modeChanged = this.task.restrictionMode !== mode;
+    const inverts = modeChanged && this.task.lockedPaths.length > 0;
+    const marked = targetPath ? this.task.lockedPaths.includes(targetPath) : false;
+    await this.dispatch(inverts ? `Inverting to ${mode} mode` : marked ? "Unmarking path" : "Marking path", async () => {
       const response = await this.server.handle({
         jsonrpc: "2.0",
-        id: 12,
-        method: "path/lock",
-        params: { taskId: this.task!.id, expectedRevision: this.task!.revision, path: targetPath, locked: !locked },
+        id: 22,
+        method: "path/restrict",
+        params: { taskId: this.task!.id, expectedRevision: this.task!.revision, path: inverts ? undefined : targetPath, mode, marked: targetPath !== undefined && !inverts ? !marked : undefined },
       });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.refresh();
-      this.message = `${targetPath} is ${locked ? "unlocked" : "locked"} for this run.`;
-    });
-  }
-
-  async toggleAllow(): Promise<void> {
-    const row = this.selectedRow();
-    const targetPath = row?.entry.path;
-    if (!targetPath || targetPath === ".") {
-      this.error = "Select a file or directory to allow.";
-      return;
-    }
-    if (!this.task) {
-      const allowed = this.pendingAllows.includes(targetPath);
-      this.pendingAllows = allowed ? this.pendingAllows.filter((allowedPath) => allowedPath !== targetPath) : [...this.pendingAllows, targetPath];
-      this.message = `${targetPath} is ${allowed ? "back to normal" : "allowed"} for the next task; while the allowlist is non-empty, only allowed paths may change.`;
-      return;
-    }
-    const allowed = this.task.allowedPaths.includes(targetPath);
-    await this.dispatch(allowed ? "Disallowing path" : "Allowing path", async () => {
-      const response = await this.server.handle({
-        jsonrpc: "2.0",
-        id: 20,
-        method: "path/allow",
-        params: { taskId: this.task!.id, expectedRevision: this.task!.revision, path: targetPath, allowed: !allowed },
-      });
-      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
-      this.refresh();
-      this.message = `${targetPath} is ${allowed ? "back to normal" : "allowed"} for this run; ${allowed && !this.task.allowedPaths.length ? "the allowlist is now empty, so every path may change again." : "only allowed paths may change."}`;
+      const polarity = this.task.restrictionMode === "lock" ? "locked" : "allowed";
+      this.message = this.task.lockedPaths.length
+        ? `${polarity[0]!.toUpperCase()}${polarity.slice(1)}: ${this.task.lockedPaths.join(", ")}`
+        : "No marked paths; everything may change.";
     });
   }
 

@@ -11,7 +11,7 @@ import {
   refineNode,
   rejectCandidate,
   reopenNode,
-  setPathLock,
+  setPathRestriction,
   classifyPatchKind,
 } from "../src/augment/state.js";
 
@@ -146,7 +146,7 @@ describe("planned diff state", () => {
   });
 
   it("locks paths against candidates, refinement, and patches", () => {
-    const locked = setPathLock(task(), { taskId: "task:1", expectedRevision: 1, path: "src/auth", locked: true });
+    const locked = setPathRestriction(task(), { taskId: "task:1", expectedRevision: 1, path: "src/auth", mode: "lock", marked: true });
     expect(locked.lockedPaths).toEqual(["src/auth"]);
     expect(() => generateDomain(locked, {
       taskId: locked.id,
@@ -155,7 +155,7 @@ describe("planned diff state", () => {
       candidates: [{ label: "Forbidden", rationale: "touches lock", confidence: 90, touchedPaths: ["src/auth/session.ts"] }],
     })).toThrow(/touches locked path/u);
 
-    const unlocked = setPathLock(locked, { taskId: locked.id, expectedRevision: locked.revision, path: "src/auth", locked: false });
+    const unlocked = setPathRestriction(locked, { taskId: locked.id, expectedRevision: locked.revision, path: "src/auth", mode: "lock", marked: false });
     expect(unlocked.lockedPaths).toEqual([]);
   });
 

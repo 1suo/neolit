@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput, useWindowSize, type RenderOptions } from "ink";
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
-import { pathIsLocked, pathIsAllowed } from "../augment/state.js";
 import { AugmentTuiController, candidatesForEntry, entryHasPlan, type PlannedTreeRow, type TuiActionState } from "./controller.js";
 
 const theme = {
@@ -71,25 +70,7 @@ function diffIndicator(kind: PlannedDiff["kind"]): string {
   return "▤";
 }
 
-function diffState(diffs: PlannedDiff[]): { indicator: string; state: string; color: string } | undefined {
-  if (!diffs.length) return undefined;
-  const counts = diffs.reduce((accumulator, diff) => {
-    accumulator[diff.kind] = (accumulator[diff.kind] ?? 0) + 1;
-    return accumulator;
-  }, {} as Record<PlannedDiff["kind"], number>);
-  if (diffs.length === 1) {
-    const diff = diffs[0]!;
-    return { indicator: diffIndicator(diff.kind), state: diffLabel(diff.kind), color: diff.kind === "delete" ? theme.error : theme.success };
-  }
-  const parts: string[] = [];
-  if (counts.new) parts.push(`+${counts.new}`);
-  if (counts.modify) parts.push(`~${counts.modify}`);
-  if (counts.delete) parts.push(`-${counts.delete}`);
-  if (counts.unknown) parts.push(`▤${counts.unknown}`);
-  return { indicator: "Δ", state: parts.join(" "), color: counts.delete ? theme.warning : theme.success };
-}
-
-function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLocks: string[] = [], live?: RowLiveFlags, appliedDiffIds: string[] = [], pendingAllows: string[] = []): { indicator: string; state: string; color: string } {
+function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingMarks: string[] = [], live?: RowLiveFlags, appliedDiffIds: string[] = [], pendingMode: "lock" | "allow" = "lock"): { indicator: string; suffix: string; color: string } {
   const entry = row.entry;
   const candidates = candidatesForEntry(task, entry);
   const selected = candidates.find((candidate) => candidate.status === "selected");
@@ -98,58 +79,56 @@ function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingLock
   const explanations = entry.explanationIds.map((id) => task?.explanations[id]).filter(Boolean);
   const blocked = entry.nodeIds.some((id) => ["stale", "blocked"].includes(task?.nodes[id]?.status ?? ""));
   const ready = entry.nodeIds.some((id) => task?.nodes[id]?.status === "ready");
-  const locked = entry.path !== "." && ((task && pathIsLocked(task, entry.path)) || pendingLocks.includes(entry.path));
+  const mode = task?.restrictionMode ?? pendingMode;
+  const marked = entry.path !== "." && (task
+    ? task.lockedPaths.some((mark) => entry.path === mark || entry.path.startsWith(`${mark}/`))
+    : pendingMarks.includes(entry.path));
   const applied = diffs.filter((diff) => appliedDiffIds.includes(diff.id));
-  const drafted = diffState(diffs);
 
-  if (live?.active) return { indicator: live.spinner ?? "⠋", state: `${(live.operation ?? "working").toLowerCase()}…`, color: theme.warning };
-  if (live?.failed) return { indicator: "×", state: "failed · see preview", color: theme.error };
-  if (locked) return { indicator: "#", state: "locked", color: theme.error };
-  if ((task?.allowedPaths.length && entry.path !== "." && pathIsAllowed(task, entry.path)) || pendingAllows.includes(entry.path)) {
-    return { indicator: "○", state: "allowed", color: theme.accent };
-  }
+  if (live?.active) return { indicator: live.spinner ?? "⠋", suffix: "", color: theme.warning };
+  if (live?.failed) return { indicator: "×", suffix: "", color: theme.error };
+  if (marked) return { indicator: "#", suffix: diffs.length ? `+${diffs.length}` : "", color: mode === "lock" ? theme.error : theme.accent };
   if (explanations.length) {
     const primary = explanations.some((explanation) => explanation!.role === "primary");
-    return { indicator: "?", state: `${primary ? "primary" : "related"} ${explanations.length}`, color: primary ? theme.warning : theme.accent };
+    return { indicator: "?", suffix: explanations.length > 1 ? `${explanations.length}` : "", color: primary ? theme.warning : theme.accent };
   }
-  if (blocked) return { indicator: "!", state: "needs refresh", color: theme.error };
-  if (applied.length) return { indicator: "✓", state: applied.length === diffs.length ? "applied" : `applied ${applied.length}/${diffs.length}`, color: theme.success };
-  if (drafted) return drafted;
-  if (entry.nodeIds.length && entry.kind !== "root") return { indicator: "~", state: "planned", color: theme.text };
-  if (ready) return { indicator: "●", state: "ready", color: theme.success };
-  if (selected && entry.kind !== "root") return { indicator: "◇", state: `chosen · ${selected.confidence}%`, color: theme.secondary };
-  if (selected) return { indicator: "◆", state: `chosen · ${selected.confidence}%`, color: theme.secondary };
+  if (blocked) return { indicator: "!", suffix: "", color: theme.error };
+  if (applied.length) return { indicator: "✓", suffix: applied.length < diffs.length ? `${applied.length}/${diffs.length}` : "", color: theme.success };
+  if (diffs.length) {
+    const single = diffs.length === 1;
+    return { indicator: single ? diffIndicator(diffs[0]!.kind) : "Δ", suffix: single ? "" : `${diffs.length}`, color: diffs.some((diff) => diff.kind === "delete") ? theme.error : theme.success };
+  }
+  if (entry.nodeIds.length && entry.kind !== "root") return { indicator: "~", suffix: "", color: theme.text };
+  if (ready) return { indicator: "●", suffix: "", color: theme.success };
+  if (selected) return { indicator: entry.kind !== "root" ? "◇" : "◆", suffix: `${selected.confidence}%`, color: theme.secondary };
   if (possible.length) {
     const best = Math.max(...possible.map((candidate) => candidate.confidence));
-    return { indicator: "◇", state: `${possible.length} choices · best ${best}%`, color: theme.warning };
+    return { indicator: "◇", suffix: `${possible.length}·${best}%`, color: theme.warning };
   }
-  if (row.repositoryOnly) return { indicator: "", state: "", color: theme.muted };
-  return { indicator: "·", state: "suggested", color: theme.muted };
+  if (row.repositoryOnly) return { indicator: "", suffix: "", color: theme.muted };
+  return { indicator: "·", suffix: "", color: theme.muted };
 }
 
-const STATE_COLUMN = 22;
-
-function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingLocks?: string[]; live?: RowLiveFlags; appliedDiffIds?: string[]; pendingAllows?: string[] }) {
-  const state = entryState(props.task, props.row, props.pendingLocks, props.live, props.appliedDiffIds, props.pendingAllows);
-  const leftWidth = Math.max(20, props.width - STATE_COLUMN);
-  const prefix = `${props.row.branch}${state.indicator ? `${state.indicator} ` : ""}`;
-  const name = entryName(props.row.entry);
-  const prefixWidth = [...prefix].length;
-  const nameBudget = leftWidth - prefixWidth;
-  const shown = [...name].length >= nameBudget ? crop(name, Math.max(3, nameBudget - 1)) : name;
-  const pad = nameBudget - [...shown].length > 0 ? " ".repeat(nameBudget - [...shown].length) : " ";
+function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingMarks?: string[]; live?: RowLiveFlags; appliedDiffIds?: string[]; pendingMode?: "lock" | "allow" }) {
+  const state = entryState(props.task, props.row, props.pendingMarks, props.live, props.appliedDiffIds, props.pendingMode);
   return (
     <Box backgroundColor={props.selected ? theme.selected : undefined}>
       <Text wrap="truncate-end">
-        {prefix}
+        {props.row.branch}
+        {state.indicator ? <Text color={state.color}>{state.indicator}</Text> : null}
+        {state.indicator ? " " : null}
         <Text
           color={props.row.repositoryOnly ? theme.muted : props.row.entry.kind === "dir" ? theme.accent : theme.text}
           bold={!props.row.repositoryOnly}
         >
-          {shown}
+          {entryName(props.row.entry)}
         </Text>
-        {pad}
-        <Text color={state.color}>{state.state}</Text>
+        {state.suffix ? (
+          <>
+            {" "}
+            <Text color={theme.muted}>{state.suffix}</Text>
+          </>
+        ) : null}
       </Text>
     </Box>
   );
@@ -214,7 +193,7 @@ const FOLDER_PATCH_PREVIEW = 4;
  * anything to show. Approaches appear only while a choice is still open on
  * this node; after selection they are history, not hover content.
  */
-export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = [], live?: LiveStatus, appliedDiffIds: string[] = [], pendingAllows: string[] = []): DetailLine[] {
+export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingMarks: string[] = [], live?: LiveStatus, appliedDiffIds: string[] = [], pendingMode: "lock" | "allow" = "lock"): DetailLine[] {
   const lines: DetailLine[] = [];
   const add = (text: string, color: string, bold = false) => lines.push({ text: text.length ? text : " ", color, bold });
   const label = (text: string) => add(text, theme.muted);
@@ -227,7 +206,6 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     add(`× ${live.failed.operation ?? "Last operation"} failed — press the same key again to retry`, theme.error, true);
     if (live.failed.error) add(`  ${live.failed.error.split(/\r?\n/)[0] ?? ""}`, theme.error);
   }
-  if (task?.allowedPaths.length) add("Allowlist active — only ○ allowed paths may change", theme.accent);
   if (!row) {
     add("  [N] describe a change · [E] explain the repository", theme.muted);
     return lines;
@@ -242,7 +220,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   });
   const notes = constraintsForEntry(task, entry);
   const explanations = explanationsForEntry(task, entry);
-  const state = entryState(task, row, pendingLocks, undefined, appliedDiffIds, pendingAllows);
+  const state = entryState(task, row, pendingMarks, undefined, appliedDiffIds, pendingMode);
   const isDirectory = entry.kind === "dir" || entry.kind === "root";
   const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
 
@@ -272,9 +250,9 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
           branch: "",
           entry: child,
           repositoryOnly: false,
-        }, pendingLocks, childLive, appliedDiffIds, pendingAllows);
+        }, pendingMarks, childLive, appliedDiffIds, pendingMode);
         const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
-        add(`  ${childState.indicator} ${entryName(child)} · ${childState.state}${reason ? ` — ${reason}` : ""}`, childState.color);
+        add(`  ${childState.indicator} ${entryName(child)}${childState.suffix ? ` ${childState.suffix}` : ""}${reason ? ` — ${reason}` : ""}`, childState.color);
     }
     if (plannedChildren.length > FOLDER_CONTENT_PREVIEW) {
       add(`  + ${plannedChildren.length - FOLDER_CONTENT_PREVIEW} more entries`, theme.muted);
@@ -300,12 +278,12 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
 
   if (diffs.length) {
     const appliedCount = diffs.filter((diff) => appliedDiffIds.includes(diff.id)).length;
-    const appliedSuffix = appliedCount === diffs.length ? " · applied, not committed" : appliedCount ? ` · ${appliedCount}/${diffs.length} applied` : "";
+    const appliedSuffix = appliedCount === diffs.length ? " ✓" : appliedCount ? ` · ${appliedCount}/${diffs.length} ✓` : "";
     if (isDirectory) {
       label("CHANGES");
       add(changeSummary(diffs) + appliedSuffix, state.color, true);
       for (const diff of diffs.slice(0, 3)) {
-        add(`  ${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " · applied" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
+        add(`  ${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " ✓" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
         if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
         const patchLines = diff.patch.split(/\r?\n/);
         for (const line of patchLines.slice(0, FOLDER_PATCH_PREVIEW)) add(`  ${line}`, diffColor(line));
@@ -318,7 +296,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
       label("CHANGES");
       add(`${changeSummary(diffs)}${appliedSuffix} · ${totalLines} lines · basis ${diffs[0]!.basisRevision.slice(0, 12)}`, state.color, true);
       for (const diff of diffs) {
-        add(`${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " · applied" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
+        add(`${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " ✓" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
         if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
         for (const line of diff.patch.split(/\r?\n/)) add(line, diffColor(line));
       }
@@ -332,13 +310,13 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   }
 
   if (nodes.some((node) => node.challengeExhausted)) {
-    add("BOUNDED CHALLENGE · omissions were found; coverage is not proven", theme.warning);
+    add("⚠ coverage unproven", theme.warning);
   }
   return lines;
 }
 
 function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; live?: LiveStatus }) {
-  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds, props.state.pendingAllows), [props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds, props.state.pendingAllows]);
+  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingMarks, props.live, props.state.appliedDiffIds, props.state.pendingMode), [props.state.task, props.row, props.state.pendingMarks, props.live, props.state.appliedDiffIds, props.state.pendingMode]);
   const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
   const visible = lines.slice(clamped, clamped + props.limit);
   return (
@@ -529,8 +507,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     else if (command === "e") beginInput("explanation");
     else if (command === "d") run(props.controller.develop());
     else if (command === "a") run(props.controller.applySelected());
-    else if (command === "l") run(props.controller.toggleLock());
-    else if (command === "w") run(props.controller.toggleAllow());
+    else if (command === "l") run(props.controller.toggleRestriction("lock"));
+    else if (command === "w") run(props.controller.toggleRestriction("allow"));
     else if (command === "o") beginInput("reopen");
     else if (command === "s") beginInput("stale");
   });
@@ -559,6 +537,11 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         <Text color={theme.primary} bold>NEOLIT</Text>
         <Text color={state.error ? theme.error : status === "IDLE" ? theme.muted : theme.success}>[{status}]</Text>
         <Text color={theme.secondary}>[{state.task?.mode === "explanation" ? "EXPLANATION" : "PLANNED CHANGE"}]</Text>
+        {(state.task?.lockedPaths.length ?? 0) > 0 || state.pendingMarks.length > 0 ? (
+          <Text color={(state.task?.restrictionMode ?? state.pendingMode) === "lock" ? theme.error : theme.accent}>
+            [{(state.task?.restrictionMode ?? state.pendingMode) === "lock" ? "LOCK" : "ALLOW"} {state.task?.lockedPaths.length ?? state.pendingMarks.length}]
+          </Text>
+        ) : null}
         {state.task ? (
           <Text color={theme.muted}>r{state.task.revision} · {state.task.basisRevision.slice(0, 12)}</Text>
         ) : null}
@@ -581,10 +564,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
                 task={state.task}
                 selected={state.selectedRowId === row.id}
                 width={treeWidth}
-                pendingLocks={state.pendingLocks}
+                pendingMarks={state.pendingMarks}
                 live={activeRow || failedRow ? { active: activeRow, failed: failedRow, spinner, operation: state.active?.operation } : undefined}
                 appliedDiffIds={state.appliedDiffIds}
-                pendingAllows={state.pendingAllows}
+                pendingMode={state.pendingMode}
               />
             );
           })}

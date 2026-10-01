@@ -1,4 +1,4 @@
-import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, replacePatch, setPathAllow, setPathLock } from "../augment/state.js";
+import { createPlanTask, addConstraint, markPathStale, planTree, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
 import { crystallizeNode, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
 import type { LOD, ModelRuntime, PlanTask, Temperature } from "../augment/types.js";
 
@@ -177,24 +177,15 @@ export class AugmentServer {
         this.tasks.set(updated.id, updated);
         return updated;
       }
-      case "path/lock": {
+      case "path/restrict": {
         const base = taskMutation(params);
         const input = object(params);
-        const updated = setPathLock(this.requireTask(base.taskId), {
+        const mode = input.mode === "allow" ? "allow" : "lock";
+        const updated = setPathRestriction(this.requireTask(base.taskId), {
           ...base,
-          path: string(input.path, "path"),
-          locked: input.locked !== false,
-        });
-        this.tasks.set(updated.id, updated);
-        return updated;
-      }
-      case "path/allow": {
-        const base = taskMutation(params);
-        const input = object(params);
-        const updated = setPathAllow(this.requireTask(base.taskId), {
-          ...base,
-          path: string(input.path, "path"),
-          allowed: input.allowed !== false,
+          path: typeof input.path === "string" ? input.path : undefined,
+          mode,
+          marked: input.marked === undefined ? undefined : input.marked !== false,
         });
         this.tasks.set(updated.id, updated);
         return updated;

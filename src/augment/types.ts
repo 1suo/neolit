@@ -111,7 +111,7 @@ export interface PlanTask {
   revision: PlanRevision;
   rootNodeId: PlanNodeId;
   lockedPaths: string[];
-  allowedPaths: string[];
+  restrictionMode: "lock" | "allow";
   nodes: Record<PlanNodeId, PlanNode>;
   candidates: Record<PlanCandidateId, PlanCandidate>;
   constraints: Record<PlanConstraintId, PlanConstraint>;
@@ -138,8 +138,9 @@ export type PlanEvent =
   | { type: "node-staled"; revision: PlanRevision; nodeId: PlanNodeId; path: string }
   | { type: "path-locked"; revision: PlanRevision; path: string }
   | { type: "path-unlocked"; revision: PlanRevision; path: string }
-  | { type: "path-allowed"; revision: PlanRevision; path: string }
-  | { type: "path-disallowed"; revision: PlanRevision; path: string }
+  | { type: "path-marked"; revision: PlanRevision; mode: "lock" | "allow"; path: string }
+  | { type: "path-unmarked"; revision: PlanRevision; mode: "lock" | "allow"; path: string }
+  | { type: "restriction-mode"; revision: PlanRevision; mode: "lock" | "allow" }
   | { type: "node-blocked"; revision: PlanRevision; nodeId: PlanNodeId; reason: string };
 
 export interface PlanTreeEntry {
@@ -178,7 +179,7 @@ export interface ModelContextPacket {
   taskDiffs: PlannedDiff[];
   taskTree: Array<{ path: string; kind: PlanNode["kind"]; status: PlanNodeStatus; drafted: boolean }>;
   lockedPaths: string[];
-  allowedPaths: string[];
+  restrictionMode: "lock" | "allow";
   rejectedCandidates: Array<{ label: string; reason: string }>;
 }
 

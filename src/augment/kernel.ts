@@ -108,7 +108,7 @@ function context(task: PlanTask, node: PlanNode): ModelContextPacket {
     taskDiffs: Object.values(task.diffs),
     taskTree: compactTree(task),
     lockedPaths: task.lockedPaths,
-    allowedPaths: task.allowedPaths,
+    restrictionMode: task.restrictionMode,
     rejectedCandidates: rejected,
   };
 }
