@@ -1214,6 +1214,53 @@ describe("OpenCode CLI runtime parsing", () => {
     expect(fs.readFileSync(capture, "utf8")).toContain("--model fast/challenge");
   });
 
+  it("corrects reasoning-only replies and retries with an explicit instruction", async () => {
+    const log = path.join(os.tmpdir(), `augment-reasoning-log-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(log);
+    const reasoningOnly = JSON.stringify({ type: "message", parts: [{ type: "reasoning", text: "the model thought about the patch and stopped" }] });
+    const answered = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
+    const seen1 = path.join(os.tmpdir(), `augment-reasoning-1-${process.pid}-${temporaryFiles.length}.flag`);
+    const seen2 = path.join(os.tmpdir(), `augment-reasoning-2-${process.pid}-${temporaryFiles.length}.flag`);
+    temporaryFiles.push(seen1, seen2);
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, [
+      "#!/bin/sh",
+      `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
+      `if [ -f ${JSON.stringify(seen2)} ]; then printf '%s' ${JSON.stringify(answered)};`,
+      `elif [ -f ${JSON.stringify(seen1)} ]; then touch ${JSON.stringify(seen2)}; printf '%s' ${JSON.stringify(reasoningOnly)};`,
+      `else touch ${JSON.stringify(seen1)}; printf '%s' ${JSON.stringify(reasoningOnly)}; fi`,
+      "",
+    ].join("\n"));
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000, retryDelayMs: 1 });
+    const result = await runtime.call({
+      operation: "challenge-domain",
+      context: {
+        taskId: "task:reasoning",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: {} as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        taskDiffs: [],
+        taskTree: [],
+        lockedPaths: [],
+        restrictionMode: "lock",
+        rejectedCandidates: [],
+      },
+      temperature: "normal",
+      lod: "file",
+    });
+    expect(result.value).toEqual({ kind: "accept" });
+    const logged = fs.readFileSync(log, "utf8");
+    expect(logged).toContain("contained no answer text");
+    expect(logged.match(/--title augment-challenge-domain/g)?.length).toBe(3);
+  });
+
   it("retries transient provider failures with backoff and then succeeds", async () => {
     const marker = path.join(os.tmpdir(), `augment-retried-${process.pid}-${temporaryFiles.length}.flag`);
     const log = path.join(os.tmpdir(), `augment-retry-log-${process.pid}-${temporaryFiles.length}.txt`);

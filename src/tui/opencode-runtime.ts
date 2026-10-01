@@ -16,13 +16,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function noJsonObjectMessage(operation: string, text: string): string {
+function noJsonObjectMessage(operation: string, text: string, reasoningOnly: boolean): string {
   const trimmed = text.trim();
-  const truncated = trimmed && !trimmed.endsWith("}") && !trimmed.endsWith("```")
-    ? " The response looks truncated before completing the JSON object; ask for terser output or press the key again to retry."
-    : "";
-  return `OpenCode returned no JSON object for ${operation}:${truncated}\n${text.slice(0, 2000)}`;
+  const hint = reasoningOnly
+    ? " the model reasoned but wrote no answer text"
+    : !trimmed
+      ? " the reply was empty"
+      : !trimmed.endsWith("}") && !trimmed.endsWith("```")
+        ? " The response looks truncated before completing the JSON object; ask for terser output or press the key again to retry."
+        : "";
+  return `OpenCode returned no JSON object for ${operation}:${hint}\n${text.slice(0, 2000)}`;
 }
+
+const NO_ANSWER_TEXT_CORRECTION = "Your previous reply contained no answer text — it was empty or reasoning-only. Return the JSON object now as your actual reply text; do not stop after thinking.";
 
 function sessionsStorePath(): string {
   const base = process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim()
@@ -170,7 +176,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     const correction = DRAFT_OPERATIONS.has(request.operation)
       ? draftCorrection(completed.value, this.directory, request.context.taskDiffs, request.context.node?.id)
       : undefined;
-    if (correction) completed = await this.complete(request, correction);
+    if (correction) completed = await this.complete(request, [correction]);
     return { value: completed.value, text: completed.text, stdout: completed.text };
   }
 
@@ -180,16 +186,20 @@ export class OpenCodeCliRuntime implements ModelRuntime {
    * unparseable output are retried up to `retries` extra times with linear
    * backoff; everything else fails fast.
    */
-  private async complete(request: ModelCallRequest, correction?: string): Promise<{ text: string; value: unknown }> {
+  private async complete(request: ModelCallRequest, corrections: string[] = []): Promise<{ text: string; value: unknown }> {
     const attempts = 1 + this.retries;
     let failure: unknown;
     for (let attempt = 0; attempt < attempts; attempt++) {
       if (attempt > 0) await sleep(this.retryDelayMs * attempt);
       try {
-        const text = await this.prompt(request, correction);
+        const { text, stdout } = await this.prompt(request, corrections);
         const value = extractJsonOnly(text);
         if (value !== undefined) return { text, value };
-        failure = new Error(noJsonObjectMessage(request.operation, text));
+        const reasoningOnly = !text.trim() && /"type":\s*"reasoning"/.test(stdout);
+        failure = new Error(noJsonObjectMessage(request.operation, text, reasoningOnly));
+        // A reply with no answer text gets an explicit correction on retry:
+        // identical re-prompts repeat the emptiness deterministically.
+        corrections = [...corrections, NO_ANSWER_TEXT_CORRECTION];
       } catch (error) {
         if (!isRetryable(error) || attempt === attempts - 1) throw error;
         failure = error;
@@ -198,7 +208,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     throw failure;
   }
 
-  private async prompt(request: ModelCallRequest, correction?: string): Promise<string> {
+  private async prompt(request: ModelCallRequest, corrections: string[] = []): Promise<{ text: string; stdout: string }> {
     const taskId = request.context.taskId;
     const previous = this.continueSessions ? this.sessions.get(taskId) : undefined;
     const regenerationNote = request.operation === "generate-domain" && request.context.rejectedCandidates?.length
@@ -211,14 +221,14 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       `JSON contract:\n${operationContract(request)}`,
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
       ...(draftFileSection(request, this.directory) ? [draftFileSection(request, this.directory)] : []),
-      ...(correction ? [correction] : []),
+      ...corrections,
       `Context packet (JSON). lockedPaths is the restriction set and restrictionMode its polarity: in "lock" mode never touch them; in "allow" mode propose changes ONLY inside them; taskTree is the current plan shape (path, kind, status, drafted); diffs in taskDiffs are already drafted for other paths in this task — your output must not conflict with them:\n${JSON.stringify(request.context)}`,
     ];
     if (previous) {
       try {
         const stdout = await this.run(this.invocation(request, [CONTINUATION_NOTE, ...baseParts].join("\n\n"), previous));
         this.rememberSession(taskId, stdout);
-        return extractAssistantText(stdout);
+        return { text: extractAssistantText(stdout), stdout };
       } catch {
         this.sessions.delete(taskId);
         saveSessions(this.sessions);
@@ -226,7 +236,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     }
     const stdout = await this.run(this.invocation(request, baseParts.join("\n\n")));
     this.rememberSession(taskId, stdout);
-    return extractAssistantText(stdout);
+    return { text: extractAssistantText(stdout), stdout };
   }
 
   private invocation(request: ModelCallRequest, prompt: string, session?: string): string[] {
@@ -374,7 +384,11 @@ export function extractAssistantText(stdout: string): string {
   };
   visit(parsed);
   if (texts.length) return texts.join("\n");
-  return trimmed;
+  // An event stream without a text part is not an answer: the model reasoned
+  // or erred without replying. Returning the raw envelope here would let the
+  // JSON extractor mistake the event itself for the model's answer.
+  if (typeof parsed === "string") return trimmed;
+  return "";
 }
 
 function parseJsonStream(value: string): unknown {
