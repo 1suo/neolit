@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Readable } from "node:stream";
-import { filterItems, pickerWindow, selectFromList, toPickerItems } from "../src/tui/setup.js";
+import { filterItems, parseAuthProviderIds, pickerWindow, selectFromList, toPickerItems } from "../src/tui/setup.js";
 
 describe("setup picker", () => {
   it("filters items across id, label, and hint", () => {
@@ -67,5 +67,29 @@ describe("picker interaction fixes", () => {
     expect(instance.lastFrame()).toContain("oak");
     instance.unmount();
     cleanup();
+  });
+});
+
+describe("authenticated catalog filtering", () => {
+  it("intersects provider catalog with auth list, including multi-word names", () => {
+    const providers = JSON.stringify({ data: [
+      { id: "zai-coding-plan", name: "Z.AI Coding Plan" },
+      { id: "openrouter", name: "OpenRouter" },
+      { id: "zai", name: "Z.AI" },
+    ] });
+    const authList = [
+      "OpenRouter           API key   stored",
+      "Z.AI Coding Plan     OAuth     stored",
+      "",
+    ].join("\n");
+    expect(parseAuthProviderIds(providers, authList).sort()).toEqual(["openrouter", "zai-coding-plan"]);
+  });
+
+  it("labels qualified ids with the provider as hint", () => {
+    const items = toPickerItems(["zai-coding-plan/glm-5.3", "zai-coding-plan/glm-5.3", "sonnet"]);
+    expect(items).toEqual([
+      { id: "zai-coding-plan/glm-5.3", label: "glm-5.3", hint: "zai-coding-plan" },
+      { id: "sonnet", label: "sonnet" },
+    ]);
   });
 });

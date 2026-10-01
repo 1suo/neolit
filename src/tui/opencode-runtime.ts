@@ -310,8 +310,9 @@ export class CliAgentRuntime implements ModelRuntime {
         finish();
         if (code === 0) return resolve(stdout);
         if (child.killed) return reject(new Error("Model call was cancelled."));
-        const message = this.backend.extractError(stdout) ?? (stderr.trim() || `${this.backend.id} runtime exited with code ${code}.`);
-        reject(new Error(message));
+        const raw = this.backend.extractError(stdout) ?? (stderr.trim() || `${this.backend.id} runtime exited with code ${code}.`);
+        const hint = /model unavailable|no route|provider\.no-route/i.test(raw) ? " (pick an available model with 'augment setup' or [M])" : "";
+        reject(new Error(`${raw}${hint}`));
       });
     });
   }

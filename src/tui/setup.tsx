@@ -139,6 +139,28 @@ export function selectFromList(options: {
   });
 }
 
+/**
+ * Intersects the catalog's provider list with `opencode auth list` output so
+ * pickers offer only providers the account can actually run. Provider names
+ * contain spaces ("Z.AI Coding Plan"), so matching is prefix-based per line.
+ */
+export function parseAuthProviderIds(providerJson: string, authListOutput: string): string[] {
+  let providers: Array<{ id?: string; name?: string }> = [];
+  try {
+    const parsed = JSON.parse(providerJson) as { data?: Array<{ id?: string; name?: string }> } | Array<{ id?: string; name?: string }>;
+    const raw = Array.isArray(parsed) ? parsed : parsed.data ?? [];
+    providers = raw.filter((entry) => typeof entry?.id === "string" && typeof entry?.name === "string");
+  } catch {
+    return [];
+  }
+  const lines = authListOutput.split(/\r?\n/);
+  const nameColumn = (line: string) => line.split(/\s{2,}/)[0] ?? "";
+  const authenticated = providers
+    .filter((provider) => lines.some((line) => nameColumn(line) === provider.name! && /(stored|logged|authenticated)/i.test(line)))
+    .map((provider) => provider.id!);
+  return authenticated.length ? authenticated : providers.map((provider) => provider.id!);
+}
+
 /** Collapses duplicate catalog ids (providers repeat model ids) into picker items. */
 export function toPickerItems(models: string[]): PickerItem[] {
   const seen = new Set<string>();
@@ -146,7 +168,8 @@ export function toPickerItems(models: string[]): PickerItem[] {
   for (const id of models) {
     if (seen.has(id)) continue;
     seen.add(id);
-    items.push({ id, label: id });
+    const slash = id.indexOf("/");
+    items.push(slash > 0 ? { id, label: id.slice(slash + 1), hint: id.slice(0, slash) } : { id, label: id });
   }
   return items;
 }
@@ -162,9 +185,22 @@ export async function availableModels(backendId: string, command: string): Promi
   if (backendId === "opencode") {
     try {
       const stdout = await run(["api", "get", "/api/model"]);
-      const parsed = JSON.parse(stdout) as { data?: Array<{ modelID?: string; name?: string }> };
-      const listed = (parsed.data ?? []).filter((entry) => typeof entry.modelID === "string");
-      return { models: listed.map((entry) => entry.modelID!), source: `${command} api get /api/model` };
+      const parsed = JSON.parse(stdout) as { data?: Array<{ modelID?: string; name?: string; providerID?: string }> };
+      const listed = (parsed.data ?? []).filter((entry) => typeof entry.modelID === "string" && typeof entry.providerID === "string");
+      let usable = listed;
+      let source = `${command} catalog, authenticated providers only`;
+      try {
+        const providerJson = await run(["api", "get", "/api/provider"]);
+        const authList = await run(["auth", "list"]);
+        const authenticated = new Set(parseAuthProviderIds(providerJson, authList));
+        const filtered = listed.filter((entry) => authenticated.has(entry.providerID!));
+        if (filtered.length) usable = filtered;
+        else source = `${command} catalog (auth list unreadable — all providers shown)`;
+      } catch {
+        source = `${command} catalog (all providers — auth list unreadable)`;
+      }
+      // --model takes provider/model; openrouter ids themselves contain slashes.
+      return { models: usable.map((entry) => `${entry.providerID}/${entry.modelID}`), source };
     } catch {
       return { models: [], source: `could not reach ${command} — check its auth` };
     }
