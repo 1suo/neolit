@@ -91,6 +91,24 @@ function diffIndicator(kind: PlannedDiff["kind"]): string {
   return "▤";
 }
 
+/**
+ * Added and removed line counts for a set of patches — the `+12 −3` shown
+ * next to drafted paths in the tree. Header lines (`+++`/`---`) and git
+ * metadata never count; only hunk content does.
+ */
+export function diffChangeCounts(diffs: PlannedDiff[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const diff of diffs) {
+    for (const line of diff.patch.split(/\r?\n/)) {
+      if (line.startsWith("+++ ") || line.startsWith("--- ") || line.startsWith("diff --git")) continue;
+      if (line.startsWith("+")) added += 1;
+      else if (line.startsWith("-")) removed += 1;
+    }
+  }
+  return { added, removed };
+}
+
 export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view: RowView = {}): { indicator: string; suffix: string; color: string } {
   const { pendingMarks = [], pendingMode = "lock", appliedDiffIds = [], live } = view;
   const entry = row.entry;
@@ -98,6 +116,8 @@ export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view
   const selected = candidates.find((candidate) => candidate.status === "selected");
   const possible = candidates.filter((candidate) => candidate.status === "possible");
   const diffs = entry.diffIds.map((id) => task?.diffs[id]).filter(Boolean) as PlannedDiff[];
+  const changes = diffChangeCounts(diffs);
+  const changeSuffix = changes.added || changes.removed ? `+${changes.added} −${changes.removed}` : "";
   const explanations = entry.explanationIds.map((id) => task?.explanations[id]).filter(Boolean);
   const blocked = entry.nodeIds.some((id) => task?.nodes[id]?.status === "stale");
   const ready = entry.nodeIds.some((id) => task?.nodes[id]?.status === "ready");
@@ -109,16 +129,16 @@ export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view
 
   if (live?.active) return { indicator: live.spinner ?? "⠋", suffix: "", color: theme.warning };
   if (live?.failed) return { indicator: "×", suffix: "", color: theme.error };
-  if (marked) return { indicator: "#", suffix: diffs.length ? `+${diffs.length}` : "", color: mode === "lock" ? theme.error : theme.accent };
+  if (marked) return { indicator: "#", suffix: changeSuffix || (diffs.length ? `${diffs.length}` : ""), color: mode === "lock" ? theme.error : theme.accent };
   if (explanations.length) {
     const primary = explanations.some((explanation) => explanation!.role === "primary");
     return { indicator: "?", suffix: explanations.length > 1 ? `${explanations.length}` : "", color: primary ? theme.warning : theme.accent };
   }
   if (blocked) return { indicator: "!", suffix: "", color: theme.error };
-  if (applied.length) return { indicator: "✓", suffix: applied.length < diffs.length ? `${applied.length}/${diffs.length}` : "", color: theme.success };
+  if (applied.length) return { indicator: "✓", suffix: applied.length < diffs.length ? `${applied.length}/${diffs.length}` : changeSuffix, color: theme.success };
   if (diffs.length) {
     const single = diffs.length === 1;
-    return { indicator: single ? diffIndicator(diffs[0]!.kind) : "Δ", suffix: single ? "" : `${diffs.length}`, color: diffs.some((diff) => diff.kind === "delete") ? theme.error : theme.success };
+    return { indicator: single ? diffIndicator(diffs[0]!.kind) : "Δ", suffix: changeSuffix || (single ? "" : `${diffs.length}`), color: diffs.some((diff) => diff.kind === "delete") ? theme.error : theme.success };
   }
   if (entry.nodeIds.length && entry.kind !== "root") return { indicator: "~", suffix: "", color: theme.text };
   if (ready) return { indicator: "●", suffix: "", color: theme.success };

@@ -27,7 +27,7 @@ Indicators (tree rows carry the indicator and color only; extra glyphs are count
 ```text
 ⠋ working (animated)   × failed            # marked restriction
 ? explained (count)     ! needs refresh     ✓ applied (n/m)
-+ ~ - drafted new/modified/deleted (count)  Δ several drafts
++ ~ - drafted new/modified/deleted  Δ several drafts  +n −n line changes (folders sum)
 ~ planned               ● ready             ◇ choice (n·best%)   ◆ chosen (conf%)
 ```
 text

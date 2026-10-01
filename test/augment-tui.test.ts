@@ -9,7 +9,7 @@ import { cleanup, render as renderInk } from "ink-testing-library";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
-import { detailLines, frameLayout } from "../src/tui/detail.js";
+import { detailLines, entryState, frameLayout } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
@@ -688,6 +688,31 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "ready" });
     expect(controller.snapshot().task?.nodes[fileNode.id]!.diffIds).toHaveLength(1);
     expect(Object.values(controller.snapshot().task?.diffs ?? {})[0]!.patch).toContain("kept");
+  });
+
+  it("shows added and removed diff line counts next to drafted paths", async () => {
+    const patch = "--- a/src/auth/session.ts\n+++ b/src/auth/session.ts\n@@ -2,3 +2,5 @@\n context\n-removed line\n+added line\n+another added line\n context\n";
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "draft-patch") return { value: { patch, assumptions: [] } };
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+
+    const fileRow = controller.snapshot().rows.find((row) => row.id === "entry:src/auth/session.ts")!;
+    expect(entryState(controller.snapshot().task, fileRow).suffix).toBe("+2 −1");
+
+    // Directories aggregate their descendants' line counts.
+    const srcRow = controller.snapshot().rows.find((row) => row.id === "entry:src")!;
+    expect(entryState(controller.snapshot().task, srcRow).suffix).toBe("+2 −1");
   });
 
   it("projects candidates and patches under their filesystem entries", async () => {
