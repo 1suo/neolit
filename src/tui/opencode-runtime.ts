@@ -4,6 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import type { ModelCallRequest, ModelRuntime } from "../augment/types.js";
 import { preflightPatches } from "./apply.js";
+import { backendById, opencodeBackend, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
+
+export { extractAssistantText } from "./agent-backends.js";
 
 const TRANSIENT_ERROR = /rate limit|429|overloaded|econnreset|etimedout|socket hang up|temporarily unavailable|timed out/i;
 
@@ -100,7 +103,6 @@ function draftFileSection(request: ModelCallRequest, directory: string): string 
   ].join("\n");
 }
 
-const SESSION_ID_PATTERN = /"sessionID":"(ses_[^"]+)"/;
 const CONTINUATION_NOTE = "This conversation continues an earlier session for the same task. Earlier context packets in its history are stale: the packet below is the CURRENT authoritative state.";
 
 const activeChildren = new Set<ChildProcess>();
@@ -112,6 +114,8 @@ process.on("exit", () => {
 
 export interface OpenCodeCliRuntimeOptions {
   directory: string;
+  /** Agent backend; defaults to OpenCode. New agents plug in via agent-backends.ts. */
+  backend?: CliAgentBackend | string;
   command?: string;
   model?: string;
   draftModel?: string;
@@ -137,13 +141,14 @@ interface OpenCodeCliResult {
  * dependency: the standalone TUI can use OpenCode's authentication and model
  * routing while the planned-diff core remains host-neutral.
  */
-export class OpenCodeCliRuntime implements ModelRuntime {
+export class CliAgentRuntime implements ModelRuntime {
   cancel(): void {
     for (const child of activeChildren) {
       if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
     }
   }
   readonly directory: string;
+  private readonly backend: CliAgentBackend;
   private readonly command: string;
   private readonly model?: string;
   private readonly draftModel?: string;
@@ -159,7 +164,8 @@ export class OpenCodeCliRuntime implements ModelRuntime {
 
   constructor(options: OpenCodeCliRuntimeOptions) {
     this.directory = options.directory;
-    this.command = options.command ?? process.env.AUGMENT_OPENCODE_COMMAND ?? "opencode";
+    this.backend = typeof options.backend === "string" ? backendById(options.backend) : options.backend ?? opencodeBackend;
+    this.command = options.command ?? process.env.AUGMENT_OPENCODE_COMMAND ?? this.backend.defaultCommand;
     this.model = options.model ?? (process.env.AUGMENT_OPENCODE_MODEL || undefined);
     this.draftModel = options.draftModel ?? (process.env.AUGMENT_OPENCODE_DRAFT_MODEL || undefined);
     this.challengeModel = options.challengeModel ?? (process.env.AUGMENT_OPENCODE_CHALLENGE_MODEL || undefined);
@@ -231,7 +237,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       try {
         const stdout = await this.run(this.invocation(request, [CONTINUATION_NOTE, ...baseParts].join("\n\n"), previous));
         this.rememberSession(taskId, stdout);
-        return { text: extractAssistantText(stdout), stdout };
+        return { text: this.backend.parseAssistantText(stdout), stdout };
       } catch {
         this.sessions.delete(taskId);
         saveSessions(this.sessions);
@@ -239,7 +245,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     }
     const stdout = await this.run(this.invocation(request, baseParts.join("\n\n")));
     this.rememberSession(taskId, stdout);
-    return { text: extractAssistantText(stdout), stdout };
+    return { text: this.backend.parseAssistantText(stdout), stdout };
   }
 
   private invocation(request: ModelCallRequest, prompt: string, session?: string): string[] {
@@ -248,23 +254,14 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       : request.operation === "challenge-domain" && this.challengeModel
         ? this.challengeModel
         : this.model;
-    return [
-      "run",
-      "--format",
-      "json",
-      ...(this.serverUrl ? ["--server", this.serverUrl] : []),
-      ...(session ? ["--session", session] : []),
-      ...(model ? ["--model", model] : []),
-      ...(this.agent ? ["--agent", this.agent] : []),
-      ...(this.autoApprove ? ["--auto"] : []),
-      ...(!session ? ["--title", `augment-${request.operation}`] : []),
-      "--",
-      prompt,
-    ];
+    return this.backend.invocation(
+      { model, session, prompt, title: `augment-${request.operation}`, autoApprove: this.autoApprove },
+      { server: this.serverUrl, agent: this.agent },
+    );
   }
 
   private rememberSession(taskId: string, stdout: string): void {
-    const session = stdout.match(SESSION_ID_PATTERN)?.[1];
+    const session = this.backend.extractSessionId(stdout);
     if (!session) return;
     this.sessions.set(taskId, session);
     if (this.sessions.size > 64) {
@@ -297,8 +294,8 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       child.on("close", (code) => {
         finish();
         if (code === 0) return resolve(stdout);
-        if (child.killed) return reject(new Error("OpenCode model call was cancelled."));
-        const message = extractOpenCodeError(stdout) ?? (stderr.trim() || `OpenCode runtime exited with code ${code}.`);
+        if (child.killed) return reject(new Error("Model call was cancelled."));
+        const message = this.backend.extractError(stdout) ?? (stderr.trim() || `${this.backend.id} runtime exited with code ${code}.`);
         reject(new Error(message));
       });
     });
@@ -348,98 +345,6 @@ function operationContract(request: ModelCallRequest): string {
   }
 }
 
-export function extractAssistantText(stdout: string): string {
-  const trimmed = stdout.trim();
-  if (!trimmed) return "";
-  const parsed = parseJsonStream(trimmed);
-  const texts: string[] = [];
-  const visit = (value: unknown): void => {
-    if (value === undefined || value === null) return;
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (typeof value !== "object") return;
-    const record = value as Record<string, unknown>;
-    if (record.type === "error") {
-      const failure = record.error;
-      const message = typeof record.message === "string" ? record.message
-        : failure && typeof failure === "object" && typeof (failure as { message?: unknown }).message === "string" ? (failure as { message: string }).message
-        : typeof failure === "string" ? failure : "OpenCode runtime error.";
-      throw new Error(message);
-    }
-
-    // OpenCode run --format json emits terminal text events. Tool output also
-    // contains text-shaped content; only assistant text events are model output.
-    const directPart = record.part as Record<string, unknown> | undefined;
-    if (record.type === "text" && typeof directPart?.text === "string") {
-      texts.push(directPart.text);
-      return;
-    }
-    if ((record.type === "text" || record.type === "message" || record.role === "assistant") && typeof record.text === "string") {
-      texts.push(record.text);
-      return;
-    }
-
-    const message = record.message as Record<string, unknown> | undefined;
-    if (message && Array.isArray(message.parts)) visit(message.parts);
-    if (Array.isArray(record.parts)) visit(record.parts);
-    if (Array.isArray(record.messages)) visit(record.messages);
-  };
-  visit(parsed);
-  if (texts.length) return texts.join("\n");
-  // An event stream without a text part is not an answer: the model reasoned
-  // or erred without replying. Returning the raw envelope here would let the
-  // JSON extractor mistake the event itself for the model's answer.
-  if (typeof parsed === "string") return trimmed;
-  return "";
-}
-
-function parseJsonStream(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    // OpenCode may emit newline-delimited JSON events. Preserve their order.
-    const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (!lines.length) return value;
-    const events: unknown[] = [];
-    for (const line of lines) {
-      try { events.push(JSON.parse(line)); } catch { return value; }
-    }
-    return events;
-  }
-}
-
-function extractOpenCodeError(stdout: string): string | undefined {
-  let parsed: unknown;
-  try {
-    parsed = parseJsonStream(stdout.trim());
-  } catch {
-    return undefined;
-  }
-  const errors: string[] = [];
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (!value || typeof value !== "object") return;
-    const record = value as Record<string, unknown>;
-    if (record.type === "error") {
-      const failure = record.error;
-      const message = typeof record.message === "string" ? record.message
-        : failure && typeof failure === "object" && typeof (failure as { message?: unknown }).message === "string" ? (failure as { message: string }).message
-        : typeof failure === "string" ? failure : "OpenCode runtime error.";
-      errors.push(message);
-      return;
-    }
-    visit(record.part);
-    visit(record.message);
-  };
-  visit(parsed);
-  return errors.at(-1);
-}
-
 export function extractJsonOnly(text: string): unknown | undefined {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
   const source = fenced ?? text.trim();
@@ -457,3 +362,6 @@ export function extractJsonOnly(text: string): unknown | undefined {
     return undefined;
   }
 }
+
+/** Back-compat alias: the OpenCode-flavored default of the generic runtime. */
+export class OpenCodeCliRuntime extends CliAgentRuntime {}

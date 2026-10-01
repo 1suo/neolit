@@ -86,54 +86,43 @@ Tab  switch pane
 Q  quit
 ```
 
-## Model runtime
+## Model runtime and configuration
 
-The executable uses `OpenCodeCliRuntime`, which invokes:
+The executable uses `CliAgentRuntime`, a backend-neutral agent runner: prompt
+construction, retries, corrective feedback, session persistence, timeouts,
+and per-operation model routing are shared, while each backend contributes
+only its argv shape and output parsing in `src/tui/agent-backends.ts`.
+Backends today: `opencode` (`opencode run --format json`, default),
+`claude` (`claude -p --output-format json --permission-mode plan`), and
+`codex` (`codex exec --json --sandbox read-only`). Claude sessions resume
+via `--resume`; codex sessions are not continued yet. Vendor flags drift —
+when one does, the fix is one object in that file. Adding an agent is the
+same: implement the `CliAgentBackend` interface and register it.
+
+Configuration lives in `$XDG_CONFIG_HOME/neolit/augment.json` (default
+`~/.config/neolit/`). `augment models` lists the account's models from the
+OpenCode backend and interactively picks default/draft/challenge roles into
+that file; `augment config` prints the file and the effective merge.
+Authentication is each backend's own concern (`opencode auth login`,
+`claude` login, `codex` auth). Precedence: CLI flags > environment variables
+> the config file > defaults. Environment variables remain the one-off
+escape hatch:
 
 ```text
-opencode run --format json --auto
-```
-
-Select a working model explicitly with `--model provider/model` or `AUGMENT_OPENCODE_MODEL`. OpenCode's implicit default may point at an unavailable paid model and fail with a quota/authentication error. Configure the runtime with:
-
-```text
-AUGMENT_OPENCODE_COMMAND
+AUGMENT_BACKEND                (opencode | claude | codex; default opencode)
+AUGMENT_OPENCODE_COMMAND       (command name; applies to any backend)
 AUGMENT_OPENCODE_MODEL
 AUGMENT_OPENCODE_DRAFT_MODEL
-AUGMENT_OPENCODE_CHALLENGE_MODEL  (optional faster model for challenge-domain coverage checks)
+AUGMENT_OPENCODE_CHALLENGE_MODEL
 AUGMENT_OPENCODE_AGENT
 AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after this budget)
-AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh OpenCode session for every call)
-AUGMENT_OPENCODE_SERVER        (URL; every call connects to this OpenCode server — no implicit service spawn)
+AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh session for every call)
+AUGMENT_OPENCODE_SERVER        (OpenCode URL; every call connects to this server — no implicit service spawn)
 AUGMENT_OPENCODE_RETRIES       (default 2; extra attempts for rate limits, disconnects, and unparseable output)
 AUGMENT_CHALLENGE_ROUNDS       (0-2, default 2; 0 skips challenge rounds for much faster domains)
-AUGMENT_TUI_TASKS            (default on; set 0 to disable persisting and resuming the active task)
+AUGMENT_TUI_TASKS              (default on; set 0 to disable persisting and resuming the active task)
 AUGMENT_TUI_NO_MODEL=1
 ```
-
-Model calls reuse one OpenCode session per task — the session id is captured
-from the run's event stream and continued with `--session`, with a fresh
-session as fallback when continuation fails — so repeat operations keep the
-model's earlier exploration instead of cold-starting each call. Each prompt
-still states that its context packet is the current authoritative state.
-Session mappings persist to `$XDG_STATE_HOME/neolit/augment-sessions.json`
-(default `~/.local/state/neolit/`, newest 64 tasks), so a restarted TUI
-continues the same sessions. Transient provider failures (rate limits,
-disconnects, timeouts) and unparseable model output retry up to
-`AUGMENT_OPENCODE_RETRIES` extra times with linear backoff; validation
-failures still fail fast.
-
-`AUGMENT_OPENCODE_DRAFT_MODEL` optionally routes only `draft-patch` and
-`repair-patch` to a faster model. Draft and repair calls embed the target
-file's exact content in the prompt and instruct the model to answer in one
-shot without tools, so a small quick model is usually enough; domain
-generation and challenges keep using `AUGMENT_OPENCODE_MODEL`. Drafts are
-also preflighted with `git apply --check` against the working tree AND
-together with every other drafted patch in the same task, then retried
-once with git's diagnostic — so stored diffs reach `A` already known to
-apply jointly.
-
-The TUI requires an interactive terminal (`process.stdin.isTTY`). It edits planned state and, on request, applies drafted patches to the working tree through `src/tui/apply.ts`: a shared `git apply --check` preflight followed by one atomic `git apply` for all selected patches. It never stages or commits.
 
 ## Architecture
 

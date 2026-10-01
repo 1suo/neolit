@@ -8,6 +8,8 @@ import path from "node:path";
  * CLI flags > environment variables > this file > defaults.
  */
 export interface AugmentConfig {
+  /** Agent backend id: "opencode" (default), "claude", or "codex". */
+  backend?: string;
   model?: string;
   draftModel?: string;
   challengeModel?: string;
@@ -51,6 +53,7 @@ export function saveAugmentConfig(patch: AugmentConfig): AugmentConfig {
 /** The environment layer, applied over the file. */
 export function configFromEnvironment(env: NodeJS.ProcessEnv = process.env): AugmentConfig {
   const config: AugmentConfig = {};
+  if (env.AUGMENT_BACKEND) config.backend = env.AUGMENT_BACKEND;
   if (env.AUGMENT_OPENCODE_MODEL) config.model = env.AUGMENT_OPENCODE_MODEL;
   if (env.AUGMENT_OPENCODE_DRAFT_MODEL) config.draftModel = env.AUGMENT_OPENCODE_DRAFT_MODEL;
   if (env.AUGMENT_OPENCODE_CHALLENGE_MODEL) config.challengeModel = env.AUGMENT_OPENCODE_CHALLENGE_MODEL;

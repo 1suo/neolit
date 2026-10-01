@@ -2,10 +2,11 @@
 import { accessSync, constants } from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { OpenCodeCliRuntime } from "../tui/opencode-runtime.js";
+import { CliAgentRuntime } from "../tui/opencode-runtime.js";
 import { AugmentTuiController, currentRevision } from "../tui/controller.js";
 import { runAugmentTui } from "../tui/augment.js";
 import { configPath, effectiveConfig, loadAugmentConfig, saveAugmentConfig, type AugmentConfig } from "../tui/config.js";
+import { backendById } from "../tui/agent-backends.js";
 
 function commandAvailable(command: string): boolean {
   if (command.includes("/")) {
@@ -49,7 +50,13 @@ function listModels(command: string): ListedModel[] {
 }
 
 async function runModelsPicker(config: AugmentConfig): Promise<void> {
-  const command = config.command ?? "opencode";
+  const backend = backendById(config.backend ?? "opencode");
+  if (!backend.supportsModelsCommand) {
+    process.stdout.write(`augment: listing account models is not supported for the '${backend.id}' backend; set models by id in ${configPath()}.
+`);
+    return;
+  }
+  const command = config.command ?? backend.defaultCommand;
   if (!commandAvailable(command)) {
     process.stderr.write(`augment: '${command}' is not available; set command first with AUGMENT_OPENCODE_COMMAND or the config file.\n`);
     process.exitCode = 1;
@@ -128,13 +135,15 @@ for (let index = 0; index < rawArguments.length; index++) {
 }
 const objective = objectiveArguments.join(" ").trim();
 const directory = process.cwd();
-const requested = config.command ?? "opencode";
+const backend = backendById(config.backend ?? "opencode");
+const requested = config.command ?? backend.defaultCommand;
 const modelAvailable = !disableModel && commandAvailable(requested);
 const controller = new AugmentTuiController({
   directory,
   runtime: modelAvailable
-    ? new OpenCodeCliRuntime({
+    ? new CliAgentRuntime({
       directory,
+      backend,
       command: requested,
       model,
       draftModel: config.draftModel,

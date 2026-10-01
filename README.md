@@ -153,7 +153,8 @@ routes bounded model operations through the OpenCode CLI:
 
 ```sh
 npm run build
-./dist/bin/augment.js --model opencode/space-bunny-free "make retries bounded"
+./dist/bin/augment models                                    # pick default/draft/challenge models for your account
+AUGMENT_BACKEND=claude ./dist/bin/augment.js "make retries bounded"   # backends: opencode (default), claude, codex
 
 # browse without model calls
 AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
