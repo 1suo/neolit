@@ -100,9 +100,12 @@ when one does, the fix is one object in that file. Adding an agent is the
 same: implement the `CliAgentBackend` interface and register it.
 
 Configuration lives in `$XDG_CONFIG_HOME/neolit/augment.json` (default
-`~/.config/neolit/`). `augment models` lists the account's models from the
-OpenCode backend and interactively picks default/draft/challenge roles into
-that file; `augment config` prints the file and the effective merge.
+`~/.config/neolit/`). `augment setup` is the interface: it lists the agents
+with PATH availability, lists the chosen agent's actual models (OpenCode via
+its API, Claude via `claude model list` with alias fallback, others accept a
+typed id), and picks the default/draft/challenge roles into the file. The
+wizard also runs automatically on first start when no model is configured.
+`augment config` prints the file and the effective merge.
 Authentication is each backend's own concern (`opencode auth login`,
 `claude` login, `codex` auth). Precedence: CLI flags > environment variables
 > the config file > defaults. Environment variables remain the one-off
