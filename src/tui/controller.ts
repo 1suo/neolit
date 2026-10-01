@@ -15,7 +15,17 @@ export type PlannedTreeRow = {
   branch: string;
   entry: PlanTreeEntry;
   repositoryOnly: boolean;
+  /** Directory rows currently folded shut. */
+  folded?: boolean;
 };
+
+/** View-only tree options: folded directories and the related-only filter. */
+export interface TreeViewOptions {
+  foldedPaths: ReadonlySet<string>;
+  relatedOnly: boolean;
+  /** Plan- or plain-aware relatedness test; required when relatedOnly is set. */
+  isRelated?: (entry: PlanTreeEntry) => boolean;
+}
 
 export interface TuiActionState {
   task?: PlanTask;
@@ -28,6 +38,7 @@ export interface TuiActionState {
   pendingMarks: string[];
   pendingMode: "lock" | "allow";
   appliedDiffIds: string[];
+  relatedOnly: boolean;
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
 }
@@ -43,6 +54,9 @@ export interface AugmentTuiControllerOptions {
 }
 
 const MAX_REPOSITORY_ENTRIES = 5_000;
+
+/** Deterministic bound for one [D] keypress: enough for any legal subtree. */
+const MAX_DEVELOP_STEPS = 256;
 
 export interface StoredTask {
   task: PlanTask;
@@ -181,12 +195,23 @@ export function entryHasPlan(entry: PlanTreeEntry): boolean {
   return entry.nodeIds.length > 0 || entry.candidateIds.length > 0 || entry.diffIds.length > 0 || entry.explanationIds.length > 0 || entry.obligationIds.length > 0;
 }
 
-function rowsFromTree(root: PlanTreeEntry): PlannedTreeRow[] {
+function rowsFromTree(root: PlanTreeEntry, view: TreeViewOptions): PlannedTreeRow[] {
   const rows: PlannedTreeRow[] = [];
+  // Related-only pruning keeps an entry when it is related itself or when any
+  // descendant is, so kept paths stay reachable through their ancestors.
+  const keepsSubtree = (entry: PlanTreeEntry): boolean => {
+    if (!view.relatedOnly) return true;
+    if (entry.path === ".") return true;
+    if (view.isRelated?.(entry)) return true;
+    return entry.children.some(keepsSubtree);
+  };
   const visit = (entry: PlanTreeEntry, depth: number, branch: string, prefix: string) => {
-    rows.push({ kind: "entry", id: `entry:${entry.path}`, depth, branch, entry, repositoryOnly: !entryHasPlan(entry) });
-    entry.children.forEach((child, index) => {
-      const last = index === entry.children.length - 1;
+    const folded = entry.kind === "dir" && view.foldedPaths.has(entry.path);
+    rows.push({ kind: "entry", id: `entry:${entry.path}`, depth, branch, entry, repositoryOnly: !entryHasPlan(entry), folded: folded || undefined });
+    if (folded) return;
+    const visibleChildren = entry.children.filter((child) => keepsSubtree(child));
+    visibleChildren.forEach((child, index) => {
+      const last = index === visibleChildren.length - 1;
       visit(child, depth + 1, `${prefix}${last ? "└─ " : "├─ "}`, `${prefix}${last ? "   " : "│  "}`);
     });
   };
@@ -194,15 +219,15 @@ function rowsFromTree(root: PlanTreeEntry): PlannedTreeRow[] {
   return rows;
 }
 
-export function plannedTreeRowsFromRepository(repository: PlanTreeEntry): PlannedTreeRow[] {
-  return rowsFromTree(repository);
+export function plannedTreeRowsFromRepository(repository: PlanTreeEntry, view?: TreeViewOptions): PlannedTreeRow[] {
+  return rowsFromTree(repository, view ?? { foldedPaths: new Set(), relatedOnly: false });
 }
 
-export function plannedTreeRows(task: PlanTask, repository?: PlanTreeEntry): PlannedTreeRow[] {
+export function plannedTreeRows(task: PlanTask, repository?: PlanTreeEntry, view?: TreeViewOptions): PlannedTreeRow[] {
   const plan = planTree(task);
   const root = repository ? mergePlanTree(structuredClone(repository), plan) : plan;
   aggregateSubtree(root);
-  return rowsFromTree(root);
+  return rowsFromTree(root, view ?? { foldedPaths: new Set(), relatedOnly: false });
 }
 
 export function candidatesForEntry(task: PlanTask | undefined, entry: PlanTreeEntry | undefined): PlanCandidate[] {
@@ -232,6 +257,8 @@ export class AugmentTuiController {
   private operation?: string;
   private message = "Press [N] to describe a change.";
   private error?: string;
+  private readonly foldedPaths = new Set<string>();
+  private relatedOnly = false;
 
   constructor(options: AugmentTuiControllerOptions) {
     this.directory = options.directory;
@@ -292,6 +319,7 @@ export class AugmentTuiController {
       pendingMarks: [...this.pendingMarks],
       pendingMode: this.pendingMode,
       appliedDiffIds: [...this.appliedDiffIds],
+      relatedOnly: this.relatedOnly,
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
     };
@@ -321,6 +349,56 @@ export class AugmentTuiController {
 
   select(rowId: string): void {
     if (this.rows.some((row) => row.id === rowId)) this.selectedRowId = rowId;
+  }
+
+  /**
+   * An entry is related when the plan touches it (nodes, candidates, diffs,
+   * explanations, obligations) or when the restriction plain references it —
+   * the entry itself is marked, or a marked path sits above or below it so
+   * the structure stays connected.
+   */
+  private isRelatedEntry(entry: PlanTreeEntry): boolean {
+    if (entryHasPlan(entry)) return true;
+    const marked = this.task?.lockedPaths ?? this.pendingMarks;
+    if (!marked.length || entry.path === ".") return false;
+    return marked.some((mark) => entry.path === mark || entry.path.startsWith(`${mark}/`) || mark.startsWith(`${entry.path}/`));
+  }
+
+  private viewOptions(): TreeViewOptions {
+    return { foldedPaths: this.foldedPaths, relatedOnly: this.relatedOnly, isRelated: (entry) => this.isRelatedEntry(entry) };
+  }
+
+  /** Folds or unfolds the selected directory, keeping selection on the folder. */
+  toggleFold(): void {
+    const row = this.selectedRow();
+    if (!row || (row.entry.kind !== "dir" && row.entry.kind !== "root")) {
+      this.error = "Select a directory to fold.";
+      return;
+    }
+    this.error = undefined;
+    if (row.entry.path === ".") {
+      this.error = "The repository root cannot be folded.";
+      return;
+    }
+    if (this.foldedPaths.has(row.entry.path)) {
+      this.foldedPaths.delete(row.entry.path);
+      this.message = `Unfolded ${row.entry.path}/.`;
+    } else {
+      this.foldedPaths.add(row.entry.path);
+      this.message = `Folded ${row.entry.path}/.`;
+    }
+    this.refresh();
+    if (!this.rows.some((candidate) => candidate.id === this.selectedRowId)) this.select(`entry:${row.entry.path}`);
+  }
+
+  /** Shows only planned and restriction-plain paths, or the full repository. */
+  toggleRelatedOnly(): void {
+    this.relatedOnly = !this.relatedOnly;
+    this.error = undefined;
+    this.refresh();
+    this.message = this.relatedOnly
+      ? "Showing only planned and marked paths. [H] shows the full repository again."
+      : "Showing the full repository tree.";
   }
 
   async start(objective: string, basisRevision = currentRevision(this.directory)): Promise<void> {
@@ -481,7 +559,7 @@ export class AugmentTuiController {
         this.error = "Approaches are not generated for this path yet. Press Enter (empty submit) to generate them, choose 1-7, then press D.";
       }
       else {
-        this.error = `This path is ${node.status}; only a path with a chosen approach can be expanded with F.`;
+        this.error = `This path is ${node.status}; only a path with a chosen approach can be developed with [D].`;
       }
       return;
     }
@@ -586,40 +664,73 @@ export class AugmentTuiController {
   }
 
   /**
-   * Develops the selected path one step; the policy itself lives in the
-   * kernel's nextDevelopmentStep so hosts never re-derive the lifecycle.
+   * Develops the selected path as far as deterministic policy allows: the
+   * kernel's `nextDevelopmentStep` is applied repeatedly — refine, then
+   * crystallize, refine, and draft every undrafted file beneath the path —
+   * until the subtree is fully drafted or a step needs a human (an approach
+   * choice). One keypress can therefore develop every file under a folder.
    */
   async develop(): Promise<void> {
     const task = this.requireTask();
+    const row = this.selectedRow();
+    if (row && ["file", "hunk"].includes(row.entry.kind) && !row.entry.nodeIds.some((id) => this.task?.nodes[id])) {
+      this.error = `${row.entry.path} has no plan node of its own yet. [D] an ancestor folder to develop its subtree, or [Enter] to rethink the chosen approach.`;
+      return;
+    }
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
-    const step = nextDevelopmentStep(task, nodeId);
-    switch (step.action) {
-      case "refine":
-        return this.refine();
-      case "crystallize":
-        return this.crystallize();
-      case "draft":
-        return this.draftPatch();
-      case "descend": {
+    const startPath = task.nodes[nodeId]?.path ?? "this path";
+    let drafted = 0;
+    let acted = false;
+    let lastDraftedPath = startPath;
+    for (let guard = 0; guard < MAX_DEVELOP_STEPS; guard++) {
+      if (!this.task) return;
+      const step = nextDevelopmentStep(this.task, nodeId);
+      if (step.action === "refine") {
+        acted = true;
+        await this.dispatch("Expanding approach into files", () => this.performRefine(nodeId, "normal", this.defaultLod), nodeId);
+      } else if (step.action === "crystallize") {
+        acted = true;
+        await this.dispatch("Generating approaches", () => this.performCrystallize(nodeId, "normal", this.defaultLod), nodeId);
+      } else if (step.action === "draft") {
+        acted = true;
+        drafted += 1;
+        lastDraftedPath = this.task.nodes[nodeId]?.path ?? startPath;
+        await this.dispatch("Drafting changes", () => this.performDraft(nodeId), nodeId);
+      } else if (step.action === "descend") {
         this.select(`entry:${step.path}`);
-        if (step.step === "draft") return this.draftPatch();
-        if (step.step === "crystallize") return this.crystallize();
-        this.error = `Choose an approach for ${step.path} with keys 1-7, or press Enter to rethink it.`;
-        return;
-      }
-      case "choose":
+        if (step.step === "draft") {
+          acted = true;
+          drafted += 1;
+          lastDraftedPath = step.path;
+          await this.dispatch("Drafting changes", () => this.performDraft(step.nodeId), step.nodeId);
+        } else if (step.step === "crystallize") {
+          acted = true;
+          await this.dispatch("Generating approaches", () => this.performCrystallize(step.nodeId, "normal", this.defaultLod), step.nodeId);
+        } else if (step.step === "refine") {
+          acted = true;
+          await this.dispatch("Expanding approach into files", () => this.performRefine(step.nodeId, "normal", this.defaultLod), step.nodeId);
+        } else {
+          this.error = `Choose an approach for ${step.path} with keys 1-7, or press Enter to rethink it.`;
+          return;
+        }
+      } else if (step.action === "choose") {
         this.error = `Choose one of ${step.count} approaches with keys 1-${step.count}, or press Enter to rethink.`;
         return;
-      case "already-drafted":
-        this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it.";
+      } else if (step.action === "done" || step.action === "already-drafted") {
+        // Terminal states are messages when this keypress did work; they are
+        // errors only when nothing changed and the user must act elsewhere.
+        if (drafted > 1) this.message = `Developed ${drafted} files under ${startPath}. Nothing is applied yet; [A] applies them.`;
+        else if (drafted === 1) this.message = `Draft change ready for ${lastDraftedPath}. It is not applied to the repository.`;
+        else if (step.action === "already-drafted") this.error = "This path already has a drafted patch. Press [A] to apply it, or [O] to reopen it.";
+        else this.error = acted ? `Every file under ${startPath} is drafted. [A] applies them; [O] reopens this path.` : "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
         return;
-      case "done":
-        this.error = "Every file under this path is drafted. [A] applies them; [O] reopens this path.";
-        return;
-      case "stalled":
+      } else {
         this.error = step.reason;
         return;
+      }
+      if (this.error) return;
     }
+    this.error = `Developing ${startPath} exceeded ${MAX_DEVELOP_STEPS} steps; press [D] to continue.`;
   }
 
   async rethink(message?: string): Promise<void> {
@@ -806,7 +917,8 @@ export class AugmentTuiController {
   }
 
   private refresh(): void {
-    this.rows = this.task ? plannedTreeRows(this.task, this.repository) : plannedTreeRowsFromRepository(this.repository);
+    const view = this.viewOptions();
+    this.rows = this.task ? plannedTreeRows(this.task, this.repository, view) : plannedTreeRowsFromRepository(this.repository, view);
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
     if (this.persistTasks && this.task) {
       const others = loadStoredTasks().filter((entry) => entry.task.id !== this.task!.id);

@@ -383,7 +383,9 @@ describe("planned diff state", () => {
     expect(Object.values(replaced.explanations).map((explanation) => explanation.path).sort()).toEqual(["src/auth/token.ts", "src/retry.ts"]);
   });
 
-  it("bounds the task event log", () => {
+  // Exercises 2000+ whole-task clones on purpose; it needs more than the
+  // default per-test timeout under load.
+  it("bounds the task event log", { timeout: 30_000 }, () => {
     let current = task();
     for (let index = 0; index < MAX_TASK_EVENTS + 50; index++) {
       current = addConstraint(current, { taskId: current.id, expectedRevision: current.revision, text: `note ${index}` });

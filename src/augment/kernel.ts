@@ -294,7 +294,7 @@ export type DevelopmentStep =
   | { action: "crystallize" }
   | { action: "draft" }
   | { action: "choose"; count: number }
-  | { action: "descend"; nodeId: string; path: string; step: "crystallize" | "choose" | "draft" }
+  | { action: "descend"; nodeId: string; path: string; step: "crystallize" | "refine" | "choose" | "draft" }
   | { action: "already-drafted" }
   | { action: "done" }
   | { action: "stalled"; reason: string };
@@ -320,9 +320,12 @@ export function nextDevelopmentStep(task: PlanTask, nodeId: string): Development
   const node = task.nodes[nodeId];
   if (!node) return { action: "stalled", reason: "Unknown plan node." };
   if (node.status === "stale") return { action: "stalled", reason: "This path is stale." };
+  // A file, hunk, or virtual target develops by drafting its patch directly.
+  // Its lifecycle state never reroutes it: a collapsed or domain file must
+  // still draft, not refine into children or reopen an approach choice.
   const isFileTarget = ["file", "hunk", "virtual"].includes(node.kind);
-  if (node.status === "collapsed") return { action: "refine" };
   if (isFileTarget) return node.diffIds.length > 0 ? { action: "already-drafted" } : { action: "draft" };
+  if (node.status === "collapsed") return { action: "refine" };
   if (node.status === "unresolved") return { action: "crystallize" };
   if (node.status === "domain") {
     const possible = node.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");
@@ -332,6 +335,11 @@ export function nextDevelopmentStep(task: PlanTask, nodeId: string): Development
     const descendants = descendantsOf(task, nodeId);
     const nextFile = descendants.find((candidate) => ["file", "hunk", "virtual"].includes(candidate.kind) && candidate.diffIds.length === 0);
     if (nextFile?.path) return { action: "descend", nodeId: nextFile.id, path: nextFile.path, step: "draft" };
+    // A collapsed child directory still owes its refinement before the
+    // subtree can be done; report it so a host driving the whole subtree
+    // keeps going instead of stopping at an incomplete frontier.
+    const nextCollapsedDir = descendants.find((candidate) => candidate.kind === "dir" && candidate.status === "collapsed" && candidate.diffIds.length === 0);
+    if (nextCollapsedDir?.path) return { action: "descend", nodeId: nextCollapsedDir.id, path: nextCollapsedDir.path, step: "refine" };
     const nextDir = descendants.find((candidate) => candidate.kind === "dir" && candidate.diffIds.length === 0 && ["unresolved", "domain"].includes(candidate.status));
     if (nextDir?.path) {
       const possible = nextDir.candidateIds.map((id) => task.candidates[id]).filter((candidate) => candidate?.status === "possible");

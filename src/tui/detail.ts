@@ -304,7 +304,8 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     if (!task) add("  [N] describe a change · [E] explain the repository", theme.muted);
     else if (possible.length) add(`  1-${possible.length} choose approach · [Enter] rethink (empty submit)`, theme.muted);
     else if (!isDirectory && nodes.length) add("  [D] develop — drafts this file's exact patch · [A] apply after", theme.muted);
-    else add("  [Enter] message/regenerate · [D] develop selected path", theme.muted);
+    else if (isDirectory) add("  [D] develop — drafts every undrafted file below · [F] fold · [H] related only", theme.muted);
+    else add("  [Enter] message/regenerate · [D] develop selected path · [H] related only", theme.muted);
   }
 
   if (nodes.some((node) => node.challengeExhausted)) {

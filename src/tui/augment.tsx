@@ -22,6 +22,7 @@ function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boo
         >
           {entryName(props.row.entry)}
         </Text>
+        {props.row.folded ? <Text color={theme.muted}> ▸</Text> : null}
         {state.suffix ? (
           <>
             {" "}
@@ -216,6 +217,14 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     else if (command === "c") run(props.controller.commitApplied());
     else if (command === "l") run(props.controller.toggleRestriction("lock"));
     else if (command === "w") run(props.controller.toggleRestriction("allow"));
+    else if (command === "f") {
+      props.controller.toggleFold();
+      sync();
+    }
+    else if (command === "h") {
+      props.controller.toggleRelatedOnly();
+      sync();
+    }
     else if (command === "m") {
       if (props.controller.runtimeAgent()) setModelPicker({ kind: "role" });
       else setState((current) => ({ ...current, error: "No model runtime is active." }));
@@ -253,6 +262,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
             [{(state.task?.restrictionMode ?? state.pendingMode) === "lock" ? "LOCK" : "ALLOW"} {state.task?.lockedPaths.length ?? state.pendingMarks.length}]
           </Text>
         ) : null}
+        {state.relatedOnly ? <Text color={theme.secondary}>[RELATED]</Text> : null}
         {state.task ? (
           <Text color={theme.muted}>r{state.task.revision} · {state.task.basisRevision.slice(0, 12)}</Text>
         ) : null}
@@ -349,6 +359,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.primary}> explain · </Text>
           <Text color={theme.primary} bold>[N]</Text>
           <Text color={theme.primary}> new · </Text>
+          <Text color={theme.muted} bold>[F]</Text>
+          <Text color={theme.muted}> fold · </Text>
+          <Text color={theme.muted} bold>[H]</Text>
+          <Text color={theme.muted}> related · </Text>
           <Text color={theme.muted} bold>[Tab]</Text>
           <Text color={theme.muted}> pane · </Text>
           <Text color={theme.muted} bold>[Q]</Text>

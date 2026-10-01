@@ -355,17 +355,17 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().error).toContain("A patch must target a file, hunk, or virtual node");
   });
 
-  it("develops a path one step at a time: refine, then draft", async () => {
+  it("develops a refined path by drafting every file beneath it, then reports done", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");
     await controller.crystallize();
     controller.select("entry:.");
     await controller.develop();
-    expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "refined" });
-    controller.select("entry:src/auth/session.ts");
-    await controller.develop();
     const snapshot = controller.snapshot();
-    expect(Object.keys(snapshot.task?.diffs ?? {})).toHaveLength(1);
+    expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "ready" });
+    expect(Object.keys(snapshot.task?.diffs ?? {})).toHaveLength(2);
+    expect(snapshot.message).toContain("Developed 2 files");
+    controller.select("entry:src/auth/session.ts");
     await controller.develop();
     expect(controller.snapshot().error).toContain("already has a drafted patch");
   });
@@ -382,6 +382,10 @@ describe("augment TUI controller", () => {
             return { value: { children: [{ kind: "dir", path: "test", lod: "file", reason: "tests" }] } };
           }
           return { value: { children: [{ kind: "file", path: "test/existing.test.ts", lod: "hunk", reason: "extend" }] } };
+        }
+        if (request.operation === "draft-patch") {
+          const path = request.context.node.path ?? "test/existing.test.ts";
+          return { value: { patch: `--- a/${path}\n+++ b/${path}\n`, assumptions: [] } };
         }
         throw new Error(`unexpected operation ${request.operation}`);
       },
@@ -403,7 +407,7 @@ describe("augment TUI controller", () => {
     expect(Object.values(snapshot.task?.nodes ?? {}).some((node) => node.path === "test/existing.test.ts")).toBe(false);
   });
 
-  it("develops through refined directories: crystallize the next undrafted dir, then refine and draft it", async () => {
+  it("develops through nested directories: files first, then crystallize, refine, and draft each folder", async () => {
     const runtime: ModelRuntime = {
       call: async (request) => {
         if (request.operation === "generate-domain") {
@@ -432,21 +436,93 @@ describe("augment TUI controller", () => {
     await controller.crystallize();
     controller.select("entry:.");
     await controller.develop();
-    expect(controller.snapshot().task?.nodes[controller.snapshot().task!.rootNodeId]).toMatchObject({ status: "refined" });
-    expect(controller.snapshot().selectedRowId).toBe("entry:src/auth");
-    await controller.develop();
-    expect(controller.snapshot().message ?? controller.snapshot().error).toContain("Single viable approach adopted");
-    await controller.develop();
-    expect(controller.snapshot().selectedRowId).toBe("entry:src/auth/session.ts");
-    await controller.develop();
-    expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(1);
-    controller.select("entry:.");
-    await controller.develop();
-    expect(controller.snapshot().selectedRowId).toBe("entry:TODO-augment.md");
-    expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(2);
+    const snapshot = controller.snapshot();
+    expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "ready" });
+    expect(Object.keys(snapshot.task?.diffs ?? {})).toHaveLength(2);
+    const authNode = Object.values(snapshot.task?.nodes ?? {}).find((node) => node.path === "src/auth")!;
+    expect(authNode.status).toBe("ready");
+    expect(snapshot.message).toContain("Developed 2 files");
     controller.select("entry:.");
     await controller.develop();
     expect(controller.snapshot().error).toContain("Every file under this path is drafted");
+  });
+
+  it("hides unrelated paths when the related-only filter is on", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    await controller.develop();
+    controller.select("entry:package.json");
+    await controller.toggleRestriction("lock");
+    expect(controller.snapshot().rows.some((row) => row.id === "entry:tsconfig.json")).toBe(true);
+
+    controller.toggleRelatedOnly();
+    const filtered = controller.snapshot();
+    expect(filtered.relatedOnly).toBe(true);
+    const ids = filtered.rows.map((row) => row.id);
+    expect(ids).toContain("entry:."); // root always stays
+    expect(ids).toContain("entry:src"); // ancestor of planned paths
+    expect(ids).toContain("entry:src/auth/session.ts"); // planned
+    expect(ids).toContain("entry:package.json"); // marked in the plain
+    expect(ids).not.toContain("entry:tsconfig.json"); // unrelated
+    expect(filtered.rows.every((row) => row.repositoryOnly === false || row.id === "entry:package.json" || row.id.startsWith("entry:package.json/"))).toBe(true);
+
+    controller.toggleRelatedOnly();
+    expect(controller.snapshot().rows.some((row) => row.id === "entry:tsconfig.json")).toBe(true);
+  });
+
+  it("folds and unfolds directories without losing the selection", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    await controller.develop();
+    controller.select("entry:src/auth/session.ts");
+    expect(controller.snapshot().rows.some((row) => row.id === "entry:src/auth/session.ts")).toBe(true);
+
+    controller.select("entry:src/auth");
+    controller.toggleFold();
+    const folded = controller.snapshot();
+    expect(folded.rows.some((row) => row.id === "entry:src/auth/session.ts")).toBe(false);
+    expect(folded.rows.find((row) => row.id === "entry:src/auth")?.folded).toBe(true);
+    expect(folded.selectedRowId).toBe("entry:src/auth");
+
+    controller.toggleFold();
+    const unfolded = controller.snapshot();
+    expect(unfolded.rows.some((row) => row.id === "entry:src/auth/session.ts")).toBe(true);
+    expect(unfolded.rows.find((row) => row.id === "entry:src/auth")?.folded).toBeUndefined();
+    expect(unfolded.selectedRowId).toBe("entry:src/auth");
+
+    controller.select("entry:src/auth/session.ts");
+    controller.toggleFold();
+    expect(controller.snapshot().error).toBe("Select a directory to fold.");
+  });
+
+  it("develops a file target by drafting its patch, even after that file generated approaches", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+
+    // Enter on the file crystallizes it and adopts its single approach; the
+    // file node is now collapsed. [D] must still draft its patch.
+    await controller.constrain("tighten the cutoff");
+    const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
+    expect(fileNode.status).toBe("collapsed");
+
+    await controller.develop();
+    const developed = controller.snapshot();
+    expect(developed.error).toBeUndefined();
+    expect(developed.task?.nodes[fileNode.id]).toMatchObject({ status: "ready" });
+    expect(Object.values(developed.task?.diffs ?? {}).some((diff) => diff.nodeId === fileNode.id)).toBe(true);
+
+    // A repository-only file row has no node: [D] explains instead of
+    // silently developing the root.
+    controller.select("entry:tsconfig.json");
+    await controller.develop();
+    expect(controller.snapshot().error).toContain("has no plan node of its own yet");
   });
 
   it("tells the user to choose an approach before refining a domain path", async () => {

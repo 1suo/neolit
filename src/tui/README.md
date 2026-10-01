@@ -4,7 +4,7 @@
 
 ## Layout
 
-The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place.
+The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place. `F` folds a directory shut (`▸`, subtree hidden) and `H` filters the tree down to related paths — planned entries, restriction-plain marks, and the ancestors that connect them (a `[RELATED]` chip in the header marks the active filter; the full tree is one keypress away).
 
 ```text
 FILES
@@ -57,16 +57,20 @@ Every frame derives its vertical budget from the exported `frameLayout()`: fixed
 
 ## Flow
 
-After a task is entered and a model is configured, the TUI automatically generates approaches. A domain with exactly one viable candidate is adopted automatically (through a real `node/select`), so `F` works immediately; multiple candidates still ask for `1-7`. The intended flow is:
+After a task is entered and a model is configured, the TUI automatically generates approaches. A domain with exactly one viable candidate is adopted automatically (through a real `node/select`), so `D` works immediately; multiple candidates still ask for `1-7`. The intended flow is:
 
 ```text
 1. describe the change
 2. inspect the suggested file tree
 3. choose an approach with 1-7
-4. press D to develop the chosen approach into concrete files
-5. select a file and press D again to draft its patch
+4. press D to develop it: refine into files, then crystallize, refine, and
+   draft every undrafted file under the selected path, stopping only where an
+   approach choice (1-7) needs a human
+5. press D on any single file to draft just its patch
 6. press Enter on any path to attach a message/constraint
 ```
+
+File, hunk, and virtual targets always draft — their lifecycle state never reroutes them into refinement or an approach chooser.
 
 ## Operations
 
@@ -75,11 +79,13 @@ N  start a new change plan
 E  explain — with an active task it explains the selected path; without one it starts a repository-wide explanation task
 Enter  the universal prompt for the selected path: text becomes a message that regenerates its subtree; submitting empty rethinks it
 1-7  choose the numbered approach
-D  develop the selected path — a chosen approach expands into files; on a refined folder or the root it advances to the next undrafted file, selects it, and drafts it; a planned file drafts its exact patch
+D  develop the selected path and everything under it — a chosen approach expands into files, then every undrafted file below is crystallized, refined, and drafted in one run (bounded, stopping only where an approach choice 1-7 needs a human); a file, hunk, or virtual target always drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree
 C  commit exactly the paths this session applied (pathspec commit; unrelated dirty or staged files stay untouched)
 L  mark/unmark the selected path in the restriction plain, lock polarity: marked (`#`, red) paths must not change, everything else may
 W  mark/unmark the selected path, allow polarity: marked (`#`, accent) paths are the only ones that may change. One plain, one marked set: pressing the other polarity key inverts it (the set stays, its meaning flips). Marks made before a task starts are applied before its first model run
+F  fold/unfold the selected directory (folded folders show `▸` and hide their subtree)
+H  toggle the related-only filter: show only planned paths (nodes, approaches, drafts, explanations) and restriction-plain marks with their connecting ancestors; press again for the full repository tree. A `[RELATED]` chip marks the active filter
 M  switch the live runtime's default/draft/challenge model — arrow-key picker over the backend's current catalog, applied without restarting the session
 O  reopen selected node with a reason
 S  mark a real path changed outside the plan

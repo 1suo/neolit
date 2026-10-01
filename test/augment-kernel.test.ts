@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { crystallizeNode, draftPatchWithModel, nextDevelopmentStep, refineWithModel, selectCandidate } from "../src/augment/kernel.js";
-import { acceptDomain, createPlanTask, setPathRestriction } from "../src/augment/state.js";
+import { acceptDomain, collapseNode, createPlanTask, generateDomain, refineNode, setPathRestriction } from "../src/augment/state.js";
 import type { ModelCallRequest, ModelRuntime, PlanTask } from "../src/augment/types.js";
 
 function runtime(responses: Array<(request: ModelCallRequest) => unknown>): ModelRuntime {
@@ -68,6 +68,71 @@ describe("augment kernel", () => {
     const authNode = Object.values(drafted.nodes).find((node) => node.path === "src/auth")!;
     expect(nextDevelopmentStep(drafted, authNode.id)).toEqual({ action: "crystallize" });
     expect(nextDevelopmentStep(drafted, "node:missing")).toEqual({ action: "stalled", reason: "Unknown plan node." });
+  });
+
+  it("descends into a collapsed child directory with a refine step before reporting done", async () => {
+    const seeded = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 75, touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]);
+    let task = createPlanTask({ id: "task:frontier", objective: "o", basisRevision: "commit:1" });
+    const domain = await crystallizeNode(seeded, task, { taskId: task.id, nodeId: task.rootNodeId, temperature: "normal", lod: "file" });
+    const selected = selectCandidate(domain, { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]! });
+    const refined = await refineWithModel(runtime([
+      () => ({ children: [
+        { kind: "dir", path: "src/auth", lod: "file", reason: "owns the work" },
+        { kind: "file", path: "TODO.md", lod: "file", reason: "track it" },
+      ] }),
+    ]), selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "file" });
+    const todoNode = Object.values(refined.nodes).find((node) => node.path === "TODO.md")!;
+    const drafted = await draftPatchWithModel(runtime([() => ({ patch: "--- a/TODO.md\n+++ b/TODO.md\n", assumptions: [] })]), refined, { taskId: refined.id, nodeId: todoNode.id, temperature: "low" });
+
+    // With every file drafted but src/auth still uncrystallized, the frontier
+    // is a crystallize descend — not done.
+    expect(nextDevelopmentStep(drafted, drafted.rootNodeId)).toMatchObject({ action: "descend", path: "src/auth", step: "crystallize" });
+
+    const authNode = Object.values(drafted.nodes).find((node) => node.path === "src/auth")!;
+    const authDomain = await crystallizeNode(runtime([
+      () => ({ candidates: [{ label: "Local", rationale: "scoped", confidence: 70, touchedPaths: ["src/auth/session.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]), drafted, { taskId: drafted.id, nodeId: authNode.id, temperature: "normal", lod: "file" });
+    const collapsedAuth = selectCandidate(authDomain, { taskId: authDomain.id, expectedRevision: authDomain.revision, nodeId: authNode.id, candidateId: authDomain.nodes[authNode.id]!.candidateIds[0]! });
+
+    // A collapsed child directory still owes its refinement: refine descend,
+    // never a premature done.
+    expect(nextDevelopmentStep(collapsedAuth, collapsedAuth.rootNodeId)).toMatchObject({ action: "descend", path: "src/auth", step: "refine" });
+  });
+
+  it("drafts a file target even when its node is collapsed or in a domain", () => {
+    const initial = createPlanTask({ id: "task:file-step", objective: "o", basisRevision: "commit:1" });
+    const withDomain = generateDomain(initial, {
+      taskId: initial.id,
+      expectedRevision: initial.revision,
+      nodeId: initial.rootNodeId,
+      candidates: [{ label: "Fix", rationale: "one family", confidence: 80, touchedPaths: ["src/a.ts"] }],
+    });
+    const accepted = acceptDomain(withDomain, { taskId: withDomain.id, expectedRevision: withDomain.revision, nodeId: withDomain.rootNodeId, challengeRound: 1 });
+    const collapsed = collapseNode(accepted, { taskId: accepted.id, expectedRevision: accepted.revision, nodeId: accepted.rootNodeId, candidateId: accepted.nodes[accepted.rootNodeId]!.candidateIds[0]! });
+    const refined = refineNode(collapsed, {
+      taskId: collapsed.id,
+      expectedRevision: collapsed.revision,
+      nodeId: collapsed.rootNodeId,
+      children: [{ kind: "file", path: "src/a.ts", lod: "hunk", reason: "the change" }],
+    });
+    const fileNode = Object.values(refined.nodes).find((node) => node.path === "src/a.ts")!;
+    expect(nextDevelopmentStep(refined, fileNode.id)).toEqual({ action: "draft" });
+
+    // Crystallize the file itself and choose its approach: still draft.
+    const fileDomain = generateDomain(refined, {
+      taskId: refined.id,
+      expectedRevision: refined.revision,
+      nodeId: fileNode.id,
+      candidates: [{ label: "Inline fix", rationale: "local", confidence: 70, touchedPaths: ["src/a.ts"] }],
+    });
+    const fileAccepted = acceptDomain(fileDomain, { taskId: fileDomain.id, expectedRevision: fileDomain.revision, nodeId: fileNode.id, challengeRound: 1 });
+    const fileCollapsed = collapseNode(fileAccepted, { taskId: fileAccepted.id, expectedRevision: fileAccepted.revision, nodeId: fileNode.id, candidateId: fileAccepted.nodes[fileNode.id]!.candidateIds[0]! });
+    expect(fileCollapsed.nodes[fileNode.id]!.status).toBe("collapsed");
+    expect(nextDevelopmentStep(fileCollapsed, fileNode.id)).toEqual({ action: "draft" });
   });
 
   it("splits initial domain proposals at the node scope instead of failing", async () => {

@@ -165,11 +165,13 @@ After a change task is entered, the TUI automatically generates approaches for t
 ```text
 Enter  prompt for the selected path — text becomes a message that regenerates its subtree; empty submit rethinks it
 1-7    choose numbered approach
-D      develop selected path (expand into files; on a refined folder, draft its next undrafted file)
+D      develop selected path and its whole subtree (expand, crystallize, refine, and draft every undrafted file; stops only where 1-7 needs a human); a file target always drafts its patch
 A      apply drafted patch to working tree
 C      commit the session-applied paths only (never unrelated changes)
 L      mark/unmark path in the restriction plain (lock polarity: marked = must not change)
 W      mark/unmark path in the restriction plain (allow polarity: marked = the only thing that may change); pressing the other key inverts the plain
+F      fold/unfold the selected directory
+H      toggle related-only view: just planned and marked paths, or the full repository
 E      explain selected path (whole repository when no task is active)
 N      new change task
 Tab    switch pane
