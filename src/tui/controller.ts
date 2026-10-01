@@ -394,24 +394,27 @@ export class AugmentTuiController {
     });
   }
 
+  private async performCrystallize(nodeId: string, temperature: Temperature, lod: LOD): Promise<void> {
+    const task = this.task!;
+    const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod, challengeRounds: this.challengeRounds } });
+    this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    await this.adoptSingletonIfViable(nodeId);
+    const generatedNode = this.task.nodes[nodeId]!;
+    if (generatedNode.status === "collapsed") {
+      this.message = "Single viable approach adopted. Press D to develop it into files.";
+    }
+    else if (generatedNode.challengeExhausted) {
+      this.message = "Approaches ready after bounded challenge. Choose 1-7, or press Enter to rethink.";
+    } else {
+      this.message = "Approaches ready. Choose one with keys 1-7.";
+    }
+    this.selectNodeEntry(nodeId);
+  }
+
   async crystallize(temperature: Temperature = "normal", lod: LOD = this.defaultLod): Promise<void> {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
-    await this.dispatch("Generating approaches", async () => {
-      const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod, challengeRounds: this.challengeRounds } });
-      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
-      await this.adoptSingletonIfViable(nodeId);
-      const generatedNode = this.task.nodes[nodeId]!;
-      if (generatedNode.status === "collapsed") {
-        this.message = "Single viable approach adopted. Press D to develop it into files.";
-      }
-      else if (generatedNode.challengeExhausted) {
-        this.message = "Approaches ready after bounded challenge. Choose 1-7, or press Enter to rethink.";
-      } else {
-        this.message = "Approaches ready. Choose one with keys 1-7.";
-      }
-      this.selectNodeEntry(nodeId);
-    }, nodeId);
+    await this.dispatch("Generating approaches", () => this.performCrystallize(nodeId, temperature, lod), nodeId);
   }
 
   async selectCandidate(candidateId?: string): Promise<void> {
@@ -434,6 +437,14 @@ export class AugmentTuiController {
     });
   }
 
+  private async performRefine(nodeId: string, temperature: Temperature, lod: LOD): Promise<void> {
+    const task = this.task!;
+    const response = await this.server.handle({ jsonrpc: "2.0", id: 4, method: "refine", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
+    this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    this.refresh();
+    this.selectFirstChild(nodeId);
+  }
+
   async refine(temperature: Temperature = "normal", lod: LOD = this.defaultLod): Promise<void> {
     const task = this.requireTask();
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
@@ -451,13 +462,15 @@ export class AugmentTuiController {
       }
       return;
     }
-    await this.dispatch("Expanding approach into files", async () => {
-      const response = await this.server.handle({ jsonrpc: "2.0", id: 4, method: "refine", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
-      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
-      this.refresh();
-      this.message = "Planned files ready. Select a file and press D again to draft it.";
-      this.selectFirstChild(nodeId);
-    }, nodeId);
+    await this.dispatch("Expanding approach into files", () => this.performRefine(nodeId, temperature, lod), nodeId);
+  }
+
+  private async performDraft(nodeId: string): Promise<void> {
+    const task = this.task!;
+    const response = await this.server.handle({ jsonrpc: "2.0", id: 5, method: "patch/draft", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature: "low" } });
+    this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    this.refresh();
+    this.message = "Draft change ready. It is not applied to the repository.";
   }
 
   async draftPatch(): Promise<void> {
@@ -468,12 +481,7 @@ export class AugmentTuiController {
       this.error = "Select a file, hunk, or virtual node.";
       return;
     }
-    await this.dispatch("Drafting selected change", async () => {
-      const response = await this.server.handle({ jsonrpc: "2.0", id: 5, method: "patch/draft", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature: "low" } });
-      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
-      this.refresh();
-      this.message = "Draft change ready. It is not applied to the repository.";
-    }, nodeId);
+    await this.dispatch("Drafting selected change", () => this.performDraft(nodeId), nodeId);
   }
 
   async applySelected(): Promise<void> {
