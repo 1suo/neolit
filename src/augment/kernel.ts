@@ -105,9 +105,21 @@ function context(task: PlanTask, node: PlanNode): ModelContextPacket {
     obligations: node.obligationIds.map((id) => task.obligations[id]!).filter(Boolean),
     diffs: node.diffIds.map((id) => task.diffs[id]!).filter(Boolean),
     taskDiffs: Object.values(task.diffs),
+    taskTree: compactTree(task),
     lockedPaths: task.lockedPaths,
     rejectedCandidates: rejected,
   };
+}
+
+function compactTree(task: PlanTask): ModelContextPacket["taskTree"] {
+  const seen = new Set<string>();
+  const entries: ModelContextPacket["taskTree"] = [];
+  for (const node of Object.values(task.nodes)) {
+    if (!node.path || seen.has(node.path)) continue;
+    seen.add(node.path);
+    entries.push({ path: node.path, kind: node.kind, status: node.status, drafted: node.diffIds.length > 0 });
+  }
+  return entries.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 async function call<T>(

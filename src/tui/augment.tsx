@@ -205,9 +205,11 @@ const FOLDER_PATCH_PREVIEW = 4;
 
 /**
  * Builds the right-pane content for the selected tree row as one flat list of
- * colored lines the pane can scroll. File rows render their full exact patch;
- * directory rows render a summary derived from their immediate contents plus
- * aggregated descendant changes.
+ * colored lines the pane scrolls and wraps natively. The pane carries exactly
+ * two content sections — DESCRIPTION (why this path changes) and CHANGES (the
+ * exact drafted patches) — plus keypress suggestions only when neither has
+ * anything to show. Approaches appear only while a choice is still open on
+ * this node; after selection they are history, not hover content.
  */
 export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingLocks: string[] = [], live?: LiveStatus, appliedDiffIds: string[] = []): DetailLine[] {
   const lines: DetailLine[] = [];
@@ -223,12 +225,14 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     if (live.failed.error) add(`  ${live.failed.error.split(/\r?\n/)[0] ?? ""}`, theme.error);
   }
   if (!row) {
-    lines.push({ text: "  Describe a change to see affected files.", color: theme.muted });
+    label("KEYS");
+    add("  [N] describe a change · [E] explain the repository", theme.primary);
     return lines;
   }
   const entry = row.entry;
   const nodes = entry.nodeIds.map((id) => task?.nodes[id]).filter(Boolean) as PlanNode[];
   const candidates = candidatesForEntry(task, entry);
+  const possible = candidates.filter((candidate) => candidate.status === "possible");
   const diffs = entry.diffIds.flatMap((id) => {
     const diff = task?.diffs[id];
     return diff ? [diff] : [];
@@ -239,8 +243,13 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   const isDirectory = entry.kind === "dir" || entry.kind === "root";
   const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
 
-  add(state.indicator ? `${state.indicator} ${entryName(entry)}` : entryName(entry), state.color, true);
-  if (state.state) label(state.state);
+  if (nodes.length) {
+    label("DESCRIPTION");
+    for (const node of nodes) {
+      add(`  ${node.reason}`, theme.text);
+      if (node.blockedReason) add(`  ${node.blockedReason}`, theme.error);
+    }
+  }
 
   if (isDirectory) {
     const plannedChildren = entry.children.filter((child) => entryHasPlan(child));
@@ -272,10 +281,34 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     }
   }
 
+  if (possible.length) {
+    label("APPROACHES");
+    possible.forEach((candidate, index) => {
+      add(`  ${index + 1} ◇ ${candidate.label} · ${candidate.confidence}%`, statusColor(candidate.status));
+      add(`  ${candidate.rationale}`, theme.muted);
+      add(`  ${candidate.touchedPaths.join(", ")}`, theme.accent);
+    });
+  }
+
+  if (explanations.length) {
+    label("EXPLANATION");
+    for (const explanation of explanations.slice(0, 8)) {
+      add(`? ${explanation.path} · ${explanation.role} · ${explanation.confidence}%`, explanation.role === "primary" ? theme.warning : theme.accent);
+      add(`  ${explanation.summary}`, theme.text);
+      add(`  ${explanation.detail}`, theme.muted);
+    }
+    if (explanations.length > 8) add(`  + ${explanations.length - 8} more related paths`, theme.muted);
+  }
+
+  if (notes.length) {
+    label("MESSAGES");
+    for (const note of notes) add(`  ${note.text}`, theme.warning);
+  }
+
   if (diffs.length) {
     const appliedCount = diffs.filter((diff) => appliedDiffIds.includes(diff.id)).length;
     const appliedSuffix = appliedCount === diffs.length ? " · applied, not committed" : appliedCount ? ` · ${appliedCount}/${diffs.length} applied` : "";
-    label(isDirectory ? "FOLDER CHANGE SUMMARY" : "FILE CHANGE");
+    label("CHANGES");
     add(changeSummary(diffs) + appliedSuffix, state.color, true);
     if (isDirectory) {
       label("EXACT DIFF");
@@ -298,49 +331,24 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
       }
     }
   }
-  else if (nodes.length) {
-    label(isDirectory ? "FOLDER PLAN" : "FILE PLAN");
-    for (const node of nodes) {
-      add(`  ${node.reason}`, theme.text);
-      if (node.blockedReason) add(`  ${node.blockedReason}`, theme.error);
-    }
-    if (!isDirectory) add("[D] draft this file's exact patch · [A] apply it after drafting", theme.primary);
+  else {
+    label("KEYS");
+    if (!task) add("  [N] describe a change · [E] explain the repository", theme.primary);
+    else if (possible.length) add(`  1-${possible.length} choose approach · [G] rethink`, theme.primary);
+    else if (!isDirectory && nodes.length) add("  [D] draft this file's exact patch · [A] apply it after drafting", theme.primary);
+    else add("  [Enter] message/regenerate · [G] rethink · [D] draft selected file", theme.primary);
   }
 
   if (nodes.some((node) => node.challengeExhausted)) {
     add("BOUNDED CHALLENGE · omissions were found; coverage is not proven", theme.warning);
   }
-
-  if (candidates.length) label("APPROACHES");
-  candidates.forEach((candidate, index) => {
-    add(
-      `${candidate.status === "possible" ? `${index + 1}` : " "} ${candidate.status === "selected" ? "◆" : candidate.status === "eliminated" ? "×" : "◇"} ${candidate.label} · ${candidate.confidence}%`,
-      statusColor(candidate.status),
-    );
-    add(`  ${candidate.rationale}`, theme.muted);
-    add(`  ${candidate.touchedPaths.join(", ")}`, theme.accent);
-  });
-
-  if (explanations.length) label("EXPLANATION");
-  for (const explanation of explanations.slice(0, 8)) {
-    add(`? ${explanation.path} · ${explanation.role} · ${explanation.confidence}%`, explanation.role === "primary" ? theme.warning : theme.accent);
-    add(`  ${explanation.summary}`, theme.text);
-    add(`  ${explanation.detail}`, theme.muted);
-  }
-  if (explanations.length > 8) add(`  + ${explanations.length - 8} more related paths`, theme.muted);
-
-  if (notes.length) label("MESSAGES");
-  for (const note of notes) add(`  ${note.text}`, theme.warning);
-
-  add("[Enter] message/regenerate · [L] lock", theme.primary);
   return lines;
 }
 
-function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; width: number; live?: LiveStatus }) {
+function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; live?: LiveStatus }) {
   const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds), [props.state.task, props.row, props.state.pendingLocks, props.live, props.state.appliedDiffIds]);
-  const visual = useMemo(() => lines.flatMap((line) => wrapLine(line.text, props.width).map((text) => ({ ...line, text }))), [lines, props.width]);
-  const clamped = Math.min(props.offset, Math.max(0, visual.length - props.limit));
-  const visible = visual.slice(clamped, clamped + props.limit);
+  const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
+  const visible = lines.slice(clamped, clamped + props.limit);
   return (
     <Box flexDirection="column" paddingX={1}>
       {visible.map((line, index) => (
@@ -363,8 +371,7 @@ function inputTitle(mode: InputMode): string {
 const FRAME_PADDING_ROWS = 2;
 const HEADER_ROWS = 1;
 const LEGEND_ROWS = 2;
-const STATUS_ROWS = 1;
-const INPUT_BOX_ROWS = 3;
+const MESSAGE_PANEL_ROWS = 3;
 const PANE_FRAME_ROWS = 3;
 const MIN_PANE_ROWS = 1;
 const UNKNOWN_WINDOW_ROWS = 24;
@@ -384,7 +391,8 @@ export interface FrameLayout {
  */
 export function frameLayout(rows: number | undefined, mode: InputMode): FrameLayout {
   const frameRows = typeof rows === "number" && Number.isFinite(rows) && rows > 0 ? Math.floor(rows) : UNKNOWN_WINDOW_ROWS;
-  const chromeRows = FRAME_PADDING_ROWS + HEADER_ROWS + LEGEND_ROWS + (mode === "idle" ? STATUS_ROWS : INPUT_BOX_ROWS);
+  void mode;
+  const chromeRows = FRAME_PADDING_ROWS + HEADER_ROWS + LEGEND_ROWS + MESSAGE_PANEL_ROWS;
   const paneRows = Math.max(MIN_PANE_ROWS, frameRows - chromeRows - PANE_FRAME_ROWS);
   return { frameRows, treeRows: paneRows, detailRows: paneRows };
 }
@@ -393,40 +401,6 @@ function visibleWindow<T>(items: T[], selected: number, limit: number): T[] {
   if (items.length <= limit) return items;
   const start = Math.max(0, Math.min(items.length - limit, selected - Math.floor(limit / 2)));
   return items.slice(start, start + limit);
-}
-
-/**
- * Wraps one logical detail line to the pane width. Continuations are indented
- * two spaces and overlong tokens are hard-split, so no entry — diff lines,
- * rationales, explanations, messages — is ever truncated.
- */
-export function wrapLine(text: string, width: number): string[] {
-  const limit = Math.max(8, Math.floor(width));
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return [" "];
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    let token = word;
-    while ([...token].length > limit) {
-      if (line) {
-        lines.push(line);
-        line = "";
-      }
-      const chars = [...token];
-      lines.push(chars.slice(0, limit).join(""));
-      token = chars.slice(limit).join("");
-    }
-    const candidate = line ? `${line} ${token}` : `${lines.length ? "  " : ""}${token}`;
-    if ([...candidate].length <= limit) {
-      line = candidate;
-      continue;
-    }
-    lines.push(line);
-    line = `  ${token}`;
-  }
-  if (line) lines.push(line);
-  return lines;
 }
 
 export function AugmentTui(props: { controller: AugmentTuiController; modelAvailable: boolean; modelLabel?: string }) {
@@ -576,7 +550,6 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const layout = frameLayout(windowSize.rows, mode);
   const treeRows = visibleWindow(state.rows, selectedIndex, layout.treeRows);
   const treeWidth = Math.max(30, Math.floor(windowSize.columns * 0.42) - 6);
-  const detailWidth = Math.max(20, Math.floor(windowSize.columns * 0.58) - 4);
   const detailLimit = layout.detailRows;
   const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]!;
   const liveStatus: LiveStatus | undefined = state.active || state.failed
@@ -631,7 +604,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Box paddingLeft={1}>
             <Text color={pane === "detail" ? theme.primary : theme.muted} bold>SELECTED PATH</Text>
           </Box>
-          <DetailView state={state} row={selectedRow} offset={detailOffset} limit={detailLimit} width={detailWidth} live={liveStatus} />
+          <DetailView state={state} row={selectedRow} offset={detailOffset} limit={detailLimit} live={liveStatus} />
         </Box>
       </Box>
 
@@ -663,11 +636,11 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       </Box>
 
       {mode === "idle" ? (
-        state.error ? (
-          <Text color={theme.error}>{state.error}</Text>
-        ) : (
-          <Text color={state.busy ? theme.warning : theme.muted}>{statusMessage}</Text>
-        )
+        <Box borderStyle="round" borderColor={state.error ? theme.error : state.busy ? theme.warning : theme.border} flexShrink={0} paddingX={1}>
+          <Text wrap="wrap" color={state.error ? theme.error : state.busy ? theme.warning : theme.muted}>
+            {state.busy ? `${spinner} ${state.operation ?? "Working"}…` : state.error ? state.error.split(/\r?\n/)[0] : statusMessage}
+          </Text>
+        </Box>
       ) : (
         <Box borderStyle="round" borderColor={theme.borderActive} paddingX={1} flexShrink={0}>
           <Text color={theme.primary} bold>{inputTitle(mode)} › </Text>

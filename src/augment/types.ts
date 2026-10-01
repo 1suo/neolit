@@ -173,6 +173,7 @@ export interface ModelContextPacket {
   obligations: PlanObligation[];
   diffs: PlannedDiff[];
   taskDiffs: PlannedDiff[];
+  taskTree: Array<{ path: string; kind: PlanNode["kind"]; status: PlanNodeStatus; drafted: boolean }>;
   lockedPaths: string[];
   rejectedCandidates: Array<{ label: string; reason: string }>;
 }
