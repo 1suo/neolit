@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput, useWindowSize, type RenderOptions } from "ink";
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
 import { AugmentTuiController, candidatesForEntry, type PlannedTreeRow, type TuiActionState } from "./controller.js";
-import { detailLines, entryName, entryState, entryTouchesNode, frameLayout, theme, type DetailLine, type FrameLayout, type InputMode, type LiveStatus, type RowLiveFlags } from "./detail.js";
+import { detailLines, entryName, entryState, entryTouchesNode, frameLayout, theme, type DetailLine, type FrameLayout, type InputMode, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
 
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
-function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; pendingMarks?: string[]; live?: RowLiveFlags; appliedDiffIds?: string[]; pendingMode?: "lock" | "allow" }) {
-  const state = entryState(props.task, props.row, props.pendingMarks, props.live, props.appliedDiffIds, props.pendingMode);
+function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boolean; width: number; view: RowView }) {
+  const state = entryState(props.task, props.row, props.view);
   return (
     <Box backgroundColor={props.selected ? theme.selected : undefined}>
       <Text wrap="truncate-end">
@@ -33,7 +33,12 @@ function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boo
 }
 
 function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset: number; limit: number; live?: LiveStatus }) {
-  const lines = useMemo(() => detailLines(props.state.task, props.row, props.state.pendingMarks, props.live, props.state.appliedDiffIds, props.state.pendingMode), [props.state.task, props.row, props.state.pendingMarks, props.live, props.state.appliedDiffIds, props.state.pendingMode]);
+  const lines = useMemo(() => detailLines(props.state.task, props.row, {
+    pendingMarks: props.state.pendingMarks,
+    pendingMode: props.state.pendingMode,
+    appliedDiffIds: props.state.appliedDiffIds,
+    live: props.live,
+  }), [props.state.task, props.row, props.state.pendingMarks, props.state.pendingMode, props.state.appliedDiffIds, props.live]);
   const clamped = Math.min(props.offset, Math.max(0, lines.length - props.limit));
   const visible = lines.slice(clamped, clamped + props.limit);
   return (
@@ -253,10 +258,12 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
                 task={state.task}
                 selected={state.selectedRowId === row.id}
                 width={treeWidth}
-                pendingMarks={state.pendingMarks}
-                live={activeRow || failedRow ? { active: activeRow, failed: failedRow, spinner, operation: state.active?.operation } : undefined}
-                appliedDiffIds={state.appliedDiffIds}
-                pendingMode={state.pendingMode}
+                view={{
+                  pendingMarks: state.pendingMarks,
+                  pendingMode: state.pendingMode,
+                  appliedDiffIds: state.appliedDiffIds,
+                  live: activeRow || failedRow ? { active: activeRow, failed: failedRow, spinner, operation: state.active?.operation } : undefined,
+                }}
               />
             );
           })}

@@ -38,6 +38,22 @@ export interface RowLiveFlags {
   operation?: string;
 }
 
+/** Per-row view context: pending restrictions, applied marks, live flags. */
+export interface RowView {
+  pendingMarks?: string[];
+  pendingMode?: "lock" | "allow";
+  appliedDiffIds?: string[];
+  live?: RowLiveFlags;
+}
+
+/** Pane-level view context: the same inputs with pane-wide live status. */
+export interface PaneView {
+  pendingMarks?: string[];
+  pendingMode?: "lock" | "allow";
+  appliedDiffIds?: string[];
+  live?: LiveStatus;
+}
+
 
 export function entryTouchesNode(entry: PlannedTreeRow["entry"], nodeId?: string): boolean {
   return nodeId !== undefined && entry.nodeIds.includes(nodeId);
@@ -75,7 +91,8 @@ function diffIndicator(kind: PlannedDiff["kind"]): string {
   return "▤";
 }
 
-export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, pendingMarks: string[] = [], live?: RowLiveFlags, appliedDiffIds: string[] = [], pendingMode: "lock" | "allow" = "lock"): { indicator: string; suffix: string; color: string } {
+export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view: RowView = {}): { indicator: string; suffix: string; color: string } {
+  const { pendingMarks = [], pendingMode = "lock", appliedDiffIds = [], live } = view;
   const entry = row.entry;
   const candidates = candidatesForEntry(task, entry);
   const selected = candidates.find((candidate) => candidate.status === "selected");
@@ -174,7 +191,8 @@ const FOLDER_PATCH_PREVIEW = 4;
  * anything to show. Approaches appear only while a choice is still open on
  * this node; after selection they are history, not hover content.
  */
-export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, pendingMarks: string[] = [], live?: LiveStatus, appliedDiffIds: string[] = [], pendingMode: "lock" | "allow" = "lock"): DetailLine[] {
+export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | undefined, view: PaneView = {}): DetailLine[] {
+  const { pendingMarks = [], pendingMode = "lock", appliedDiffIds = [], live } = view;
   const lines: DetailLine[] = [];
   const add = (text: string, color: string, bold = false) => lines.push({ text: text.length ? text : " ", color, bold });
   const label = (text: string) => add(text, theme.muted);
@@ -201,7 +219,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   });
   const notes = constraintsForEntry(task, entry);
   const explanations = explanationsForEntry(task, entry);
-  const state = entryState(task, row, pendingMarks, undefined, appliedDiffIds, pendingMode);
+  const state = entryState(task, row, { pendingMarks, pendingMode, appliedDiffIds });
   const isDirectory = entry.kind === "dir" || entry.kind === "root";
   const descriptionFor = (diff: PlannedDiff) => task?.nodes[diff.nodeId]?.reason;
 
@@ -231,7 +249,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
           branch: "",
           entry: child,
           repositoryOnly: false,
-        }, pendingMarks, childLive, appliedDiffIds, pendingMode);
+        }, { pendingMarks, pendingMode, appliedDiffIds, live: childLive });
         const reason = child.nodeIds.map((id) => task?.nodes[id]?.reason).find((value) => value?.length);
         add(`  ${childState.indicator} ${entryName(child)}${childState.suffix ? ` ${childState.suffix}` : ""}${reason ? ` — ${reason}` : ""}`, childState.color);
     }

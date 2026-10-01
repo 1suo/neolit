@@ -573,7 +573,7 @@ describe("augment TUI apply", () => {
     expect(snapshot.rows.some((row) => row.id === "entry:session.ts")).toBe(true);
 
     const appliedRow = snapshot.rows.find((row) => row.id === "entry:session.ts");
-    const detail = detailLines(snapshot.task, appliedRow, [], undefined, snapshot.appliedDiffIds).map((line) => line.text);
+    const detail = detailLines(snapshot.task, appliedRow, { appliedDiffIds: snapshot.appliedDiffIds }).map((line) => line.text);
     expect(detail.join("\n")).toContain("1 changed ✓");
     expect(detail.some((line) => line.includes("session.ts · changed ✓"))).toBe(true);
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
@@ -825,10 +825,10 @@ describe("selected-path detail model", () => {
     const row = snapshot.rows.find((item) => item.id === "entry:.");
     const rootNodeId = snapshot.task!.rootNodeId;
 
-    const active = detailLines(snapshot.task, row, [], { spinner: "⠋", active: { nodeId: rootNodeId, operation: "Generating approaches" } }).map((line) => line.text);
+    const active = detailLines(snapshot.task, row, { live: { spinner: "⠋", active: { nodeId: rootNodeId, operation: "Generating approaches" } } }).map((line) => line.text);
     expect(active[0]).toContain("⠋ Generating approaches…");
 
-    const failed = detailLines(snapshot.task, row, [], { spinner: "⠋", failed: { nodeId: rootNodeId, operation: "Generating approaches", error: "model exploded\nsecond line" } }).map((line) => line.text);
+    const failed = detailLines(snapshot.task, row, { live: { spinner: "⠋", failed: { nodeId: rootNodeId, operation: "Generating approaches", error: "model exploded\nsecond line" } } }).map((line) => line.text);
     expect(failed[0]).toContain("× Generating approaches failed");
     expect(failed.join("\n")).toContain("model exploded");
     expect(failed.join("\n")).not.toContain("second line");
