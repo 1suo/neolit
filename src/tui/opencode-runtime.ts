@@ -33,6 +33,8 @@ function noJsonObjectMessage(operation: string, text: string, reasoningOnly: boo
 
 const NO_ANSWER_TEXT_CORRECTION = "Your previous reply contained no answer text — it was empty or reasoning-only. Return the JSON object now as your actual reply text; do not stop after thinking.";
 
+const TRUNCATED_REPLY_CORRECTION = "Your previous reply was cut off before the JSON object closed. Return a much shorter answer now: only the minimal hunks the change needs (at most 3 context lines each, never whole paragraphs as context), no prose, no repetition of file content, and finish with the closing brace.";
+
 function sessionsStorePath(): string {
   const base = process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim()
     ? process.env.XDG_STATE_HOME
@@ -221,9 +223,10 @@ export class CliAgentRuntime implements ModelRuntime {
         if (value !== undefined) return { text, value };
         const reasoningOnly = !text.trim() && /"type":\s*"reasoning"/.test(stdout);
         failure = new Error(noJsonObjectMessage(request.operation, text, reasoningOnly));
-        // A reply with no answer text gets an explicit correction on retry:
-        // identical re-prompts repeat the emptiness deterministically.
-        corrections = [...corrections, NO_ANSWER_TEXT_CORRECTION];
+        // Corrections are symptom-specific: an empty reply needs the
+        // answer-now nudge; a non-empty unparseable reply is almost always
+        // output truncation, which only a shorter answer survives.
+        corrections = [...corrections, text.trim() ? TRUNCATED_REPLY_CORRECTION : NO_ANSWER_TEXT_CORRECTION];
       } catch (error) {
         if (!isRetryable(error) || attempt === attempts - 1) throw error;
         failure = error;
@@ -234,7 +237,12 @@ export class CliAgentRuntime implements ModelRuntime {
 
   private async prompt(request: ModelCallRequest, corrections: string[] = []): Promise<{ text: string; stdout: string }> {
     const taskId = request.context.taskId;
-    const previous = this.continueSessions ? this.sessions.get(taskId) : undefined;
+    // Drafts are one-shot by design: the target file is embedded in the
+    // prompt, so resuming a long-lived session only piles stale history onto
+    // the context and pushes the long patch reply over output limits. Only
+    // conversation-style operations (domain, challenge, refine, explain)
+    // continue their session.
+    const previous = this.continueSessions && !DRAFT_OPERATIONS.has(request.operation) ? this.sessions.get(taskId) : undefined;
     const regenerationNote = request.operation === "generate-domain" && request.context.rejectedCandidates?.length
       ? "This is a regeneration: the operator rejected the approaches listed in rejectedCandidates. Produce materially different candidates — never repeat a rejected label or a trivial rewording of one."
       : undefined;
@@ -355,7 +363,7 @@ function operationContract(request: ModelCallRequest): string {
       return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"one sentence","obligations":[{"kind":"test|documentation|check|todo","description":"..."}]}]} (1-16 children; every child needs one reason of at most 200 characters; directory children summarize their whole subtree in that one sentence; at most 4 obligations per child, each description <= 160 characters; omit the diff field entirely — patches are drafted by a separate later operation, never here; never generate descendant candidate domains; lockedPaths are immutable)`;
     case "draft-patch":
     case "repair-patch":
-      return `{"patch":"unified diff text","assumptions":["explicit assumption"]} (the patch must be a single-file unified diff touching ONLY the target path whose content is embedded in this prompt — never a multi-file or diff --git series covering other paths; include only the hunks the node reason requires; keep hunks minimal — at most 3 context lines around each change, never whole paragraphs or sentences as context; at most 3 assumptions, each <= 160 characters; answer in one shot without reading files or running tools)`;
+      return `{"patch":"unified diff text","assumptions":["explicit assumption"]} (the patch must be a single-file unified diff touching ONLY the target path whose content is embedded in this prompt — never a multi-file or diff --git series covering other paths; include only the hunks the node reason requires; keep hunks minimal — at most 3 context lines around each change, never whole paragraphs or sentences as context; keep the ENTIRE reply short: never echo the file, never explain, close the JSON object; at most 3 assumptions, each <= 160 characters; answer in one shot without reading files or running tools)`;
     case "explain-project":
       return `{"topic":"short topic","entries":[{"path":"src/example.ts","role":"primary|supporting|context","summary":"one sentence","detail":"what it is and what it does","confidence":75}]} (1-64 concrete repository paths)`;
   }
