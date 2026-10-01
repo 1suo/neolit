@@ -275,6 +275,9 @@ describe("augment TUI controller", () => {
       expect(snapshot.task?.objective).toBe("bounded retries");
       expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
       expect(JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-tasks.json"), "utf8"))).toHaveLength(1);
+      await second.develop();
+      expect(second.snapshot().error).toBeUndefined();
+      expect(Object.values(second.snapshot().task?.nodes ?? {}).some((node) => node.kind === "file")).toBe(true);
     } finally {
       if (previous === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previous;

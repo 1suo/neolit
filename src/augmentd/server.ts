@@ -120,6 +120,21 @@ export class AugmentServer {
         this.tasks.set(taskId, task);
         return task;
       }
+      case "task/restore": {
+        const input = object(params);
+        const candidate = input.task;
+        if (!candidate || typeof candidate !== "object"
+          || (candidate as { version?: unknown }).version !== 1
+          || typeof (candidate as { id?: unknown }).id !== "string"
+          || typeof (candidate as { revision?: unknown }).revision !== "number"
+          || typeof (candidate as { rootNodeId?: unknown }).rootNodeId !== "string") {
+          throw new ProtocolError(-32002, "task/restore requires a valid task payload (version 1 with id, revision, rootNodeId).");
+        }
+        const task = candidate as PlanTask;
+        if (!task.nodes[task.rootNodeId]) throw new ProtocolError(-32002, "task/restore payload has no root node.");
+        this.tasks.set(task.id, task);
+        return task;
+      }
       case "task/get": {
         const input = object(params);
         return this.requireTask(string(input.taskId, "taskId"));

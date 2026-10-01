@@ -245,6 +245,10 @@ export class AugmentTuiController {
       if (stored) {
         this.task = stored.task;
         this.appliedDiffIds = new Set(stored.appliedDiffIds);
+        void this.server.handle({ jsonrpc: "2.0", id: 0, method: "task/restore", params: { task: stored.task } }).catch(() => {
+          // If the payload is somehow rejected the first operation will surface
+          // the server's own error; the local copy keeps the tree visible.
+        });
         this.message = `Resumed task: ${stored.task.objective}`;
       }
     }

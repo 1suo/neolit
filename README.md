@@ -109,7 +109,8 @@ task state unchanged.
 ```sh
 npx augmentd <<'JSON'
 {"jsonrpc":"2.0","id":1,"method":"initialize"}
-{"jsonrpc":"2.0","id":2,"method":"task/start","params":{"objective":"make retries bounded","basisRevision":"commit:1"}}
+{"jsonrpc":"2.0","id":2,"method":"task/start
+task/restore","params":{"objective":"make retries bounded","basisRevision":"commit:1"}}
 JSON
 ```
 

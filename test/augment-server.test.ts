@@ -95,6 +95,19 @@ describe("augmentd protocol", () => {
     expect(unknown).toMatchObject({ id: 8, error: { message: expect.stringMatching(/Unknown planned diff/u) } });
   });
 
+  it("restores a task persisted by a host into a fresh server", async () => {
+    const server = new AugmentServer({ runtime: model() });
+    const started = await server.handle(request(1, "task/start", { taskId: "task:r", objective: "resume me", basisRevision: "commit:1" }));
+    const task = (started as { result: unknown }).result;
+    const fresh = new AugmentServer({ runtime: model() });
+    const restored = await fresh.handle(request(1, "task/restore", { task }));
+    expect(restored).toMatchObject({ id: 1, result: { id: "task:r", objective: "resume me" } });
+    const fetched = await fresh.handle(request(2, "task/get", { taskId: "task:r" }));
+    expect(fetched && "result" in fetched).toBe(true);
+    const bad = await fresh.handle(request(3, "task/restore", { task: { version: 2 } }));
+    expect(bad).toMatchObject({ id: 3, error: { code: -32002, message: expect.stringMatching(/valid task payload/u) } });
+  });
+
   it("reports unknown methods and tasks", async () => {
     const server = new AugmentServer({ runtime: model() });
     expect(await server.handle(request(1, "not-a-method"))).toMatchObject({ id: 1, error: { code: -32601 } });
