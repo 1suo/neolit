@@ -396,13 +396,19 @@ describe("augment TUI controller", () => {
     controller.select("entry:.");
     await controller.develop();
     controller.select("entry:test");
-    await controller.develop();
-    controller.select("entry:test");
+
+    // Rethinking a folder that holds a drafted file refuses to discard it.
     await controller.rethink();
+    const guarded = controller.snapshot();
+    expect(guarded.error).toContain("1 drafted file under test would be discarded");
+    expect(Object.values(guarded.task?.diffs ?? {})).toHaveLength(1);
+
+    // The explicit reopen is the way to regenerate a drafted subtree.
+    await controller.reopen("redo the folder");
     const snapshot = controller.snapshot();
     expect(snapshot.error).toBeUndefined();
     const testNode = Object.values(snapshot.task?.nodes ?? {}).find((node) => node.path === "test")!;
-    expect(testNode.status).toBe("collapsed");
+    expect(testNode.status).toBe("unresolved");
     expect(Object.values(snapshot.task?.constraints ?? {}).some((constraint) => constraint.text.includes("Out-of-scope"))).toBe(false);
     expect(Object.values(snapshot.task?.nodes ?? {}).some((node) => node.path === "test/existing.test.ts")).toBe(false);
   });
@@ -506,9 +512,10 @@ describe("augment TUI controller", () => {
     await controller.refine();
     controller.select("entry:src/auth/session.ts");
 
-    // Enter on the file crystallizes it and adopts its single approach; the
-    // file node is now collapsed. [D] must still draft its patch.
-    await controller.constrain("tighten the cutoff");
+    // Crystallize the file itself and adopt its single approach: the file
+    // node is now collapsed. [D] must still draft its patch.
+    controller.select("entry:src/auth/session.ts");
+    await controller.crystallize();
     const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
     expect(fileNode.status).toBe("collapsed");
 
@@ -550,7 +557,7 @@ describe("augment TUI controller", () => {
     await controller.refine();
     const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
     controller.select("entry:src/auth/session.ts");
-    await controller.constrain("Preserve the retry API.");
+    await controller.crystallize();
     expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "domain" });
     await controller.refine();
     expect(controller.snapshot().error).toBe("This path has 2 approaches — choose one with keys 1-7, then press D to develop it.");
@@ -579,6 +586,43 @@ describe("augment TUI controller", () => {
     const second = draftContexts[1] as { taskDiffs: Array<{ path: string }>; taskTree: Array<{ path: string; drafted: boolean }> };
     expect(second.taskDiffs.map((diff) => diff.path)).toEqual(["src/auth/session.ts"]);
     expect(second.taskTree.some((entry) => entry.path === "src/auth/session.ts" && entry.drafted)).toBe(true);
+  });
+
+  it("rethinks a file target by drafting or repairing its patch, never approach domains", async () => {
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "repair-patch") {
+          const path = request.context.node.path ?? "src/auth/session.ts";
+          return { value: { patch: `--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+repaired\n`, assumptions: [] } };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    const task = controller.snapshot().task!;
+    await controller.selectCandidate(task.nodes[task.rootNodeId]!.candidateIds[0]!);
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
+
+    // Empty Enter on an undrafted file drafts it — no candidates generated.
+    await controller.rethink();
+    let snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    expect(snapshot.task?.nodes[fileNode.id]!.candidateIds).toHaveLength(0);
+    expect(snapshot.task?.nodes[fileNode.id]!.diffIds).toHaveLength(1);
+    expect(snapshot.message).toContain("Patch regenerated");
+
+    // Enter with a message saves the constraint and repairs the draft in place.
+    await controller.rethink("keep the retry policy intact");
+    snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    expect(snapshot.task?.nodes[fileNode.id]!.diffIds).toHaveLength(1);
+    expect(Object.values(snapshot.task?.diffs ?? {})[0]!.patch).toContain("repaired");
+    expect(Object.values(snapshot.task?.constraints ?? {}).some((constraint) => constraint.text === "keep the retry policy intact")).toBe(true);
+    expect(snapshot.message).toContain("from your note");
   });
 
   it("rethinks with an optional guiding message persisted as a constraint", async () => {
@@ -622,6 +666,10 @@ describe("augment TUI controller", () => {
     const runtime: ModelRuntime = {
       call: async (request) => {
         if (request.operation === "generate-domain") generatedNodeIds.push(request.context.node.id);
+        if (request.operation === "repair-patch") {
+          const path = request.context.node.path ?? "src/auth/session.ts";
+          return { value: { patch: `--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+kept\n`, assumptions: [] } };
+        }
         return modelRuntime().call(request);
       },
     };
@@ -632,9 +680,14 @@ describe("augment TUI controller", () => {
     await controller.refine();
     const fileNode = Object.values(controller.snapshot().task!.nodes).find((node) => node.path === "src/auth/session.ts")!;
     controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
     await controller.constrain("Preserve the retry API.");
-    expect(generatedNodeIds).toEqual([task.rootNodeId, fileNode.id]);
-    expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "collapsed" });
+    // A message on a file rethinks its patch only: no domain machinery runs
+    // for it, the file keeps its node, and the draft is repaired in place.
+    expect(generatedNodeIds).toEqual([task.rootNodeId]);
+    expect(controller.snapshot().task?.nodes[fileNode.id]).toMatchObject({ status: "ready" });
+    expect(controller.snapshot().task?.nodes[fileNode.id]!.diffIds).toHaveLength(1);
+    expect(Object.values(controller.snapshot().task?.diffs ?? {})[0]!.patch).toContain("kept");
   });
 
   it("projects candidates and patches under their filesystem entries", async () => {

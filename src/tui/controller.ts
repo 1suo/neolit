@@ -6,7 +6,7 @@ import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
 import { nextDevelopmentStep } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
-import type { LOD, ModelRuntime, PlanCandidate, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
+import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
   kind: "entry";
@@ -618,6 +618,12 @@ export class AugmentTuiController {
       this.error = "Select a path first.";
       return;
     }
+    // A file target rethinks its patch, never an approach domain.
+    if (this.isFileTargetNode(nodeId)) return this.rethinkFileDraft(nodeId, text.trim());
+    if (this.draftedSubtreeCount(nodeId) > 0) {
+      this.error = `${this.draftedSubtreeCount(nodeId)} drafted ${this.draftedSubtreeCount(nodeId) === 1 ? "file" : "files"} under ${targetPath} would be discarded by regenerating here. [O] reopens explicitly; Enter on a single file rethinks just its patch.`;
+      return;
+    }
     await this.dispatch("Applying message to subtree", async () => {
       const constrained = await this.server.handle({
         jsonrpc: "2.0",
@@ -674,7 +680,7 @@ export class AugmentTuiController {
     const task = this.requireTask();
     const row = this.selectedRow();
     if (row && ["file", "hunk"].includes(row.entry.kind) && !row.entry.nodeIds.some((id) => this.task?.nodes[id])) {
-      this.error = `${row.entry.path} has no plan node of its own yet. [D] an ancestor folder to develop its subtree, or [Enter] to rethink the chosen approach.`;
+      this.error = `${row.entry.path} has no plan node of its own yet. [D] an ancestor folder to develop its subtree, or [Enter] to rethink the plan.`;
       return;
     }
     const nodeId = this.selectedNodeId() ?? task.rootNodeId;
@@ -739,6 +745,14 @@ export class AugmentTuiController {
     const node = task.nodes[nodeId];
     if (!node) return;
     const text = message?.trim();
+    // Enter on a file target rethinks its patch, never its approach domain:
+    // approaches are for root and folders; files answer with a diff.
+    if (this.runtime && this.isFileTargetNode(nodeId)) return this.rethinkFileDraft(nodeId, text);
+    if (!this.isFileTargetNode(nodeId) && this.draftedSubtreeCount(nodeId) > 0) {
+      const drafted = this.draftedSubtreeCount(nodeId);
+      this.error = `${drafted} drafted ${drafted === 1 ? "file" : "files"} under ${node.path ?? "this path"} would be discarded by rethinking it. [O] reopens explicitly (it asks a reason); Enter on a single file rethinks just its patch.`;
+      return;
+    }
     if (!this.runtime) {
       if (!text) {
         this.error = "No model is configured; there is nothing to rethink.";
@@ -782,6 +796,70 @@ export class AugmentTuiController {
       const adopted = this.task.nodes[nodeId]?.status === "collapsed";
       if (text) this.message = adopted ? "Approaches regenerated from your note; single viable approach adopted. Press D to develop it." : "Approaches regenerated from your note. Choose one with keys 1-7.";
       else this.message = adopted ? "Approaches regenerated; single viable approach adopted. Press D to develop it." : "Approaches regenerated. Choose one with keys 1-7.";
+    }, nodeId);
+  }
+
+  /** A file, hunk, or virtual node develops and rethinks by drafting its patch. */
+  private isFileTargetNode(nodeId: string | undefined): boolean {
+    return ["file", "hunk", "virtual"].includes(this.task?.nodes[nodeId ?? ""]?.kind ?? "");
+  }
+
+  /** Drafts on the node and its descendants — what an auto-reopen would destroy. */
+  private draftedSubtreeCount(nodeId: string): number {
+    const task = this.task;
+    if (!task) return 0;
+    let count = 0;
+    for (const node of Object.values(task.nodes)) {
+      let ancestor: string | undefined = node.id === nodeId ? node.id : node.parent;
+      while (ancestor && ancestor !== nodeId) ancestor = task.nodes[ancestor]?.parent;
+      if (ancestor === nodeId) count += node.diffIds.length;
+    }
+    return count;
+  }
+
+  /**
+   * Enter on a file target: the message (if any) is saved as a constraint on
+   * the node, then the patch is drafted — or, when one exists, repaired with
+   * the message as the grounding reason. Never generates approach domains.
+   */
+  private async rethinkFileDraft(nodeId: string, text?: string): Promise<void> {
+    const task = this.requireTask();
+    await this.dispatch(text ? "Rethinking file draft from your note" : "Rethinking file draft", async () => {
+      let current = task;
+      if (text) {
+        const row = this.selectedRow();
+        const constrained = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 23,
+          method: "node/constrain",
+          params: { taskId: current.id, expectedRevision: current.revision, nodeId, path: row?.entry.path && row.entry.path !== "." ? row.entry.path : undefined, text },
+        });
+        current = expectResult(constrained, PlanTaskLike.is) as PlanTask;
+        this.task = current;
+      }
+      const node = current.nodes[nodeId]!;
+      const reason = text ? `Rethink: ${text}` : "Operator requested a rethink";
+      if (node.diffIds.length > 0) {
+        const repaired = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 24,
+          method: "patch/repair",
+          params: { taskId: current.id, expectedRevision: current.revision, diffId: node.diffIds.at(-1), failedCheck: reason, temperature: "low" },
+        });
+        current = expectResult(repaired, PlanTaskLike.is) as PlanTask;
+      } else {
+        const drafted = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 25,
+          method: "patch/draft",
+          params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "low" },
+        });
+        current = expectResult(drafted, PlanTaskLike.is) as PlanTask;
+      }
+      this.task = current;
+      this.refresh();
+      this.selectNodeEntry(nodeId);
+      this.message = text ? "Patch regenerated from your note. It is not applied to the repository." : "Patch regenerated. It is not applied to the repository.";
     }, nodeId);
   }
 

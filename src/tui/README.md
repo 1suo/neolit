@@ -77,7 +77,7 @@ File, hunk, and virtual targets always draft — their lifecycle state never rer
 ```text
 N  start a new change plan
 E  explain — with an active task it explains the selected path; without one it starts a repository-wide explanation task
-Enter  the universal prompt for the selected path: text becomes a message that regenerates its subtree; submitting empty rethinks it
+Enter  the universal prompt for the selected path — on a file it saves the message and regenerates that file's patch directly (drafted or repaired, never approach options); on the root or a folder it regenerates approaches for that subtree; submitting empty rethinks the same way; folders holding drafted files refuse the auto-rethink and point at [O] instead
 1-7  choose the numbered approach
 D  develop the selected path and everything under it — a chosen approach expands into files, then every undrafted file below is crystallized, refined, and drafted in one run (bounded, stopping only where an approach choice 1-7 needs a human); a file, hunk, or virtual target always drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree

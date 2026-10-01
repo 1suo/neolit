@@ -163,7 +163,7 @@ AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 After a change task is entered, the TUI automatically generates approaches for the root node; a single viable approach is adopted automatically, multiple approaches ask for `1-7`. Lower nodes receive candidates only when explicitly opened. Then:
 
 ```text
-Enter  prompt for the selected path — text becomes a message that regenerates its subtree; empty submit rethinks it
+Enter  prompt for the selected path — on a file: saves the message and re-drafts its patch; on the root/folder: regenerates approaches for that subtree (empty submit rethinks; folders with drafted files point at [O] instead of discarding)
 1-7    choose numbered approach
 D      develop selected path and its whole subtree (expand, crystallize, refine, and draft every undrafted file; stops only where 1-7 needs a human); a file target always drafts its patch
 A      apply drafted patch to working tree
