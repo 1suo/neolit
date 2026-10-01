@@ -285,7 +285,11 @@ export class AugmentTuiController {
   selectedNodeId(): string | undefined {
     const row = this.selectedRow();
     if (!row) return this.task?.rootNodeId;
-    return row.entry.nodeIds[0] ?? this.task?.rootNodeId;
+    // Folder rows aggregate descendant node ids; the row's OWN node (path
+    // equal to the row path) must win, or "regenerate this folder" would
+    // silently target its first child file instead.
+    const own = row.entry.nodeIds.find((id) => this.task?.nodes[id]?.path === row.entry.path);
+    return own ?? row.entry.nodeIds[0] ?? this.task?.rootNodeId;
   }
 
   move(delta: number): void {

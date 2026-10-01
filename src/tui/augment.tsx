@@ -148,6 +148,11 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       return;
     }
 
+    if (key.escape && state.busy) {
+      props.controller.cancel();
+      setState((current) => ({ ...current, message: "Cancelling the running operation…" }));
+      return;
+    }
     if (pane === "detail" && (key.upArrow || input === "k")) {
       setDetailOffset((current) => Math.max(0, current - 1));
       return;

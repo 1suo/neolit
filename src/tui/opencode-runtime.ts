@@ -151,6 +151,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
   private readonly timeoutMs: number;
   private readonly autoApprove: boolean;
   private readonly continueSessions: boolean;
+  private readonly serverUrl?: string;
   private readonly retries: number;
   private readonly retryDelayMs: number;
   private readonly sessions: Map<string, string> = loadSessions();
@@ -165,6 +166,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
     this.timeoutMs = options.timeoutMs ?? Number(process.env.AUGMENT_OPENCODE_TIMEOUT_MS ?? 600_000);
     this.autoApprove = options.autoApprove ?? process.env.AUGMENT_OPENCODE_AUTO !== "0";
     this.continueSessions = process.env.AUGMENT_OPENCODE_SESSIONS !== "0";
+    this.serverUrl = process.env.AUGMENT_OPENCODE_SERVER || undefined;
     this.retries = options.retries ?? Number(process.env.AUGMENT_OPENCODE_RETRIES ?? 2);
     if (!Number.isSafeInteger(this.retries) || this.retries < 0) throw new Error("OpenCode runtime retries must be a non-negative integer.");
     this.retryDelayMs = options.retryDelayMs ?? 4_000;
@@ -249,6 +251,7 @@ export class OpenCodeCliRuntime implements ModelRuntime {
       "run",
       "--format",
       "json",
+      ...(this.serverUrl ? ["--server", this.serverUrl] : []),
       ...(session ? ["--session", session] : []),
       ...(model ? ["--model", model] : []),
       ...(this.agent ? ["--agent", this.agent] : []),

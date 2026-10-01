@@ -369,6 +369,39 @@ describe("augment TUI controller", () => {
     expect(controller.snapshot().error).toContain("already has a drafted patch");
   });
 
+  it("targets the folder's own node when regenerating a folder row", async () => {
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") {
+          return { value: { candidates: [{ label: "Direct edit", rationale: "one family", confidence: 75, touchedPaths: ["test/new-file.test.ts"] }] } };
+        }
+        if (request.operation === "challenge-domain") return { value: { kind: "accept" } };
+        if (request.operation === "refine-node") {
+          if (request.context.node.path === ".") {
+            return { value: { children: [{ kind: "dir", path: "test", lod: "file", reason: "tests" }] } };
+          }
+          return { value: { children: [{ kind: "file", path: "test/existing.test.ts", lod: "hunk", reason: "extend" }] } };
+        }
+        throw new Error(`unexpected operation ${request.operation}`);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("split tests", "commit:1");
+    await controller.crystallize();
+    controller.select("entry:.");
+    await controller.develop();
+    controller.select("entry:test");
+    await controller.develop();
+    controller.select("entry:test");
+    await controller.rethink();
+    const snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    const testNode = Object.values(snapshot.task?.nodes ?? {}).find((node) => node.path === "test")!;
+    expect(testNode.status).toBe("collapsed");
+    expect(Object.values(snapshot.task?.constraints ?? {}).some((constraint) => constraint.text.includes("Out-of-scope"))).toBe(false);
+    expect(Object.values(snapshot.task?.nodes ?? {}).some((node) => node.path === "test/existing.test.ts")).toBe(false);
+  });
+
   it("develops through refined directories: crystallize the next undrafted dir, then refine and draft it", async () => {
     const runtime: ModelRuntime = {
       call: async (request) => {
@@ -1259,6 +1292,44 @@ describe("OpenCode CLI runtime parsing", () => {
     const logged = fs.readFileSync(log, "utf8");
     expect(logged).toContain("contained no answer text");
     expect(logged.match(/--title augment-challenge-domain/g)?.length).toBe(3);
+  });
+
+  it("connects to a configured server address instead of spawning implicitly", async () => {
+    const capture = path.join(os.tmpdir(), `augment-server-flag-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(capture);
+    const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    process.env.AUGMENT_OPENCODE_SERVER = "http://127.0.0.1:49374";
+    try {
+      const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
+      await runtime.call({
+        operation: "challenge-domain",
+        context: {
+          taskId: "task:server",
+          taskRevision: 1,
+          objective: "objective",
+          basisRevision: "commit:1",
+          node: {} as never,
+          candidates: [],
+          constraints: [],
+          obligations: [],
+          diffs: [],
+          taskDiffs: [],
+          taskTree: [],
+          lockedPaths: [],
+          restrictionMode: "lock",
+          rejectedCandidates: [],
+        },
+        temperature: "normal",
+        lod: "file",
+      });
+      expect(fs.readFileSync(capture, "utf8")).toContain("--server http://127.0.0.1:49374");
+    } finally {
+      delete process.env.AUGMENT_OPENCODE_SERVER;
+    }
   });
 
   it("retries transient provider failures with backoff and then succeeds", async () => {

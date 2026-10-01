@@ -104,6 +104,7 @@ AUGMENT_OPENCODE_CHALLENGE_MODEL  (optional faster model for challenge-domain co
 AUGMENT_OPENCODE_AGENT
 AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after this budget)
 AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh OpenCode session for every call)
+AUGMENT_OPENCODE_SERVER        (URL; every call connects to this OpenCode server — no implicit service spawn)
 AUGMENT_OPENCODE_RETRIES       (default 2; extra attempts for rate limits, disconnects, and unparseable output)
 AUGMENT_CHALLENGE_ROUNDS       (0-2, default 2; 0 skips challenge rounds for much faster domains)
 AUGMENT_TUI_TASKS            (default on; set 0 to disable persisting and resuming the active task)
