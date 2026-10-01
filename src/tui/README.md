@@ -77,6 +77,7 @@ Enter  the universal prompt for the selected path: text becomes a message that r
 1-7  choose the numbered approach
 D  develop the selected path — a chosen approach expands into files, a planned file drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree
+C  commit exactly the paths this session applied (pathspec commit; unrelated dirty or staged files stay untouched)
 L  mark/unmark the selected path in the restriction plain, lock polarity: marked (`#`, red) paths must not change, everything else may
 W  mark/unmark the selected path, allow polarity: marked (`#`, accent) paths are the only ones that may change. One plain, one marked set: pressing the other polarity key inverts it (the set stays, its meaning flips). Marks made before a task starts are applied before its first model run
 O  reopen selected node with a reason

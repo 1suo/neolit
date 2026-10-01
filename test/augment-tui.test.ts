@@ -531,6 +531,29 @@ describe("augment TUI apply", () => {
     expect(output).toContain("Applied 1 drafted change");
   });
 
+  it("commits only the session-applied paths, leaving unrelated work untouched", async () => {
+    const directory = tempGitRepo();
+    fs.writeFileSync(path.join(directory, "unrelated.txt"), "leave me alone\n");
+    const controller = new AugmentTuiController({ directory, runtime: singleFileRuntime("--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,3 @@\n alpha\n+gamma\n beta\n") });
+    await controller.start("edit session");
+    await controller.crystallize();
+    await controller.refine();
+    controller.select("entry:session.ts");
+    await controller.draftPatch();
+    await controller.commitApplied();
+    expect(controller.snapshot().error).toContain("Nothing applied this session");
+    await controller.applySelected();
+    await controller.commitApplied();
+    const snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    expect(snapshot.message).toMatch(/Committed 1 applied path as [0-9a-f]+/);
+    const subject = execFileSync("git", ["-C", directory, "log", "-1", "--format=%s"], { encoding: "utf8" }).trim();
+    expect(subject).toBe("augment: edit session");
+    const status = execFileSync("git", ["-C", directory, "status", "--porcelain"], { encoding: "utf8" });
+    expect(status).toContain("?? unrelated.txt");
+    expect(status).not.toContain("session.ts");
+  });
+
   it("rejects the whole apply when the preflight fails and leaves the tree untouched", async () => {
     const directory = tempGitRepo();
     const brokenPatch = "--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,2 @@\n alpha\n-missing\n+delta\n";

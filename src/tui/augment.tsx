@@ -507,6 +507,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     else if (command === "e") beginInput("explanation");
     else if (command === "d") run(props.controller.develop());
     else if (command === "a") run(props.controller.applySelected());
+    else if (command === "c") run(props.controller.commitApplied());
     else if (command === "l") run(props.controller.toggleRestriction("lock"));
     else if (command === "w") run(props.controller.toggleRestriction("allow"));
     else if (command === "o") beginInput("reopen");
@@ -588,6 +589,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.primary}> develop · </Text>
           <Text color={theme.primary} bold>[A]</Text>
           <Text color={theme.primary}> apply · </Text>
+          <Text color={theme.primary} bold>[C]</Text>
+          <Text color={theme.primary}> commit · </Text>
           <Text color={theme.primary} bold>[L]</Text>
           <Text color={theme.primary}> lock · </Text>
           <Text color={theme.primary} bold>[W]</Text>

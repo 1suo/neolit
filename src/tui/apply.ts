@@ -60,9 +60,22 @@ export function applyPlannedDiffs(directory: string, diffs: PlannedDiff[]): stri
   }
 }
 
-function git(directory: string, args: string[]): void {
+/**
+ * Commits exactly the session-applied paths: -A stages their deletions and
+ * additions, and the commit pathspec keeps unrelated staged or dirty files
+ * out of the commit.
+ */
+export function commitAppliedPaths(directory: string, paths: string[], message: string): string {
+  const unique = [...new Set(paths.filter((path) => path && path !== "."))];
+  if (!unique.length) throw new Error("Nothing applied this session to commit.");
+  git(directory, ["add", "-A", "--", ...unique]);
+  git(directory, ["commit", "-m", message, "--", ...unique]);
+  return git(directory, ["rev-parse", "--short", "HEAD"]).trim();
+}
+
+function git(directory: string, args: string[]): string {
   try {
-    execFileSync("git", ["-C", directory, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return execFileSync("git", ["-C", directory, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (error) {
     const stderr = error && typeof error === "object" && typeof (error as { stderr?: unknown }).stderr === "string"
       ? (error as { stderr: string }).stderr.trim()

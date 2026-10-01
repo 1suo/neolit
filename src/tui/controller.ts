@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
-import { applyPlannedDiffs } from "./apply.js";
+import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
@@ -689,6 +689,26 @@ export class AugmentTuiController {
       this.message = this.task.lockedPaths.length
         ? `${polarity[0]!.toUpperCase()}${polarity.slice(1)}: ${this.task.lockedPaths.join(", ")}`
         : "No marked paths; everything may change.";
+    });
+  }
+
+  /**
+   * Commits only the paths this session applied — never unrelated dirty or
+   * staged work — on explicit request.
+   */
+  async commitApplied(): Promise<void> {
+    const task = this.requireTask();
+    const applied = [...this.appliedDiffIds].flatMap((id) => (task.diffs[id] ? [task.diffs[id]!] : []));
+    if (!applied.length) {
+      this.error = "Nothing applied this session. Press [A] to apply a drafted patch first.";
+      return;
+    }
+    const paths = [...new Set(applied.map((diff) => diff.path).filter((path) => path && path !== "."))];
+    await this.dispatch("Committing applied changes", async () => {
+      const sha = commitAppliedPaths(this.directory, paths, `augment: ${task.objective}`);
+      this.repository = repositoryTree(this.directory);
+      this.refresh();
+      this.message = `Committed ${paths.length} applied ${paths.length === 1 ? "path" : "paths"} as ${sha}. The repository basis moved; press [S] on paths whose drafts need refresh.`;
     });
   }
 

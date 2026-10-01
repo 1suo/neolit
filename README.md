@@ -165,6 +165,7 @@ Enter  prompt for the selected path — text becomes a message that regenerates 
 1-7    choose numbered approach
 D      develop selected path (expand into files, then draft them)
 A      apply drafted patch to working tree
+C      commit the session-applied paths only (never unrelated changes)
 L      mark/unmark path in the restriction plain (lock polarity: marked = must not change)
 W      mark/unmark path in the restriction plain (allow polarity: marked = the only thing that may change); pressing the other key inverts the plain
 E      explain selected path (whole repository when no task is active)
