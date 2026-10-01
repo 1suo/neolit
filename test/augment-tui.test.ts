@@ -8,7 +8,8 @@ import { renderToString } from "ink";
 import { cleanup, render as renderInk } from "ink-testing-library";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
-import { AugmentTui, detailLines, frameLayout, tuiRenderOptions } from "../src/tui/augment.js";
+import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
+import { detailLines, frameLayout } from "../src/tui/detail.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
 const temporaryFiles: string[] = [];
