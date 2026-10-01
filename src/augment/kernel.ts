@@ -9,6 +9,7 @@ import {
   acceptDomain,
   addCandidate,
   addConstraint,
+  candidateScopeEscapes,
   attachExplanations,
   attachPatch,
   collapseNode,
@@ -153,13 +154,32 @@ function parseWith<T>(schema: { parse(value: unknown): T }): (value: unknown) =>
 export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, input: CrystallizeNodeInput): Promise<PlanTask> {
   requireNode(task, input.nodeId);
   const proposal = await call(runtime, task, task.nodes[input.nodeId]!, "generate-domain", input.temperature, input.lod, parseWith(DomainProposalSchema));
+  const scope = task.nodes[input.nodeId]!.path ?? ".";
+  const escaping = proposal.candidates
+    .map((candidate) => ({ label: candidate.label, paths: candidateScopeEscapes(task, input.nodeId, candidate.touchedPaths) }))
+    .filter((entry) => entry.paths.length > 0);
+  const inScope = proposal.candidates.filter((candidate) => !escaping.some((entry) => entry.label === candidate.label));
+  if (!inScope.length) {
+    throw new AugmentModelError(
+      `Every proposed candidate escapes ${scope}: ${escaping.map((entry) => `${entry.label} (${entry.paths.join(", ")})`).join("; ")}. `
+      + `Develop the parent path so this work lands in its own node, or press Enter to rethink with that limit in mind.`,
+    );
+  }
   let current = generateDomain(task, {
     taskId: task.id,
     expectedRevision: task.revision,
     nodeId: input.nodeId,
-    candidates: proposal.candidates,
+    candidates: inScope,
     replace: input.replace,
   });
+  if (escaping.length) {
+    current = addConstraint(current, {
+      taskId: current.id,
+      expectedRevision: current.revision,
+      nodeId: input.nodeId,
+      text: `Out-of-scope dependency noted by domain: ${escaping.map((entry) => `${entry.label} (${entry.paths.join(", ")})`).join("; ")} — belongs outside ${scope}.`,
+    });
+  }
 
   const rounds = Math.max(0, Math.min(input.challengeRounds ?? MAX_DOMAIN_CHALLENGE_ROUNDS, MAX_DOMAIN_CHALLENGE_ROUNDS));
   for (let round = 1; round <= rounds; round++) {

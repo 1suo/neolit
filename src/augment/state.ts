@@ -243,6 +243,17 @@ export function pathIsLocked(task: PlanTask, path: string): boolean {
   return markedCovers(task, path);
 }
 
+/**
+ * Paths in `touchedPaths` that fall outside the node's own subtree. Root
+ * nodes impose no scope. The kernel uses this to split model proposals into
+ * in-scope work and out-of-scope dependencies instead of failing them.
+ */
+export function candidateScopeEscapes(task: PlanTask, nodeId: string, touchedPaths: readonly string[]): string[] {
+  const node = task.nodes[nodeId];
+  if (!node?.path || node.kind === "root") return [];
+  return touchedPaths.filter((pattern) => !pathInside(node.path!, normalizePath(pattern)));
+}
+
 export function pathIsAllowed(task: PlanTask, path: string): boolean {
   return !pathIsLocked(task, path);
 }

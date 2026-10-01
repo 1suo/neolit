@@ -70,6 +70,38 @@ describe("augment kernel", () => {
     expect(nextDevelopmentStep(drafted, "node:missing")).toEqual({ action: "stalled", reason: "Unknown plan node." });
   });
 
+  it("splits initial domain proposals at the node scope instead of failing", async () => {
+    const seeded = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 75, touchedPaths: ["src/a.ts"] }] }),
+      () => ({ kind: "accept" }),
+    ]);
+    const domain = await crystallizeNode(seeded, task(), { taskId: "task:kernel", nodeId: "node:root", temperature: "normal", lod: "file" });
+    const selected = selectCandidate(domain, { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]! });
+    const refined = await refineWithModel(runtime([
+      () => ({ children: [{ kind: "dir", path: "src/a", lod: "file", reason: "scoped work" }] }),
+    ]), selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "file" });
+    const dirNode = Object.values(refined.nodes).find((node) => node.path === "src/a")!;
+
+    const mixed = runtime([
+      () => ({ candidates: [
+        { label: "Inside", rationale: "scoped", confidence: 70, touchedPaths: ["src/a/one.ts"] },
+        { label: "Outside", rationale: "straddles", confidence: 55, touchedPaths: ["test/a.test.ts"] },
+      ] }),
+      () => ({ kind: "accept" }),
+    ]);
+    const result = await crystallizeNode(mixed, refined, { taskId: refined.id, nodeId: dirNode.id, temperature: "normal", lod: "file" });
+    expect(result.nodes[dirNode.id]!.candidateIds).toHaveLength(1);
+    expect(result.candidates[result.nodes[dirNode.id]!.candidateIds[0]!]!.label).toBe("Inside");
+    const note = Object.values(result.constraints).find((constraint) => constraint.text.includes("Out-of-scope dependency"));
+    expect(note?.text).toContain("test/a.test.ts");
+
+    const allOutside = runtime([
+      () => ({ candidates: [{ label: "Elsewhere", rationale: "elsewhere", confidence: 60, touchedPaths: ["test/other.ts"] }] }),
+    ]);
+    await expect(crystallizeNode(allOutside, refined, { taskId: refined.id, nodeId: dirNode.id, temperature: "normal", lod: "file" }))
+      .rejects.toThrow(/Every proposed candidate escapes src\/a: Elsewhere/);
+  });
+
   it("records out-of-scope challenge candidates as constraints instead of failing", async () => {
     const seeded = runtime([
       () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 75, touchedPaths: ["src/a.ts"] }] }),
