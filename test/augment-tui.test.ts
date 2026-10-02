@@ -1168,7 +1168,7 @@ describe("OpenCode CLI runtime parsing", () => {
     temporaryFiles.push(capture);
     const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"--- a/package.json\"}" }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000, draftModel: "fast/small-model" });
@@ -1203,7 +1203,7 @@ describe("OpenCode CLI runtime parsing", () => {
     temporaryFiles.push(capture);
     const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"--- a/src/new.ts\"}" }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
@@ -1235,7 +1235,7 @@ describe("OpenCode CLI runtime parsing", () => {
     const rawDiff = "```diff\n--- a/package.json\n+++ b/package.json\n@@ -1,2 +1,3 @@\n {\n+  \"x\": 1\n }\n```\nAssumption: the key is optional";
     const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: rawDiff }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
@@ -1277,7 +1277,7 @@ describe("OpenCode CLI runtime parsing", () => {
     const prose = JSON.stringify({ type: "message", parts: [{ type: "text", text: "I will edit package.json for you." }] });
     const rawDiff = JSON.stringify({ type: "message", parts: [{ type: "text", text: "--- a/package.json\n+++ b/package.json\n@@ -1,2 +1,3 @@\n {\n+  \"generated\": true,\n   \"name\": \"neolit\"," }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nif [ -f ${JSON.stringify(marker)} ]; then cat <<'JSON'\n${rawDiff}\nJSON\nelse touch ${JSON.stringify(marker)}; cat <<'JSON'\n${prose}\nJSON\nfi\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nif [ -f ${JSON.stringify(marker)} ]; then cat <<'JSON'\n${rawDiff}\nJSON\nelse touch ${JSON.stringify(marker)}; cat <<'JSON'\n${prose}\nJSON\nfi\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
@@ -1312,7 +1312,7 @@ describe("OpenCode CLI runtime parsing", () => {
     const empty = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"\",\"assumptions\":[]}" }] });
     const valid = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"--- a/package.json\",\"assumptions\":[]}" }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nif [ -f ${JSON.stringify(marker)} ]; then cat <<'JSON'\n${valid}\nJSON\nelse touch ${JSON.stringify(marker)}; cat <<'JSON'\n${empty}\nJSON\nfi\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nif [ -f ${JSON.stringify(marker)} ]; then cat <<'JSON'\n${valid}\nJSON\nelse touch ${JSON.stringify(marker)}; cat <<'JSON'\n${empty}\nJSON\nfi\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
@@ -1348,7 +1348,7 @@ describe("OpenCode CLI runtime parsing", () => {
     temporaryFiles.push(capture);
     const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"patch\":\"--- a/big.ts\"}" }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory, command: file, timeoutMs: 5_000 });
@@ -1389,6 +1389,9 @@ describe("OpenCode CLI runtime parsing", () => {
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
     fs.writeFileSync(file, [
       "#!/bin/sh",
+      // The runtime probes a kept-alive server first (PersistentAgentServer):
+      // answer it without consuming this fake's stateful markers or logs.
+      `if [ "$1" = "serve" ]; then printf '%s\\n' 'Serving on http://127.0.0.1:1'; exit 0; fi`,
       `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
       `if [ -f ${JSON.stringify(marker)} ]; then printf '%s' ${JSON.stringify(validOutput)}; else touch ${JSON.stringify(marker)}; printf '%s' ${JSON.stringify(corruptOutput)}; fi`,
       "",
@@ -1425,7 +1428,7 @@ describe("OpenCode CLI runtime parsing", () => {
     temporaryFiles.push(log);
     const output = JSON.stringify({ type: "message", sessionID: "ses_cont1", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
@@ -1463,7 +1466,7 @@ describe("OpenCode CLI runtime parsing", () => {
       temporaryFiles.push(log);
       const output = JSON.stringify({ type: "message", sessionID: "ses_cont2", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
       const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-      fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+      fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
       fs.chmodSync(file, 0o755);
       temporaryFiles.push(file);
       const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
@@ -1500,7 +1503,7 @@ describe("OpenCode CLI runtime parsing", () => {
     temporaryFiles.push(capture);
     const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"candidates\":[{\"label\":\"A\",\"rationale\":\"r\",\"confidence\":70,\"touchedPaths\":[\"src/a.ts\"]}]}" }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
@@ -1529,7 +1532,7 @@ describe("OpenCode CLI runtime parsing", () => {
     temporaryFiles.push(capture);
     const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000, challengeModel: "fast/challenge" });
@@ -1566,6 +1569,9 @@ describe("OpenCode CLI runtime parsing", () => {
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
     fs.writeFileSync(file, [
       "#!/bin/sh",
+      // The runtime probes a kept-alive server first (PersistentAgentServer):
+      // answer it without consuming this fake's stateful markers or logs.
+      `if [ "$1" = "serve" ]; then printf '%s\\n' 'Serving on http://127.0.0.1:1'; exit 0; fi`,
       `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
       `if [ -f ${JSON.stringify(seen2)} ]; then printf '%s' ${JSON.stringify(answered)};`,
       `elif [ -f ${JSON.stringify(seen1)} ]; then touch ${JSON.stringify(seen2)}; printf '%s' ${JSON.stringify(reasoningOnly)};`,
@@ -1607,7 +1613,7 @@ describe("OpenCode CLI runtime parsing", () => {
     temporaryFiles.push(capture);
     const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+    fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s' "$*" > ${JSON.stringify(capture)}\nprintf '%s' ${JSON.stringify(output)}\n`);
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     process.env.AUGMENT_OPENCODE_SERVER = "http://127.0.0.1:49374";
@@ -1648,6 +1654,9 @@ describe("OpenCode CLI runtime parsing", () => {
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
     fs.writeFileSync(file, [
       "#!/bin/sh",
+      // The runtime probes a kept-alive server first (PersistentAgentServer):
+      // answer it without consuming this fake's stateful markers or logs.
+      `if [ "$1" = "serve" ]; then printf '%s\\n' 'Serving on http://127.0.0.1:1'; exit 0; fi`,
       `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
       `if [ ! -f ${JSON.stringify(marker)} ]; then touch ${JSON.stringify(marker)}; echo "Error: rate limit exceeded (429), try again later" >&2; exit 1; fi`,
       `printf '%s' ${JSON.stringify(output)}`,
@@ -1689,7 +1698,7 @@ describe("OpenCode CLI runtime parsing", () => {
       temporaryFiles.push(log);
       const output = JSON.stringify({ type: "message", sessionID: "ses_persist1", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
       const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
-      fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+      fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
       fs.chmodSync(file, 0o755);
       temporaryFiles.push(file);
       const request = {
@@ -1735,6 +1744,9 @@ describe("OpenCode CLI runtime parsing", () => {
     const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
     fs.writeFileSync(file, [
       "#!/bin/sh",
+      // The runtime probes a kept-alive server first (PersistentAgentServer):
+      // answer it without consuming this fake's stateful markers or logs.
+      `if [ "$1" = "serve" ]; then printf '%s\\n' 'Serving on http://127.0.0.1:1'; exit 0; fi`,
       `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
       `if [ -f ${JSON.stringify(marker)} ]; then printf '%s' ${JSON.stringify(validOutput)}; else touch ${JSON.stringify(marker)}; printf '%s' ${JSON.stringify(conflictingOutput)}; fi`,
       "",
@@ -1789,7 +1801,7 @@ describe("OpenCode CLI runtime parsing", () => {
 
   it("exits with an actionable message when the runtime exceeds its timeout", async () => {
     const file = path.join(os.tmpdir(), `augment-opencode-slow-${process.pid}-${temporaryFiles.length}.sh`);
-    fs.writeFileSync(file, "#!/bin/sh\nsleep 5\n");
+    fs.writeFileSync(file, "#!/bin/sh\nif [ \"$1\" = \"serve\" ]; then printf 'Serving on http://127.0.0.1:1\\n'; exit 0; fi\nsleep 5\n");
     fs.chmodSync(file, 0o755);
     temporaryFiles.push(file);
     const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 150, retries: 0 });
