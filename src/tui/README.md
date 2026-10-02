@@ -109,6 +109,26 @@ sessions resume via `--resume`; codex sessions are not continued yet. Vendor
 flags drift — when one does, the fix is one object in that file. Adding an
 agent is the same: implement the `CliAgentBackend` interface and register it.
 
+## Agent socket
+
+While the TUI runs it serves its embedded `AugmentServer` on a Unix socket
+(default `$XDG_RUNTIME_DIR/neolit/augment.sock`; `AUGMENT_TUI_SOCKET`
+overrides the path, `AUGMENT_TUI_NO_SOCKET=1` disables it). An external
+agent attaches with:
+
+```sh
+augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment.sock"
+```
+
+and its MCP tool calls (`draft_file`, `select_approach`, …) mutate the task
+the TUI is rendering: each adopted change repaints the tree and detail panes
+while the TUI is idle, and the winbar-style header shows the served address.
+A write that races a running TUI operation queues behind it and then fails
+the optimistic-concurrency check, exactly like any other stale writer.
+`AugmentTuiController` exposes `server` for hosts that want to serve the
+same store on additional transports, `subscribe` for repaint-on-change, and
+`dispose` to release the socket.
+
 Configuration lives in `$XDG_CONFIG_HOME/neolit/augment.json` (default
 `~/.config/neolit/`). `augment setup` is the interface: it lists the agents
 with PATH availability, lists the chosen agent's actual models (OpenCode via

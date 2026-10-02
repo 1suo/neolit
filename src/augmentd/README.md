@@ -50,25 +50,36 @@ shutdown
 
 `domain/propose`, `domain/challenge`, `node/refine`, and `patch/attach` apply one typed proposal directly — no model runtime involved. They exist for tool-driven hosts (the MCP layer below) and any host that computes proposals itself: candidates and children pass the same Zod boundary schemas as model output, domain proposals record out-of-scope candidates as constraints instead of losing them, challenges consume the bounded two-round budget, and `patch/attach` records `assumptions` as model-source constraints exactly like a model draft would. Controller authority is identical to the model-driven path because both run through the same kernel merges (`applyDomainProposal`, `applyChallenge`) and reducers.
 
+## Socket transport
+
+`socket.ts` serves the same newline-delimited protocol over a Unix socket, so several clients can reach one task store:
+
+- `serveAugmentSocket(server, path?)` — listen (default `$XDG_RUNTIME_DIR/neolit/augment.sock`, else a uid-keyed temp path), refuse to steal a live server's address, unlink stale files, broadcast `augment/taskChanged` notifications to every attached client, and unlink on close.
+- `SocketAugmentPeer` — client side: answers `handle()` from whichever process owns the socket.
+- Mutating dispatch is serialized per task inside `AugmentServer`: a long operation (a model call inside `crystallize`, a draft) holds its task's turn, so a concurrent writer waits and then fails the optimistic-concurrency check instead of being silently overwritten by a result merged from a stale snapshot.
+
+The standalone TUI serves its embedded server this way while it runs, which is what makes the MCP bridge below mutate the task the TUI is rendering.
+
 ## MCP tool provider
 
 `mcp.ts` serves the planned-diff operations as MCP tools (`initialize`, `tools/list`, `tools/call`) over the same stdio framing, so an agent host (OpenCode, Claude, Codex) can let its model write into the plan one small call at a time instead of one JSON blob:
 
 ```text
-plan_start            plan_status
+plan_start            plan_status          read_diff
 propose_approaches    challenge_approaches
 select_approach       refine_plan
 draft_file            repair_patch
 ```
 
-Each mutating call carries `expectedRevision`; results are compact confirmations (revision, ids, next step), and failures return the controller's typed reason as a tool error — scope violations name the paths, stale revisions tell the agent to refetch `plan_status`, and when the host injected a preflight, `draft_file`/`repair_patch` return git's exact `apply` diagnostic so the agent retries that one file with the reason. Deterministic per-operation call caps (`MCP_TOOL_CAPS`) bound agent loops. `patch/attach` is the dispatch target of `draft_file`; a drafted file is routed to `repair_patch` (backed by `patch/set`).
+Each mutating call carries `expectedRevision`; results are compact confirmations (revision, ids, next step), and failures return the controller's typed reason as a tool error — scope violations name the paths, stale revisions tell the agent to refetch `plan_status`, and when the host injected a preflight, `draft_file`/`repair_patch` return git's exact `apply` diagnostic so the agent retries that one file with the reason. `plan_status` rows carry the diff ids of drafted paths and `read_diff` returns the exact patch text (one diff or all), so regeneration stays grounded in what was actually proposed. Deterministic per-operation call caps (`MCP_TOOL_CAPS`) bound agent loops.
 
 ```sh
-npx augmentd --mcp                 # tools only; controller validation, no git diagnostics
-npx augmentd --mcp --directory .   # adds joint git apply diagnostics for drafts
+npx augmentd --mcp                                  # standalone: owns its own task store
+npx augmentd --mcp --directory .                    # + joint git apply diagnostics for drafts
+npx augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment.sock"   # attach to a running TUI
 ```
 
-The MCP client's agent is the model, so no `ModelRuntime` is injected. A host embedding the server passes its own `preflight` function; the `--directory` flag wires the TUI host's `preflightPatches`.
+Attached with `--connect`, every tool call mutates the served store — the TUI's (or neolit.nvim's) panel renders each mutation as it lands; detached, the bridge owns its own tasks. The MCP client's agent is the model, so no `ModelRuntime` is injected in either mode. A host embedding the server passes its own `preflight` function and may route dispatch to any `NativePeer` (in-process `AugmentServer` or `SocketAugmentPeer`).
 
 ## Error codes
 
@@ -90,6 +101,6 @@ Controller failures carry typed JSON-RPC codes so hosts can act without parsing 
 ## Validation
 
 ```sh
-npx vitest run test/augment-server.test.ts test/augment-mcp.test.ts
+npx vitest run test/augment-server.test.ts test/augment-mcp.test.ts test/augment-socket.test.ts
 npm run check
 ```

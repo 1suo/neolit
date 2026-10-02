@@ -155,14 +155,18 @@ shutdown
 ```
 
 Mutating requests carry `expectedRevision`; stale requests are rejected before
-state changes. The `domain/propose`, `domain/challenge`, `node/refine`, and
-`patch/attach` seams apply one typed proposal deterministically — they back
-the MCP tool layer, where `augmentd --mcp [--directory DIR]` serves the
-planned-diff operations as MCP agent tools (`plan_start`, `plan_status`,
+state changes, and mutating dispatch is serialized per task so concurrent
+clients cannot lose updates. The `domain/propose`, `domain/challenge`,
+`node/refine`, and `patch/attach` seams apply one typed proposal
+deterministically — they back the MCP tool layer, where
+`augmentd --mcp [--directory DIR] [--connect SOCK]` serves the planned-diff
+operations as MCP agent tools (`plan_start`, `plan_status`, `read_diff`,
 `propose_approaches`, `challenge_approaches`, `select_approach`,
 `refine_plan`, `draft_file`, `repair_patch`): one small validated call per
 operation, exact controller and git-apply diagnostics returned to the agent,
-and deterministic per-operation call caps. See
+and deterministic per-operation call caps. With `--connect` the bridge
+attaches to a served socket — for example the running TUI's — so tool calls
+mutate the task the TUI renders. See
 [`src/augmentd/README.md`](./src/augmentd/README.md).
 
 ## TUI
@@ -202,6 +206,7 @@ Q      quit
 Directories aggregate descendant change state (`added`, `removed`, `changed`) and show a contents summary of their planned children with per-path change reasons (unchanged entries are omitted), aggregated change counts, and descendant patch previews. Files show their complete exact patch directly in the right pane; `j`/`k` scroll it while the detail pane is focused. While a model operation runs, its target animates in the tree and the preview leads with live status; failures mark the path with `×` until a retry succeeds.
 
 The TUI can apply drafted patches to the working tree on request (`A`): every selected patch is preflighted with `git apply --check` and applied as one unit, so a conflict anywhere leaves the tree untouched. Nothing is staged or committed, and the repository tree refreshes after applying.
+While it runs, the TUI serves its embedded server on a Unix socket, so an external agent (`augmentd --mcp --connect`) drives the same task store and every tool-driven mutation renders in the panes as it lands; see [`src/tui/README.md`](./src/tui/README.md).
 Its layout and interaction conventions are documented in
 [`src/tui/README.md`](./src/tui/README.md).
 
@@ -234,5 +239,6 @@ npx vitest run test/augment-state.test.ts
 npx vitest run test/augment-kernel.test.ts
 npx vitest run test/augment-server.test.ts
 npx vitest run test/augment-mcp.test.ts
+npx vitest run test/augment-socket.test.ts
 npx vitest run test/augment-tui.test.ts
 ```
