@@ -205,8 +205,18 @@ Q      quit
 
 Directories aggregate descendant change state (`added`, `removed`, `changed`) and show a contents summary of their planned children with per-path change reasons (unchanged entries are omitted), aggregated change counts, and descendant patch previews. Files show their complete exact patch directly in the right pane; `j`/`k` scroll it while the detail pane is focused. While a model operation runs, its target animates in the tree and the preview leads with live status; failures mark the path with `×` until a retry succeeds.
 
-The TUI can apply drafted patches to the working tree on request (`A`): every selected patch is preflighted with `git apply --check` and applied as one unit, so a conflict anywhere leaves the tree untouched. Nothing is staged or committed, and the repository tree refreshes after applying.
+The TUI can apply drafted patches to the working tree on request (`A`): every selected patch is preflighted with `git apply --check` against the current working tree — uncommitted edits included — and applied as one unit, so a conflict anywhere leaves the tree untouched. Nothing is staged or committed, and the repository tree refreshes after applying.
 While it runs, the TUI serves its embedded server on a Unix socket, so an external agent (`augmentd --mcp --connect`) drives the same task store and every tool-driven mutation renders in the panes as it lands; see [`src/tui/README.md`](./src/tui/README.md).
+When the backend can carry MCP tools into non-interactive runs (OpenCode via a
+generated `OPENCODE_CONFIG` layer, Claude via `--mcp-config`), the TUI instead
+keeps **one tool-using agent session per task** and turns its own operations
+into short prompts that point rather than embed (`Draft src/auth/session.ts —
+read the file, then call draft_file`): the model writes into the plan
+exclusively through the neolit tools on the TUI's socket, every call is
+controller-validated and renders as it lands, and diagnostics loop inside the
+session (`read_diff` → `repair_patch`) instead of burning fresh invocations.
+The header shows `[TOOLS]`; `AUGMENT_TUI_NO_TOOLS=1` falls back to one-shot
+prompts (Codex falls back until an adapter exists).
 Its layout and interaction conventions are documented in
 [`src/tui/README.md`](./src/tui/README.md).
 

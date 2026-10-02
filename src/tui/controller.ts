@@ -7,6 +7,7 @@ import { serveAugmentSocket, type SocketService } from "../augmentd/socket.js";
 import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
+import type { ToolSessionDriver } from "./tool-session.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
@@ -44,6 +45,8 @@ export interface TuiActionState {
   failed?: { nodeId?: string; operation?: string; error?: string };
   /** Socket address external agents attach to (`augmentd --mcp --connect …`). */
   socketPath?: string;
+  /** Model operations run as prompts in one tool-using agent session per task. */
+  toolSession?: boolean;
 }
 
 export interface AugmentTuiControllerOptions {
@@ -267,6 +270,8 @@ export class AugmentTuiController {
   private relatedOnly = false;
   private readonly listeners = new Set<() => void>();
   private socket?: SocketService;
+  private toolDriver?: ToolSessionDriver;
+  private toolFlow = false;
 
   constructor(options: AugmentTuiControllerOptions) {
     this.directory = options.directory;
@@ -318,6 +323,16 @@ export class AugmentTuiController {
   }
 
   /**
+   * Routes the controller's model operations through one tool-using agent
+   * session per task (see tool-session.ts). Hosts attach it after
+   * construction, once the socket the driver needs is observable.
+   */
+  useToolSession(driver: ToolSessionDriver): void {
+    this.toolDriver = driver;
+    this.refresh();
+  }
+
+  /**
    * Records a UI-level failure on the controller itself, so a repaint
    * triggered by an external agent mutation does not erase it.
    */
@@ -347,16 +362,18 @@ export class AugmentTuiController {
    * External mutations (an agent driving this task over the socket) adopt
    * the server's authoritative task and repaint. The controller's own
    * operations already carry their responses, so changes are only adopted
-   * while idle; a change that lands mid-operation is adopted when that
-   * operation ends — which also means the operation itself may fail the
-   * optimistic-concurrency check with the typed stale-revision error.
+   * while idle — except during tool-flow steps, which exist precisely to
+   * wait for external effects and never chain revisions from local state.
+   * A change that lands mid-operation is adopted when that operation ends,
+   * which also means the operation itself may fail the optimistic-concurrency
+   * check with the typed stale-revision error.
    */
   private externalPending = false;
 
   private watchExternalMutations(): void {
     this.server.onChange(async (change) => {
       if (!this.task || change.taskId !== this.task.id) return;
-      if (this.busy) {
+      if (this.busy && !this.toolFlow) {
         this.externalPending = true;
         return;
       }
@@ -366,14 +383,35 @@ export class AugmentTuiController {
 
   private async adoptExternalTask(): Promise<void> {
     const active = this.task;
-    if (!active || this.busy) return;
+    if (!active || (this.busy && !this.toolFlow)) return;
     const response = await this.server.handle({ jsonrpc: "2.0", id: 31, method: "task/get", params: { taskId: active.id } });
-    if (!response || "error" in response || !this.task || this.busy || this.task.id !== active.id) return;
+    if (!response || "error" in response || !this.task || (this.busy && !this.toolFlow) || this.task.id !== active.id) return;
     const fetched = response.result as PlanTask;
     if (fetched.revision <= this.task.revision) return;
     this.task = fetched;
-    if (!this.error) this.message = `Agent update rendered (r${fetched.revision}).`;
+    if (!this.error && !this.toolFlow) this.message = `Agent update rendered (r${fetched.revision}).`;
     this.refresh();
+  }
+
+  /** Adopts the server's authoritative task after a tool-flow step. */
+  private async syncTask(): Promise<void> {
+    const id = this.task?.id;
+    if (!id) return;
+    const response = await this.server.handle({ jsonrpc: "2.0", id: 32, method: "task/get", params: { taskId: id } });
+    if (response && "result" in response && this.task?.id === id) {
+      this.task = response.result as PlanTask;
+      this.refresh();
+    }
+  }
+
+  /** Tool-flow steps adopt external mutations live instead of deferring. */
+  private async withToolFlow<T>(action: () => Promise<T>): Promise<T> {
+    this.toolFlow = true;
+    try {
+      return await action();
+    } finally {
+      this.toolFlow = false;
+    }
   }
 
   /** The active agent backend, for hosts that offer live model switching. */
@@ -415,6 +453,7 @@ export class AugmentTuiController {
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
       socketPath: this.socket?.path,
+      toolSession: this.toolDriver !== undefined,
     };
   }
 
@@ -590,14 +629,24 @@ export class AugmentTuiController {
 
   private async performCrystallize(nodeId: string, temperature: Temperature, lod: LOD): Promise<void> {
     const task = this.task!;
-    const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod, challengeRounds: this.challengeRounds } });
-    this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    if (this.toolDriver) {
+      await this.withToolFlow(() => this.toolDriver!.propose({
+        taskId: task.id,
+        objective: task.objective,
+        nodeId,
+        target: task.nodes[nodeId]?.path?.replace(/^\.$/, "the whole task") ?? "the whole task",
+      }));
+      await this.syncTask();
+    } else {
+      const response = await this.server.handle({ jsonrpc: "2.0", id: 2, method: "crystallize", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod, challengeRounds: this.challengeRounds } });
+      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    }
     await this.adoptSingletonIfViable(nodeId);
-    const generatedNode = this.task.nodes[nodeId]!;
-    if (generatedNode.status === "collapsed") {
+    const generatedNode = this.task?.nodes[nodeId];
+    if (generatedNode?.status === "collapsed") {
       this.message = "Single viable approach adopted. Press D to develop it into files.";
     }
-    else if (generatedNode.challengeExhausted) {
+    else if (generatedNode?.challengeExhausted) {
       this.message = "Approaches ready after bounded challenge. Choose 1-7, or press Enter to rethink.";
     } else {
       this.message = "Approaches ready. Choose one with keys 1-7.";
@@ -633,8 +682,18 @@ export class AugmentTuiController {
 
   private async performRefine(nodeId: string, temperature: Temperature, lod: LOD): Promise<void> {
     const task = this.task!;
-    const response = await this.server.handle({ jsonrpc: "2.0", id: 4, method: "refine", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
-    this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    if (this.toolDriver) {
+      await this.withToolFlow(() => this.toolDriver!.refine({
+        taskId: task.id,
+        objective: task.objective,
+        nodeId,
+        target: task.nodes[nodeId]?.path?.replace(/^\.$/, "the whole task") ?? "the whole task",
+      }));
+      await this.syncTask();
+    } else {
+      const response = await this.server.handle({ jsonrpc: "2.0", id: 4, method: "refine", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature, lod } });
+      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    }
     this.refresh();
     this.selectFirstChild(nodeId);
   }
@@ -661,8 +720,18 @@ export class AugmentTuiController {
 
   private async performDraft(nodeId: string): Promise<void> {
     const task = this.task!;
-    const response = await this.server.handle({ jsonrpc: "2.0", id: 5, method: "patch/draft", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature: "low" } });
-    this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    if (this.toolDriver) {
+      await this.withToolFlow(() => this.toolDriver!.draft({
+        taskId: task.id,
+        objective: task.objective,
+        nodeId,
+        target: task.nodes[nodeId]?.path ?? nodeId,
+      }));
+      await this.syncTask();
+    } else {
+      const response = await this.server.handle({ jsonrpc: "2.0", id: 5, method: "patch/draft", params: { taskId: task.id, expectedRevision: task.revision, nodeId, temperature: "low" } });
+      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+    }
     this.refresh();
     this.message = "Draft change ready. It is not applied to the repository.";
   }
@@ -741,14 +810,8 @@ export class AugmentTuiController {
         this.refresh();
       }
 
-      if (this.runtime) {
-        const regenerated = await this.server.handle({
-          jsonrpc: "2.0",
-          id: 10,
-          method: "crystallize",
-          params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true, challengeRounds: this.challengeRounds },
-        });
-        this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
+      if (this.runtime || this.toolDriver) {
+        this.task = await this.regenerateApproaches(current, nodeId, `Path message: ${text.trim()}`, `regenerate this subtree's approaches with this in mind: ${text.trim()}`);
         await this.adoptSingletonIfViable(nodeId);
         this.refresh();
         this.selectNodeEntry(nodeId);
@@ -802,7 +865,9 @@ export class AugmentTuiController {
     let drafted = 0;
     let failed = 0;
     let acted = false;
-    let batchTried = false;
+    // Tool sessions draft file-by-file in the shared agent session (context
+    // carries across files), so the one-shot batch shortcut never applies.
+    let batchTried = this.toolDriver !== undefined;
     let lastDraftedPath = startPath;
     const failedNodes = new Set<string>();
     const draftLabel = () => `Drafting (${drafted + failed + 1}/${drafted + failed + remaining()})`;
@@ -924,7 +989,7 @@ export class AugmentTuiController {
     const text = message?.trim();
     // Enter on a file target rethinks its patch, never its approach domain:
     // approaches are for root and folders; files answer with a diff.
-    if (this.runtime && this.isFileTargetNode(nodeId)) return this.rethinkFileDraft(nodeId, text);
+    if ((this.runtime || this.toolDriver) && this.isFileTargetNode(nodeId)) return this.rethinkFileDraft(nodeId, text);
     if (!this.isFileTargetNode(nodeId) && this.draftedSubtreeCount(nodeId) > 0) {
       const drafted = this.draftedSubtreeCount(nodeId);
       this.error = `${drafted} drafted ${drafted === 1 ? "file" : "files"} under ${node.path ?? "this path"} would be discarded by rethinking it. [O] reopens explicitly (it asks a reason); Enter on a single file rethinks just its patch.`;
@@ -965,8 +1030,8 @@ export class AugmentTuiController {
         const reopened = await this.server.handle({ jsonrpc: "2.0", id: 10, method: "node/reopen", params: { taskId: current.id, expectedRevision: current.revision, nodeId, reason: text ? `Rethink: ${text}` : "Operator requested a rethink" } });
         current = expectResult(reopened, PlanTaskLike.is) as PlanTask;
       }
-      const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 11, method: "crystallize", params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true, challengeRounds: this.challengeRounds } });
-      this.task = expectResult(regenerated, PlanTaskLike.is) as PlanTask;
+      const regenerated = await this.regenerateApproaches(current, nodeId, text ? `Rethink: ${text}` : "Operator requested a rethink", text ? `rethink the subtree with this in mind: ${text}` : undefined);
+      this.task = regenerated;
       await this.adoptSingletonIfViable(nodeId);
       this.refresh();
       this.selectNodeEntry(nodeId);
@@ -974,6 +1039,31 @@ export class AugmentTuiController {
       if (text) this.message = adopted ? "Approaches regenerated from your note; single viable approach adopted. Press D to develop it." : "Approaches regenerated from your note. Choose one with keys 1-7.";
       else this.message = adopted ? "Approaches regenerated; single viable approach adopted. Press D to develop it." : "Approaches regenerated. Choose one with keys 1-7.";
     }, nodeId);
+  }
+
+  /**
+   * One regeneration of a subtree's approaches: the one-shot runtime answers
+   * a fresh crystallize/replace call, the tool session re-prompts the same
+   * agent session (rejected labels in hand) and waits for the new domain.
+   */
+  private async regenerateApproaches(current: PlanTask, nodeId: string, reopenReason: string, note?: string): Promise<PlanTask> {
+    if (this.toolDriver) {
+      const rejected = Object.values(current.candidates)
+        .filter((candidate) => candidate.status === "eliminated")
+        .map((candidate) => candidate.label);
+      await this.withToolFlow(() => this.toolDriver!.propose({
+        taskId: current.id,
+        objective: current.objective,
+        nodeId,
+        target: current.nodes[nodeId]?.path?.replace(/^\.$/, "the whole task") ?? "the whole task",
+        note,
+        rejected,
+      }));
+      await this.syncTask();
+      return this.task!;
+    }
+    const regenerated = await this.server.handle({ jsonrpc: "2.0", id: 11, method: "crystallize", params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "normal", lod: this.defaultLod, replace: true, challengeRounds: this.challengeRounds } });
+    return expectResult(regenerated, PlanTaskLike.is) as PlanTask;
   }
 
   /** A file, hunk, or virtual node develops and rethinks by drafting its patch. */
@@ -1016,7 +1106,13 @@ export class AugmentTuiController {
       }
       const node = current.nodes[nodeId]!;
       const reason = text ? `Rethink: ${text}` : "Operator requested a rethink";
-      if (node.diffIds.length > 0) {
+      if (this.toolDriver) {
+        const target = node.path ?? nodeId;
+        await this.withToolFlow(() => node.diffIds.length > 0
+          ? this.toolDriver!.regenerate({ taskId: current.id, objective: current.objective, nodeId, target, note: text ?? reason })
+          : this.toolDriver!.draft({ taskId: current.id, objective: current.objective, nodeId, target }));
+        await this.syncTask();
+      } else if (node.diffIds.length > 0) {
         const repaired = await this.server.handle({
           jsonrpc: "2.0",
           id: 24,
@@ -1024,6 +1120,7 @@ export class AugmentTuiController {
           params: { taskId: current.id, expectedRevision: current.revision, diffId: node.diffIds.at(-1), failedCheck: reason, temperature: "low" },
         });
         current = expectResult(repaired, PlanTaskLike.is) as PlanTask;
+        this.task = current;
       } else {
         const drafted = await this.server.handle({
           jsonrpc: "2.0",
@@ -1032,8 +1129,8 @@ export class AugmentTuiController {
           params: { taskId: current.id, expectedRevision: current.revision, nodeId, temperature: "low" },
         });
         current = expectResult(drafted, PlanTaskLike.is) as PlanTask;
+        this.task = current;
       }
-      this.task = current;
       this.refresh();
       this.selectNodeEntry(nodeId);
       this.message = text ? "Patch regenerated from your note. It is not applied to the repository." : "Patch regenerated. It is not applied to the repository.";

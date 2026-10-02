@@ -3,6 +3,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { CliAgentRuntime } from "../tui/opencode-runtime.js";
+import { ToolSessionDriver, toolSessionSupported } from "../tui/tool-session.js";
 import { AugmentTuiController, currentRevision } from "../tui/controller.js";
 import { runAugmentTui } from "../tui/augment.js";
 import { configPath, effectiveConfig, loadAugmentConfig, saveAugmentConfig, type AugmentConfig } from "../tui/config.js";
@@ -107,6 +108,21 @@ if (objective) {
     process.stderr.write(`${snapshot.error}\n`);
     process.exitCode = 1;
   }
+}
+
+// One tool-using agent session per task: TUI operations become short
+// prompts, and the model writes into the plan through the neolit MCP tools
+// attached to this TUI's socket. Opt out with AUGMENT_TUI_NO_TOOLS=1.
+if (modelAvailable && process.env.AUGMENT_TUI_NO_TOOLS !== "1" && toolSessionSupported(backend.id)) {
+  controller.useToolSession(new ToolSessionDriver({
+    directory,
+    backend,
+    command: requested,
+    model,
+    timeoutMs: config.timeoutMs,
+    server: controller.server,
+    socketPath: () => controller.snapshot().socketPath,
+  }));
 }
 
 try {

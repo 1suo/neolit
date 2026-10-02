@@ -286,6 +286,9 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         {state.socketPath ? (
           <Text color={theme.muted}>⎇ agents: {state.socketPath}</Text>
         ) : null}
+        {state.toolSession ? (
+          <Text color={theme.secondary}>[TOOLS]</Text>
+        ) : null}
         <Box flexGrow={1} />
         <Text color={props.modelAvailable ? theme.success : theme.warning}>{props.modelAvailable ? props.modelLabel ?? "OPENCODE" : "NO MODEL"}</Text>
       </Box>
