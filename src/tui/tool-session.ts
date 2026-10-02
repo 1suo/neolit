@@ -39,6 +39,24 @@ export interface SessionStreamLine {
  * presentation: unknown shapes are ignored, and nothing here touches task
  * state — the plan still only changes when a complete tool call lands.
  */
+/**
+ * Compact one-line detail for a tool call's input: the argument that names
+ * the work (command, pattern, query, path, …) rather than the whole JSON
+ * envelope, so completed calls read like "✓ execute · git status".
+ */
+function toolDetail(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const record = input as Record<string, unknown>;
+  for (const key of ["command", "cmd", "pattern", "query", "glob", "path", "file", "url", "script", "text"]) {
+    const value = record[key];
+    if (typeof value !== "string") continue;
+    const flattened = value.replace(/\s+/g, " ").trim();
+    if (flattened) return flattened.slice(0, 90);
+    return ""; // a known key that is blank carries nothing worth showing
+  }
+  return JSON.stringify(input).replace(/\s+/g, " ").slice(0, 90);
+}
+
 export function formatStreamEvent(message: unknown): SessionStreamLine | undefined {
   if (!message || typeof message !== "object") return undefined;
   const record = message as Record<string, unknown>;
@@ -56,10 +74,11 @@ export function formatStreamEvent(message: unknown): SessionStreamLine | undefin
   if (part?.type === "tool" && part.state && typeof part.state === "object") {
     const state = part.state as { status?: unknown; title?: unknown; input?: unknown };
     const title = typeof state.title === "string" && state.title ? state.title : "tool";
-    if (state.status === "completed") return { kind: "tool", text: `✓ ${title}` };
-    if (state.status === "error") return { kind: "tool", text: `✗ ${title}` };
-    const input = state.input === undefined ? "" : ` ${JSON.stringify(state.input).replace(/\s+/g, " ").slice(0, 90)}`;
-    return { kind: "tool", text: `→ ${title}${input}` };
+    const detail = toolDetail(state.input);
+    const suffix = detail ? ` · ${detail}` : "";
+    if (state.status === "completed") return { kind: "tool", text: `✓ ${title}${suffix}` };
+    if (state.status === "error") return { kind: "tool", text: `✗ ${title}${suffix}` };
+    return { kind: "tool", text: `→ ${title}${suffix}` };
   }
   return undefined;
 }

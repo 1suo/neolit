@@ -4,7 +4,7 @@
 
 ## Layout
 
-The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place. `F` folds a directory shut (`▸`, subtree hidden) and `H` filters the tree down to related paths — planned entries, restriction-plain marks, and the ancestors that connect them (a `[RELATED]` chip in the header marks the active filter; the full tree is one keypress away). While a tool session runs, a bounded **SESSION** pane under the tree streams the agent's live work — steps, tool calls, and retries — as it happens; it is view-only and `V` toggles it (cramped frames drop it automatically).
+The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place. `F` folds a directory shut (`▸`, subtree hidden) and `H` filters the tree down to related paths — planned entries, restriction-plain marks, and the ancestors that connect them (a `[RELATED]` chip in the header marks the active filter; the full tree is one keypress away). While a tool session runs, a bounded **SESSION** pane under the tree streams the agent's live work — steps, tool calls, and retries — as it happens; tool-call lines carry the call's naming argument (`✓ execute · git status --short`, `✓ read · src/tui/controller.ts`). The pane is view-only and `V` toggles it (cramped frames drop it automatically).
 
 ```text
 FILES
