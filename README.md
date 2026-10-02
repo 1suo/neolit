@@ -95,12 +95,18 @@ generate-domain
 challenge-domain
 refine-node
 draft-patch
+draft-patches
 repair-patch
+explain-project
 ```
 
 The kernel builds a bounded context packet, parses output with Zod, validates
 scope and lifecycle, and merges only legal deltas. Invalid model output leaves
-task state unchanged.
+task state unchanged. Draft and repair replies may be the raw unified diff
+itself (assumptions as trailing `Assumption:` lines) instead of a JSON
+envelope, and the same operations are exposed as MCP agent tools with
+`augmentd` as the tool provider — see below and
+[`src/augment/SPEC.md`](./src/augment/SPEC.md).
 
 ## `augmentd`
 
@@ -136,6 +142,10 @@ node/refresh
 path/restrict
 crystallize
 refine
+domain/propose
+domain/challenge
+node/refine
+patch/attach
 patch/draft
 patch/draft-batch
 patch/repair
@@ -145,7 +155,15 @@ shutdown
 ```
 
 Mutating requests carry `expectedRevision`; stale requests are rejected before
-state changes.
+state changes. The `domain/propose`, `domain/challenge`, `node/refine`, and
+`patch/attach` seams apply one typed proposal deterministically — they back
+the MCP tool layer, where `augmentd --mcp [--directory DIR]` serves the
+planned-diff operations as MCP agent tools (`plan_start`, `plan_status`,
+`propose_approaches`, `challenge_approaches`, `select_approach`,
+`refine_plan`, `draft_file`, `repair_patch`): one small validated call per
+operation, exact controller and git-apply diagnostics returned to the agent,
+and deterministic per-operation call caps. See
+[`src/augmentd/README.md`](./src/augmentd/README.md).
 
 ## TUI
 
@@ -215,5 +233,6 @@ npm run build   # emit dist/
 npx vitest run test/augment-state.test.ts
 npx vitest run test/augment-kernel.test.ts
 npx vitest run test/augment-server.test.ts
+npx vitest run test/augment-mcp.test.ts
 npx vitest run test/augment-tui.test.ts
 ```

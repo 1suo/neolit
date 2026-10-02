@@ -99,12 +99,15 @@ The executable uses `CliAgentRuntime`, a backend-neutral agent runner: prompt
 construction, retries, corrective feedback, session persistence, timeouts,
 and per-operation model routing are shared, while each backend contributes
 only its argv shape and output parsing in `src/tui/agent-backends.ts`.
-Backends today: `opencode` (`opencode run --format json`, default),
-`claude` (`claude -p --output-format json --permission-mode plan`), and
-`codex` (`codex exec --json --sandbox read-only`). Claude sessions resume
-via `--resume`; codex sessions are not continued yet. Vendor flags drift —
-when one does, the fix is one object in that file. Adding an agent is the
-same: implement the `CliAgentBackend` interface and register it.
+Single-file drafts (`draft-patch`, `repair-patch`) ask for the raw unified
+diff itself — assumptions as trailing `Assumption:` lines — and the runtime
+falls back to the JSON envelope when a model still answers that way; the
+batch draft stays JSON. Backends today: `opencode` (`opencode run --format
+json`, default), `claude` (`claude -p --output-format json --permission-mode
+plan`), and `codex` (`codex exec --json --sandbox read-only`). Claude
+sessions resume via `--resume`; codex sessions are not continued yet. Vendor
+flags drift — when one does, the fix is one object in that file. Adding an
+agent is the same: implement the `CliAgentBackend` interface and register it.
 
 Configuration lives in `$XDG_CONFIG_HOME/neolit/augment.json` (default
 `~/.config/neolit/`). `augment setup` is the interface: it lists the agents

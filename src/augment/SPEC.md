@@ -41,6 +41,11 @@ The runtime is a replaceable port. For each operation it receives a bounded cont
 - `repair-patch`: one replacement patch grounded in an exact failed check.
 - `explain-project`: one bounded set of repository path explanations for the requested topic.
 
+Proposals arrive through two channels, and the controller treats them identically:
+
+- **One typed reply per call.** The model answers the operation in one payload. A `draft-patch`/`repair-patch` reply may be the raw unified-diff text itself — a diff is self-delimiting (`--- a/x`, `+++ b/x`, `@@`), so a JSON string envelope only invites escape errors and mid-string truncation — with assumptions as trailing `Assumption:` lines the controller parses separately. The JSON envelope remains valid.
+- **Typed tool proposals.** The operations are exposed as small agent tools (over MCP, with `augmentd` as the tool provider) so a model writes into the plan one call at a time: propose a domain, challenge it, select an approach, refine, draft one file's diff, repair one diff. Each call is validated and answered by the controller immediately — scope, locks, lifecycle, and host `git apply` diagnostics are returned to the agent so it retries that operation with the exact reason. Controller authority is unchanged: every call flows through the same reducers as every other mutation, and deterministic per-operation call caps bound agent loops. Tool drafting replaces the single-blob reply as the preferred draft path; one-shot raw-diff replies remain the fallback for runtimes without tool support.
+
 A user message attached to a path is a scoped constraint. Regenerating that path reopens the owning node and its descendants, preserves the message on the owning node, and crystallizes only that node. Sibling subtrees remain intact. A message on a repository path without a node binds to the root with that path scope.
 
 Every planned diff derives a deterministic presentation kind: `new`, `modify`, or `delete` when the unified diff identifies it; otherwise `unknown`. The kind never replaces the exact patch text. A dedicated exact-diff projection must remain available for every drafted path.
@@ -49,7 +54,7 @@ Invalid shape, illegal paths, duplicate identities, out-of-scope mutations, lock
 
 ## Host and protocol contract
 
-`augmentd` exposes the pure core over host-neutral JSON-RPC. It stores tasks in memory in the current implementation and must eventually persist them atomically. Hosts implement model runtimes (OpenCode, Codex, direct providers, or deterministic tests) and repository apply/verify transactions.
+`augmentd` exposes the pure core over host-neutral JSON-RPC. It stores tasks in memory in the current implementation and must eventually persist them atomically. Hosts implement model runtimes (OpenCode, Codex, direct providers, or deterministic tests) and repository apply/verify transactions. `augmentd` also serves the planned-diff operations as MCP agent tools; hosts inject repository diagnostics (a `git apply` preflight) so tool-driven drafts are answered with exact applicability failures.
 
 ## Acceptance
 

@@ -1,6 +1,6 @@
 # `augmentd` server
 
-`src/augmentd/` exposes the planned-diff core through newline-delimited JSON-RPC 2.0 over standard I/O. It is deliberately host-neutral: OpenCode, Codex, Neovim, tests, and future IDE clients embed or launch the same protocol.
+`src/augmentd/` exposes the planned-diff core through newline-delimited JSON-RPC 2.0 over standard I/O, and serves the same operations as MCP agent tools. It is deliberately host-neutral: OpenCode, Codex, Neovim, tests, and future IDE clients embed or launch the same protocol.
 
 ## Responsibility
 
@@ -33,6 +33,10 @@ node/refresh
 path/restrict
 crystallize
 refine
+domain/propose
+domain/challenge
+node/refine
+patch/attach
 patch/draft
 patch/draft-batch
 patch/set
@@ -40,7 +44,31 @@ diff/get
 shutdown
 ```
 
-`task/restore` rehydrates a previously persisted task into a fresh server so hosts can resume after a restart; the payload must be a version-1 task that passes the boundary schema (`PlanTaskSchema`) and referential-integrity check, and the task id must not already exist. Hosts embedding the server can subscribe with `onChange` for push delivery; over stdio, every task mutation is forwarded as a notification line — `{"jsonrpc":"2.0","method":"augment/taskChanged","params":{"taskId":"…","revision":N}}` — so editor hosts invalidate views instead of polling. Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches — it accepts an optional `nodeId` to focus the explanation on one path. `path/restrict` keeps one plain: `lockedPaths` is the marked set and `restrictionMode` its polarity — in lock mode candidates, refinement children, and patches (including the paths named inside patch text) must avoid the set; in allow mode only the set may change. Switching polarity inverts the plain without touching the set. `node/refresh` ends staleness for a subtree: stale nodes return to their last live lifecycle point, readiness propagates again, and an optional `basisRevision` re-anchors the task while existing diffs keep the basis they were drafted against. `patch/set` lets a host overwrite a drafted patch with its own edited text (for example, saved from an editor buffer); it reclassifies the diff, bumps the revision, and is rejected for stale revisions, unknown diffs, or locked paths.
+`task/restore` rehydrates a previously persisted task into a fresh server so hosts can resume after a restart; the payload must be a version-1 task that passes the boundary schema (`PlanTaskSchema`) and referential-integrity check, and the task id must not already exist. Hosts embedding the server can subscribe with `onChange` for push delivery; over stdio, every task mutation is forwarded as a notification line — `{"jsonrpc":"2.0","method":"augment/taskChanged","params":{"taskId":"…","revision":N}}` — so editor hosts invalidate views instead of polling. Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches — it accepts an optional `nodeId` to focus the explanation on one path. `path/restrict` keeps one plain: `lockedPaths` is the marked set and `restrictionMode` its polarity — in lock mode candidates, refinement children, and patches (including the paths named inside patch text) must avoid the set; in allow mode only the set may change. Switching polarity inverts the plain without touching the set. `node/refresh` ends staleness for a subtree: stale nodes return to their last live lifecycle point, readiness propagates again, and an optional `basisRevision` re-anchors the task while existing diffs keep the basis they were drafted against. `patch/set` lets a host overwrite a drafted patch with its own edited text (for example, saved from an editor buffer); it reclassifies the diff, bumps the revision, records an optional `failedCheck` grounding, and is rejected for stale revisions, unknown diffs, or locked paths.
+
+### Deterministic proposal seams
+
+`domain/propose`, `domain/challenge`, `node/refine`, and `patch/attach` apply one typed proposal directly — no model runtime involved. They exist for tool-driven hosts (the MCP layer below) and any host that computes proposals itself: candidates and children pass the same Zod boundary schemas as model output, domain proposals record out-of-scope candidates as constraints instead of losing them, challenges consume the bounded two-round budget, and `patch/attach` records `assumptions` as model-source constraints exactly like a model draft would. Controller authority is identical to the model-driven path because both run through the same kernel merges (`applyDomainProposal`, `applyChallenge`) and reducers.
+
+## MCP tool provider
+
+`mcp.ts` serves the planned-diff operations as MCP tools (`initialize`, `tools/list`, `tools/call`) over the same stdio framing, so an agent host (OpenCode, Claude, Codex) can let its model write into the plan one small call at a time instead of one JSON blob:
+
+```text
+plan_start            plan_status
+propose_approaches    challenge_approaches
+select_approach       refine_plan
+draft_file            repair_patch
+```
+
+Each mutating call carries `expectedRevision`; results are compact confirmations (revision, ids, next step), and failures return the controller's typed reason as a tool error — scope violations name the paths, stale revisions tell the agent to refetch `plan_status`, and when the host injected a preflight, `draft_file`/`repair_patch` return git's exact `apply` diagnostic so the agent retries that one file with the reason. Deterministic per-operation call caps (`MCP_TOOL_CAPS`) bound agent loops. `patch/attach` is the dispatch target of `draft_file`; a drafted file is routed to `repair_patch` (backed by `patch/set`).
+
+```sh
+npx augmentd --mcp                 # tools only; controller validation, no git diagnostics
+npx augmentd --mcp --directory .   # adds joint git apply diagnostics for drafts
+```
+
+The MCP client's agent is the model, so no `ModelRuntime` is injected. A host embedding the server passes its own `preflight` function; the `--directory` flag wires the TUI host's `preflightPatches`.
 
 ## Error codes
 
@@ -62,6 +90,6 @@ Controller failures carry typed JSON-RPC codes so hosts can act without parsing 
 ## Validation
 
 ```sh
-npx vitest run test/augment-server.test.ts
+npx vitest run test/augment-server.test.ts test/augment-mcp.test.ts
 npm run check
 ```

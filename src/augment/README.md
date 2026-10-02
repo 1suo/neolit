@@ -25,20 +25,21 @@ host operation
   -> updated task snapshot
 ```
 
-Model runtimes execute outside this module. `crystallize` and `refine` in `kernel.ts` call the injected `ModelRuntime` port, validate typed proposals with Zod, challenge the candidate domain, and then merge only legal deltas. Patch operations record model-reported assumptions as model-source constraints so they stay inspectable. The standalone OpenCode CLI adapter lives with the TUI host in `src/tui/opencode-runtime.ts`; it is not part of the pure core.
+Model runtimes execute outside this module. `crystallize` and `refine` in `kernel.ts` call the injected `ModelRuntime` port, validate typed proposals with Zod, challenge the candidate domain, and then merge only legal deltas. Patch operations record model-reported assumptions as model-source constraints so they stay inspectable. Draft and repair replies may be raw unified-diff text — `raw-diff.ts` extracts the self-delimiting diff and trailing `Assumption:` lines — or the JSON envelope; both shapes pass the same schema validation. The deterministic domain and challenge merges (`applyDomainProposal`, `applyChallenge`) are shared with `augmentd`'s tool-driven protocol seams, so model-driven and tool-driven proposals enforce identical controller authority. The standalone OpenCode CLI adapter lives with the TUI host in `src/tui/opencode-runtime.ts`; it is not part of the pure core.
 
 ## Public surface
 
 - `types.ts`: task, node, candidate, constraint, evidence, patch, model, and view contracts.
 - `state.ts`: pure task operations and the filesystem-shaped `planTree` projection.
 - `schemas.ts`: Zod contracts for model proposals.
-- `kernel.ts`: bounded model-driven `crystallize` and `refine` operations.
+- `raw-diff.ts`: raw unified-diff reply parsing for draft and repair operations.
+- `kernel.ts`: bounded model-driven `crystallize` and `refine` operations plus the shared domain/challenge proposal merges.
 
 ## Invariants
 
 - IDs are stable and controller-authored.
 - Model output enters only through parsed, validated deltas.
-- A node must have a non-empty accepted candidate domain before collapse.
+- `draft-patch` and `repair-patch` replies may be raw unified-diff text with trailing `Assumption:` lines or the JSON envelope; the controller parses both shapes and stores the exact patch text either way.- A node must have a non-empty accepted candidate domain before collapse.
 - Selection eliminates sibling candidates with an explicit witness.
 - Refinement is legal only after a selected candidate.
 - Patches and refinement carry the task basis revision.
