@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { patchPaths } from "../augment/state.js";
 import type { PlannedDiff } from "../augment/types.js";
 
 /**
@@ -26,6 +27,7 @@ export function preflightPatches(directory: string, patches: string[]): string |
       // verification applies the patches sequentially inside a throwaway
       // worktree — exactly how the real apply will run, order included.
       git(directory, ["worktree", "add", "--detach", "--quiet", worktree]);
+      mirrorPatchedPaths(directory, worktree, nonEmpty);
       for (const file of files) git(worktree, ["apply", "--whitespace=nowarn", file]);
       return undefined;
     } catch (error) {
@@ -38,6 +40,37 @@ export function preflightPatches(directory: string, patches: string[]): string |
       // the worktree may never have been created
     }
     rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Drafts are generated from the CURRENT working tree — the file content the
+ * one-shot prompt embeds and the tool-session agent reads — but
+ * `git worktree add` checks out HEAD, which silently drops uncommitted edits,
+ * untracked files, and working-tree deletions. Without mirroring, every draft
+ * against a dirty target fails verification here while applying cleanly for
+ * real, and no retry can fix it. Copy each touched path's live bytes in (or
+ * remove it when the working tree no longer has it) so verification and the
+ * eventual apply see identical content.
+ */
+function mirrorPatchedPaths(directory: string, worktree: string, patches: string[]): void {
+  const targets = new Set(patches.flatMap((patch) => patchPaths(patch)));
+  for (const target of targets) {
+    if (!target || target.includes("..") || path.isAbsolute(target)) continue;
+    const source = path.join(directory, target);
+    const destination = path.join(worktree, target);
+    let live = false;
+    try {
+      live = statSync(source).isFile();
+    } catch {
+      live = false;
+    }
+    if (live) {
+      mkdirSync(path.dirname(destination), { recursive: true });
+      copyFileSync(source, destination);
+    } else {
+      rmSync(destination, { force: true });
+    }
   }
 }
 

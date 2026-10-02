@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import React from "react";
 import { renderToString } from "ink";
 import { cleanup, render as renderInk } from "ink-testing-library";
+import { preflightPatches } from "../src/tui/apply.js";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
@@ -862,6 +863,27 @@ describe("augment TUI apply", () => {
     const snapshot = controller.snapshot();
     expect(snapshot.error).toContain("git apply");
     expect(fs.readFileSync(path.join(directory, "session.ts"), "utf8")).toBe("alpha\nbeta\n");
+  });
+
+  it("preflights drafts against the working tree, not HEAD", () => {
+    const directory = tempGitRepo();
+    // The draft embeds (and the agent reads) CURRENT bytes; the preflight
+    // worktree checks out HEAD. Uncommitted edits made every such draft
+    // fail forever while the real apply would have succeeded.
+    fs.writeFileSync(path.join(directory, "session.ts"), "alpha\nBETA\n");
+    const patch = "--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,3 @@\n alpha\n+gamma\n BETA\n";
+    expect(preflightPatches(directory, [patch])).toBeUndefined();
+    // Joint composition still applies sequentially against those bytes.
+    const second = "--- a/session.ts\n+++ b/session.ts\n@@ -1,3 +1,3 @@\n alpha\n-gamma\n+delta\n BETA\n";
+    expect(preflightPatches(directory, [patch, second])).toBeUndefined();
+  });
+
+  it("preflights drafts for untracked and working-tree-deleted targets", () => {
+    const directory = tempGitRepo();
+    fs.writeFileSync(path.join(directory, "new.ts"), "one\n");
+    expect(preflightPatches(directory, ["--- a/new.ts\n+++ b/new.ts\n@@ -1,1 +1,2 @@\n one\n+two\n"])).toBeUndefined();
+    fs.rmSync(path.join(directory, "session.ts"));
+    expect(preflightPatches(directory, ["--- /dev/null\n+++ b/session.ts\n@@ -0,0 +1,1 @@\n+fresh\n"])).toBeUndefined();
   });
 });
 
