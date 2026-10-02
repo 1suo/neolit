@@ -8,11 +8,14 @@ import type { PlanTask } from "../augment/types.js";
 import type { CliAgentBackend } from "./agent-backends.js";
 
 /**
- * Tool-session driver: the TUI's model operations become short prompts in
+ * ToolSessionDriver: the TUI's model operations become short prompts in
  * ONE agent session bound to the task id, and the model writes into the plan
  * exclusively through the neolit MCP tools — which the spawned CLI loads
  * from generated wiring (OPENCODE_CONFIG for OpenCode, --mcp-config for
- * Claude) pointing at this TUI's own socket. Every tool call lands in the
+ * Claude) pointing at this TUI's socket. Because `opencode run` hands its
+ * work to a background service that owns MCP connections, OpenCode steps run
+ * --standalone so their private server inherits the generated layer; the run
+ * client alone would never see the tools. Every tool call lands in the
  * embedded server, renders live, and is validated by the controller; the
  * driver never parses model replies, it waits for the effect to appear in
  * the task store. Prompts point instead of embed: the session already holds
@@ -218,9 +221,23 @@ export class ToolSessionDriver {
         ...(session ? ["--resume", session] : []),
       ];
     }
+    // `opencode run` hands its work to a background service that owns MCP
+    // connections, so a config layer on the run client changes nothing, and
+    // `serve` speaks a password-protected server protocol the run client
+    // negotiates separately. `--standalone` gives each step a private
+    // server that inherits this process's environment — the generated
+    // layer (with the neolit bridge) is therefore visible to it. Sessions
+    // persist on disk, so `--session` continuation works across steps.
+    if (this.options.backend.id === "opencode") {
+      const base = this.options.backend.invocation(
+        { model: this.options.model, session, prompt, title: "neolit step", autoApprove: true },
+        { agent: undefined },
+      );
+      return base[0] === "run" ? ["run", "--standalone", ...base.slice(1)] : base;
+    }
     return this.options.backend.invocation(
       { model: this.options.model, session, prompt, title: "neolit step", autoApprove: true },
-      {},
+      { agent: undefined },
     );
   }
 
@@ -232,6 +249,9 @@ export class ToolSessionDriver {
       ? openCodeToolConfig(this.bridge, socketPath, this.options.directory)
       : claudeToolConfig(this.bridge, socketPath, this.options.directory);
     fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    // OpenCode steps run --standalone so their private server inherits this
+    // layer (verified against a live host: the model sees and calls the
+    // neolit tools); Claude takes the config file per invocation.
     this.wiring = this.options.backend.id === "opencode"
       ? { env: { OPENCODE_CONFIG: file }, extraArgs: [], file, socketPath }
       : { env: {}, extraArgs: ["--mcp-config", file, "--allowedTools", "mcp__neolit__*"], file, socketPath };

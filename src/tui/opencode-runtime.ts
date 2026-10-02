@@ -22,7 +22,12 @@ export class PersistentAgentServer {
   private address?: string;
   private starting?: Promise<string | undefined>;
 
-  constructor(private readonly command: string, private readonly backend: CliAgentBackend) {}
+  constructor(
+    private readonly command: string,
+    private readonly backend: CliAgentBackend,
+    /** Extra environment for the serve child (for example a generated OPENCODE_CONFIG layer — the server, not the run client, owns MCP connections). */
+    private readonly env: Record<string, string> = {},
+  ) {}
 
   get url(): string | undefined {
     return this.address;
@@ -38,7 +43,7 @@ export class PersistentAgentServer {
   private async launch(): Promise<string | undefined> {
     const serveArgs = this.backend.serveArgs?.();
     if (!serveArgs) return undefined;
-    const child = spawn(this.command, serveArgs, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(this.command, serveArgs, { cwd: process.cwd(), env: { ...process.env, ...this.env }, stdio: ["ignore", "pipe", "pipe"] });
     this.child = child;
     return new Promise<string | undefined>((resolve) => {
       let buffered = "";

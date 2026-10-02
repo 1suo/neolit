@@ -208,7 +208,8 @@ Directories aggregate descendant change state (`added`, `removed`, `changed`) an
 The TUI can apply drafted patches to the working tree on request (`A`): every selected patch is preflighted with `git apply --check` against the current working tree — uncommitted edits included — and applied as one unit, so a conflict anywhere leaves the tree untouched. Nothing is staged or committed, and the repository tree refreshes after applying.
 While it runs, the TUI serves its embedded server on a Unix socket, so an external agent (`augmentd --mcp --connect`) drives the same task store and every tool-driven mutation renders in the panes as it lands; see [`src/tui/README.md`](./src/tui/README.md).
 When the backend can carry MCP tools into non-interactive runs (OpenCode via a
-generated `OPENCODE_CONFIG` layer, Claude via `--mcp-config`), the TUI instead
+generated `OPENCODE_CONFIG` layer plus `--standalone` steps, Claude via
+`--mcp-config`), the TUI instead
 keeps **one tool-using agent session per task** and turns its own operations
 into short prompts that point rather than embed (`Draft src/auth/session.ts —
 read the file, then call draft_file`): the model writes into the plan

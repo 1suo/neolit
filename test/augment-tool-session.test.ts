@@ -54,6 +54,7 @@ const socketConnection = net.connect(socket);
 await new Promise((resolve) => socketConnection.once("connect", resolve));
 const taskId = (prompt.match(/task id (task:[^\\s)]+)/) ?? [])[1];
 const log = (entry) => { if (process.env.NEOLIT_FAKE_LOG) fs.appendFileSync(process.env.NEOLIT_FAKE_LOG, entry + "\\n"); };
+log(\`ARGV \${argv.join(" ")}\`);
 log(\`PROMPT \${prompt.replace(/\\s+/g, " ").slice(0, 160)}\`);
 
 let nextId = 100;
@@ -103,8 +104,10 @@ process.stdout.write(JSON.stringify({ sessionID: "ses_toolfake1", type: "message
 
 const temporaryFiles: string[] = [];
 const temporaryDirectories: string[] = [];
+const drivers: ToolSessionDriver[] = [];
 
 afterEach(() => {
+  for (const driver of drivers.splice(0)) driver.dispose();
   for (const file of temporaryFiles.splice(0)) fs.rmSync(file, { force: true });
   for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 });
@@ -137,7 +140,7 @@ async function harnessed(): Promise<Harness> {
   fs.chmodSync(fakeAgent, 0o755);
   const controller = new AugmentTuiController({ directory, serveSocket: socketPath, persistTasks: false });
   process.env.NEOLIT_FAKE_LOG = fakeLog;
-  controller.useToolSession(new ToolSessionDriver({
+  const driver = new ToolSessionDriver({
     directory,
     backend: opencodeBackend,
     command: fakeAgent,
@@ -145,7 +148,9 @@ async function harnessed(): Promise<Harness> {
     server: controller.server,
     socketPath: () => controller.snapshot().socketPath,
     bridge: [process.execPath, path.resolve(import.meta.dirname, "../src/bin/augmentd.ts")],
-  }));
+  });
+  drivers.push(driver);
+  controller.useToolSession(driver);
   return { controller, socketPath, prompts: () => fs.readFileSync(fakeLog, "utf8") };
 }
 
@@ -194,12 +199,13 @@ describe("tool sessions drive the plan from the TUI", () => {
     expect(diffs[0]!.patch).toContain("drafted-by-agent");
     expect(snapshot.error).toBeUndefined();
 
-    // One session, continued: the opener ran once and later steps resumed it.
+    // Steps run against a private standalone server (the background service
+    // never sees the generated MCP layer) and continue the same session.
     const log = prompts();
     expect(log.match(/PROMPT You drive one Neolit planned-diff task/g)?.length).toBe(1);
     expect(log).toContain("PROMPT Draft session.ts");
-    const driverArgLog = log;
-    void driverArgLog;
+    expect(log).toContain("ARGV run --standalone --format json");
+    expect(log).toContain("--session ses_toolfake1");
     expect(log).not.toContain("Embed");
   });
 
@@ -225,18 +231,22 @@ describe("tool sessions drive the plan from the TUI", () => {
     const directory = tempGitRepo();
     const socketPath = path.join(directory, ".neolit-test.sock");
     const noopAgent = path.join(directory, "noop-agent.mjs");
-    fs.writeFileSync(noopAgent, `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ sessionID: "ses_noop1", type: "message", parts: [{ type: "text", text: "I would rather ask a question first" }] }) + "\\n");\n`);
+    fs.writeFileSync(noopAgent, `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({ sessionID: "ses_noop1", type: "message", parts: [{ type: "text", text: "I would rather ask a question first" }] }) + "\\n");
+`);
     fs.chmodSync(noopAgent, 0o755);
     const controller = new AugmentTuiController({ directory, serveSocket: socketPath, persistTasks: false });
     process.env.NEOLIT_FAKE_LOG = path.join(directory, "noop.log");
-    controller.useToolSession(new ToolSessionDriver({
+    const driver = new ToolSessionDriver({
       directory,
       backend: opencodeBackend,
       command: noopAgent,
       timeoutMs: 15_000,
       server: controller.server,
       socketPath: () => controller.snapshot().socketPath,
-    }));
+    });
+    drivers.push(driver);
+    controller.useToolSession(driver);
     await controller.start("edit session");
     await controller.crystallize();
     const snapshot = controller.snapshot();
