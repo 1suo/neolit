@@ -5,9 +5,81 @@ import path from "node:path";
 import type { ModelCallRequest, ModelContextPacket, ModelRuntime } from "../augment/types.js";
 import { parseRawDraftReply } from "../augment/raw-diff.js";
 import { preflightPatches } from "./apply.js";
-import { backendById, opencodeBackend, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
+import { backendById, extractServerUrl, opencodeBackend, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
 
 export { extractAssistantText } from "./agent-backends.js";
+
+const SERVER_START_TIMEOUT_MS = 15_000;
+
+/**
+ * Persistent agent server: one kept-alive process replaces per-call CLI
+ * spawns. `start()` launches the backend's `serveArgs` once, resolves the
+ * address it prints, and reuses it for every later call; `dispose()` and an
+ * unexpected exit both clear the state so the next `start()` relaunches.
+ */
+export class PersistentAgentServer {
+  private child?: ChildProcess;
+  private address?: string;
+  private starting?: Promise<string | undefined>;
+
+  constructor(private readonly command: string, private readonly backend: CliAgentBackend) {}
+
+  get url(): string | undefined {
+    return this.address;
+  }
+
+  async start(): Promise<string | undefined> {
+    if (this.address) return this.address;
+    const pending = this.starting ?? this.launch();
+    this.starting = pending;
+    return pending;
+  }
+
+  private async launch(): Promise<string | undefined> {
+    const serveArgs = this.backend.serveArgs?.();
+    if (!serveArgs) return undefined;
+    const child = spawn(this.command, serveArgs, { stdio: ["ignore", "pipe", "pipe"] });
+    this.child = child;
+    return new Promise<string | undefined>((resolve) => {
+      let buffered = "";
+      let settled = false;
+      const settle = (address: string | undefined): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (address) this.address = address;
+        resolve(this.address);
+      };
+      const timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        settle(undefined);
+      }, SERVER_START_TIMEOUT_MS);
+      const listen = (chunk: unknown): void => {
+        buffered += String(chunk);
+        const found = extractServerUrl(buffered);
+        if (found) settle(found);
+      };
+      child.stdout?.on("data", listen);
+      child.stderr?.on("data", listen);
+      child.once("exit", () => {
+        if (this.child === child) {
+          this.child = undefined;
+          this.address = undefined;
+          this.starting = undefined;
+        }
+        settle(undefined);
+      });
+    });
+  }
+
+  dispose(): void {
+    const child = this.child;
+    this.child = undefined;
+    this.address = undefined;
+    this.starting = undefined;
+    child?.kill();
+  }
+}
 
 const TRANSIENT_ERROR = /rate limit|429|overloaded|econnreset|etimedout|socket hang up|temporarily unavailable|timed out/i;
 
@@ -265,10 +337,12 @@ export class CliAgentRuntime implements ModelRuntime {
     for (const child of activeChildren) {
       if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
     }
+    this.server.dispose();
   }
   readonly directory: string;
   private readonly backend: CliAgentBackend;
   private readonly command: string;
+  private readonly server: PersistentAgentServer;
   private model?: string;
   private draftModel?: string;
   private challengeModel?: string;
@@ -285,6 +359,7 @@ export class CliAgentRuntime implements ModelRuntime {
     this.directory = options.directory;
     this.backend = typeof options.backend === "string" ? backendById(options.backend) : options.backend ?? opencodeBackend;
     this.command = options.command ?? process.env.AUGMENT_OPENCODE_COMMAND ?? this.backend.defaultCommand;
+    this.server = new PersistentAgentServer(this.command, this.backend);
     this.model = options.model ?? (process.env.AUGMENT_OPENCODE_MODEL || undefined);
     this.draftModel = options.draftModel ?? (process.env.AUGMENT_OPENCODE_DRAFT_MODEL || undefined);
     this.challengeModel = options.challengeModel ?? (process.env.AUGMENT_OPENCODE_CHALLENGE_MODEL || undefined);
@@ -360,6 +435,10 @@ export class CliAgentRuntime implements ModelRuntime {
 
   private async prompt(request: ModelCallRequest, corrections: string[] = [], modelOverride?: string): Promise<{ text: string; stdout: string }> {
     const taskId = request.context.taskId;
+    // One kept-alive server serves every call: it starts lazily on the first
+    // prompt and is reused; when it cannot start, invocation() keeps the
+    // per-call CLI spawn as fallback.
+    if (!this.serverUrl) await this.server.start();
     // Drafts are one-shot by design: the target file is embedded in the
     // prompt, so resuming a long-lived session only piles stale history onto
     // the context and pushes the long patch reply over output limits. Only
@@ -402,7 +481,7 @@ export class CliAgentRuntime implements ModelRuntime {
     const model = modelOverride ?? this.modelFor(request.operation);
     return this.backend.invocation(
       { model, session, prompt, title: `augment-${request.operation}`, autoApprove: this.autoApprove },
-      { server: this.serverUrl, agent: this.agent },
+      { server: this.serverUrl ?? this.server.url, agent: this.agent },
     );
   }
 

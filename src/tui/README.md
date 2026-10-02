@@ -99,6 +99,12 @@ The executable uses `CliAgentRuntime`, a backend-neutral agent runner: prompt
 construction, retries, corrective feedback, session persistence, timeouts,
 and per-operation model routing are shared, while each backend contributes
 only its argv shape and output parsing in `src/tui/agent-backends.ts`.
+Backends with a server mode can also skip the CLI's fixed startup cost:
+`opencode` exposes `serveArgs` (`opencode serve --port 0`), and
+`PersistentAgentServer` in `src/tui/opencode-runtime.ts` keeps that one
+process alive, resolves the address it prints, and restarts it if it dies.
+Routing every model call through it automatically is still open — see
+`TODO-augment.md`.
 Single-file drafts (`draft-patch`, `repair-patch`) ask for the raw unified
 diff itself — assumptions as trailing `Assumption:` lines — and the runtime
 falls back to the JSON envelope when a model still answers that way; the

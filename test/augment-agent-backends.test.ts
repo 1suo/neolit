@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { backendById, claudeBackend, codexBackend, opencodeBackend } from "../src/tui/agent-backends.js";
-import { CliAgentRuntime } from "../src/tui/opencode-runtime.js";
+import { backendById, claudeBackend, codexBackend, extractServerUrl, opencodeBackend } from "../src/tui/agent-backends.js";
+import { CliAgentRuntime, PersistentAgentServer } from "../src/tui/opencode-runtime.js";
 import { cleanup } from "ink-testing-library";
 import type { ModelCallRequest } from "../src/augment/types.js";
 
@@ -100,5 +100,27 @@ describe("agent backends", () => {
     expect(logged).toContain("-p");
     expect(logged).toContain("--permission-mode plan");
     expect(logged.match(/--resume ses_cl1/g)?.length).toBe(1);
+  });
+
+  it("exposes a persistent serve seam for opencode only", () => {
+    expect(opencodeBackend.serveArgs?.()).toEqual(["serve", "--port", "0"]);
+    expect(claudeBackend.serveArgs).toBeUndefined();
+    expect(codexBackend.serveArgs).toBeUndefined();
+    expect(extractServerUrl("starting up\nServing on http://127.0.0.1:4567\nready")).toBe("http://127.0.0.1:4567");
+    expect(extractServerUrl("no address here")).toBeUndefined();
+  });
+
+  it("keeps one serve process alive across starts and relaunches after dispose", async () => {
+    const script = path.join(os.tmpdir(), `augment-serve-${process.pid}-${temporaryFiles.length}.sh`);
+    temporaryFiles.push(script);
+    fs.writeFileSync(script, ["#!/bin/sh", "printf '%s\\n' 'Serving on http://127.0.0.1:4567'", "exec sleep 5", ""].join("\n"));
+    fs.chmodSync(script, 0o755);
+    const server = new PersistentAgentServer(script, opencodeBackend);
+    const first = await server.start();
+    expect(await server.start()).toBe(first);
+    expect(first).toBe("http://127.0.0.1:4567");
+    server.dispose();
+    expect(await server.start()).toBe("http://127.0.0.1:4567");
+    server.dispose();
   });
 });

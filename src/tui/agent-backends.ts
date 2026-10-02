@@ -21,6 +21,8 @@ export interface CliAgentBackend {
   readonly defaultCommand: string;
   /** Whether `augment models` can list this backend's account models. */
   readonly supportsModelsCommand: boolean;
+  /** argv that starts this backend's kept-alive server, when it has one. */
+  readonly serveArgs?: () => string[];
   invocation(parts: AgentInvocationParts, options: { server?: string; agent?: string }): string[];
   parseAssistantText(stdout: string): string;
   extractSessionId(stdout: string): string | undefined;
@@ -28,6 +30,13 @@ export interface CliAgentBackend {
 }
 
 const SESSION_ID_PATTERN = /"sessionID":"(ses_[^"]+)"/;
+
+const SERVER_URL_PATTERN = /https?:\/\/[^\s"']+/;
+
+/** The listening address a backend's persistent server prints on startup. */
+export function extractServerUrl(stdout: string): string | undefined {
+  return stdout.match(SERVER_URL_PATTERN)?.[0];
+}
 
 function parseJsonStream(value: string): unknown {
   try {
@@ -48,6 +57,7 @@ export const opencodeBackend: CliAgentBackend = {
   id: "opencode",
   defaultCommand: "opencode",
   supportsModelsCommand: true,
+  serveArgs: () => ["serve", "--port", "0"],
   invocation(parts, options) {
     return [
       "run",
