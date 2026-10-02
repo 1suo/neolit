@@ -18,6 +18,9 @@ const temporaryDirectories: string[] = [];
 const isolatedStateHome = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
 temporaryDirectories.push(isolatedStateHome);
 process.env.XDG_STATE_HOME = isolatedStateHome;
+// Tests exercise the controller and renderer directly; serving the external
+// agent socket here would leak a listener into the event loop.
+process.env.AUGMENT_TUI_NO_SOCKET = "1";
 afterEach(() => {
   cleanup();
   for (const file of temporaryFiles.splice(0)) fs.rmSync(file, { force: true });

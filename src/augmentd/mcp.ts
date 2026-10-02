@@ -21,6 +21,7 @@ export type PreflightPatches = (patches: string[]) => string | undefined;
 export type McpToolName =
   | "plan_start"
   | "plan_status"
+  | "read_diff"
   | "propose_approaches"
   | "challenge_approaches"
   | "select_approach"
@@ -28,7 +29,7 @@ export type McpToolName =
   | "draft_file"
   | "repair_patch";
 
-/** Deterministic per-operation call caps; reads (`plan_status`) are uncapped. */
+/** Deterministic per-operation call caps; reads (`plan_status`, `read_diff`) are uncapped. */
 export const MCP_TOOL_CAPS: Record<McpToolName, number> = {
   plan_start: 8,
   propose_approaches: 32,
@@ -38,6 +39,7 @@ export const MCP_TOOL_CAPS: Record<McpToolName, number> = {
   draft_file: 96,
   repair_patch: 96,
   plan_status: Number.POSITIVE_INFINITY,
+  read_diff: Number.POSITIVE_INFINITY,
 };
 
 const MAX_STATUS_ROWS = 512;
@@ -76,10 +78,22 @@ const TOOLS: ToolSpec[] = [
   },
   {
     name: "plan_status",
-    description: "Refetch the compact plan state: revision, per-path rows with node ids and statuses, pending approach choices with candidate ids, the next deterministic step, and the undrafted file targets to call draft_file on. Read-only.",
+    description: "Refetch the compact plan state: revision, per-path rows with node ids, statuses, and diff ids for drafted paths, pending approach choices with candidate ids, the next deterministic step, and the undrafted file targets to call draft_file on. Read-only.",
     inputSchema: {
       type: "object",
       properties: { taskId: { type: "string" } },
+      required: required("taskId"),
+    },
+  },
+  {
+    name: "read_diff",
+    description: "Read the exact drafted patch text — one diff by id, or every diff in the task when diffId is omitted. Rows in plan_status carry the diff ids. Read it before repairing or regenerating a file so the replacement stays grounded in what was already proposed; the patch text is verbatim, never a summary.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: { type: "string" },
+        diffId: { type: "string", description: "Optional; omit to read every drafted diff in the task." },
+      },
       required: required("taskId"),
     },
   },
@@ -206,13 +220,13 @@ const TOOLS: ToolSpec[] = [
   },
   {
     name: "repair_patch",
-    description: "Replace one drafted patch with a corrected diff after a failed check. Same scope, lock, and applicability contract as draft_file; pass the diagnostic you are fixing in failedCheck so the record stays grounded.",
+    description: "Replace one drafted patch with a corrected diff after a failed check. Same scope, lock, and applicability contract as draft_file; read the current patch with read_diff first so the correction stays grounded, and pass the diagnostic you are fixing in failedCheck.",
     inputSchema: {
       type: "object",
       properties: {
         taskId: { type: "string" },
         expectedRevision: revisionField,
-        diffId: { type: "string", description: "The diff id returned by draft_file or plan_status." },
+        diffId: { type: "string", description: "A diff id from plan_status rows, read_diff, or the draft_file result." },
         patch: { type: "string" },
         failedCheck: { type: "string", description: "The exact reason this patch is being replaced." },
       },
@@ -227,9 +241,20 @@ interface ToolOutcome {
   isError?: boolean;
 }
 
+/**
+ * Anything that can answer the native augmentd protocol — the in-process
+ * `AugmentServer`, or a socket client attached to a server another process
+ * owns (for example the one embedded in the running TUI).
+ */
+export interface NativePeer {
+  handle(request: JsonRpcRequest): Promise<JsonRpcResponse | null>;
+}
+
 export interface McpAugmentOptions {
   /** Shared controller state; defaults to a fresh server with no model runtime — the agent is the model. */
   server?: AugmentServer;
+  /** Route native dispatch to an external server (socket peer) instead of owning task state. */
+  peer?: NativePeer;
   /** Optional host-injected `git apply` preflight for draft/repair diagnostics. */
   preflight?: PreflightPatches;
   /** Tighter per-operation call caps for tests and embedded hosts. */
@@ -241,19 +266,22 @@ interface StatusRow {
   kind: PlanTreeEntry["kind"];
   status: PlanTreeEntry["status"];
   nodeIds: string[];
+  diffIds: string[];
   drafted: boolean;
   candidates?: Array<{ id: string; label: string }>;
 }
 
 export class McpAugmentServer {
-  readonly server: AugmentServer;
+  readonly server?: AugmentServer;
+  private readonly peer: NativePeer;
   private readonly preflight?: PreflightPatches;
   private readonly caps: Record<McpToolName, number>;
   private readonly calls = new Map<string, number>();
   private nextRequestId = 1;
 
   constructor(options: McpAugmentOptions = {}) {
-    this.server = options.server ?? new AugmentServer();
+    this.server = options.server;
+    this.peer = options.peer ?? options.server ?? new AugmentServer();
     this.preflight = options.preflight;
     this.caps = { ...MCP_TOOL_CAPS, ...options.caps };
   }
@@ -282,7 +310,7 @@ export class McpAugmentServer {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "augmentd", version: String(AUGMENT_PROTOCOL_VERSION) },
-          instructions: "Drive the planned diff one small step at a time: plan_start, then plan_status; propose_approaches, challenge_approaches (accept or one concrete omission — a domain must be accepted or budget-exhausted before selection), select_approach, refine_plan, and draft_file for each undrafted target. Every mutation is validated by the controller — on an error, fix exactly that operation and call it again with the diagnostic in mind. Every tool has a deterministic call cap.",
+          instructions: "Drive the planned diff one small step at a time: plan_start, then plan_status; propose_approaches, challenge_approaches (accept or one concrete omission — a domain must be accepted or budget-exhausted before selection), select_approach, refine_plan, and draft_file for each undrafted target. Read a drafted diff with read_diff before repairing or regenerating it. Every mutation is validated by the controller — on an error, fix exactly that operation and call it again with the diagnostic in mind. Every mutating tool has a deterministic call cap.",
         };
       case "ping":
         return {};
@@ -320,7 +348,7 @@ export class McpAugmentServer {
   private chargeCap(spec: ToolSpec, taskId?: string): void {
     const cap = this.caps[spec.name];
     if (!Number.isFinite(cap)) return;
-    const key = `${spec.name} ${taskId ?? ""}`;
+    const key = `${spec.name}:${taskId ?? ""}`;
     const used = (this.calls.get(key) ?? 0) + 1;
     this.calls.set(key, used);
     if (used > cap) {
@@ -345,6 +373,8 @@ export class McpAugmentServer {
         return this.planStart(input);
       case "plan_status":
         return this.planStatus(requiredString(input, "taskId"));
+      case "read_diff":
+        return this.readDiff(input);
       case "propose_approaches":
         return this.proposeApproaches(input);
       case "challenge_approaches":
@@ -383,6 +413,32 @@ export class McpAugmentServer {
       nextStep: nextDevelopmentStep(task, task.rootNodeId),
       draftTargets: undraftedFileTargets(task, task.rootNodeId).map((node) => node.path),
       rows,
+    };
+    return { text: JSON.stringify(structured), structured };
+  }
+
+  /**
+   * The exact proposed diff text, verbatim: one diff by id or every diff in
+   * the task. Regeneration stays grounded in what was actually proposed
+   * instead of the agent's memory of it.
+   */
+  private async readDiff(input: Record<string, unknown>): Promise<ToolOutcome> {
+    const taskId = requiredString(input, "taskId");
+    const diffId = typeof input.diffId === "string" && input.diffId.trim() ? input.diffId.trim() : undefined;
+    const result = await this.native("diff/get", diffId ? { taskId, diffId } : { taskId });
+    const diffs = (Array.isArray(result) ? result : [result]) as Array<{ id?: string; path?: string; patch?: string; kind?: string; failedCheck?: string }>;
+    if (!diffs.length) {
+      return { text: `Task ${taskId} has no drafted diffs yet. plan_status lists the undrafted targets to call draft_file on.`, structured: { taskId, diffs: [] } };
+    }
+    const structured = {
+      taskId,
+      diffs: diffs.map((diff) => ({
+        id: diff.id,
+        path: diff.path,
+        kind: diff.kind,
+        patch: diff.patch,
+        ...(diff.failedCheck ? { failedCheck: diff.failedCheck } : {}),
+      })),
     };
     return { text: JSON.stringify(structured), structured };
   }
@@ -518,7 +574,7 @@ export class McpAugmentServer {
   }
 
   private async native(method: string, params: unknown): Promise<unknown> {
-    const response = await this.server.handle({ jsonrpc: "2.0", id: `mcp:${this.nextRequestId++}`, method, params });
+    const response = await this.peer.handle({ jsonrpc: "2.0", id: `mcp:${this.nextRequestId++}`, method, params });
     if (!response) throw new ProtocolError(-32000, `${method} returned no response`);
     if ("error" in response) throw new ProtocolError(response.error.code, response.error.message);
     return response.result;
@@ -600,6 +656,7 @@ function statusRows(task: PlanTask): StatusRow[] {
       kind: entry.kind,
       status: entry.status,
       nodeIds: entry.nodeIds,
+      diffIds: entry.diffIds,
       drafted: entry.diffIds.length > 0,
       candidates: candidates.length ? candidates : undefined,
     });

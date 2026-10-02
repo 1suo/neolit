@@ -96,6 +96,13 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     setState(props.controller.snapshot());
   };
 
+  // External mutations (an agent driving this task over the TUI's socket)
+  // repaint the app as they land; user actions sync through `run`/`sync`.
+  useEffect(() => {
+    const unsubscribe = props.controller.subscribe(() => setState(props.controller.snapshot()));
+    return unsubscribe;
+  }, [props.controller]);
+
   const run = (action: Promise<void>) => {
     // Controller dispatch marks itself busy synchronously before its first await.
     sync();
@@ -200,7 +207,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
     if (key.return || input === "\r" || input === "\n") {
       if (!state.task) {
-        setState((current) => ({ ...current, error: "No task is active. Press [N] for a change or [E] for an explanation." }));
+        props.controller.report("No task is active. Press [N] for a change or [E] for an explanation.");
         return;
       }
       beginInput("message");
@@ -275,6 +282,9 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         {state.relatedOnly ? <Text color={theme.secondary}>[RELATED]</Text> : null}
         {state.task ? (
           <Text color={theme.muted}>r{state.task.revision} · {state.task.basisRevision.slice(0, 12)}</Text>
+        ) : null}
+        {state.socketPath ? (
+          <Text color={theme.muted}>⎇ agents: {state.socketPath}</Text>
         ) : null}
         <Box flexGrow={1} />
         <Text color={props.modelAvailable ? theme.success : theme.warning}>{props.modelAvailable ? props.modelLabel ?? "OPENCODE" : "NO MODEL"}</Text>

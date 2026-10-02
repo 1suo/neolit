@@ -101,6 +101,9 @@ function taskMutation(value: unknown): TaskMutationParams {
   return { taskId: string(params.taskId, "taskId"), expectedRevision: revision(params.expectedRevision) };
 }
 
+/** Read-only methods never take a task's turn; everything else is serialized per task. */
+const READ_METHODS = new Set(["initialize", "task/get", "tree/get", "node/get", "diff/get", "shutdown"]);
+
 /**
  * Boundary parse for proposal payloads entering the controller directly
  * (tool-driven hosts, not model output): one zod failure becomes one typed
@@ -124,6 +127,7 @@ export class AugmentServer {
   private readonly tasks = new Map<string, PlanTask>();
   private readonly runtime: ModelRuntime;
   private readonly changeListeners = new Set<(change: TaskChange) => void>();
+  private readonly taskLocks = new Map<string, Promise<void>>();
   private nextTaskId = 1;
 
   constructor(options: AugmentServerOptions = {}) {
@@ -177,7 +181,38 @@ export class AugmentServer {
     return task;
   }
 
+  /**
+   * Mutating methods run exclusively per task. Long operations (a model
+   * call inside crystallize or a draft) hold their task's turn, so a
+   * concurrent writer from another client (the socket transport serves
+   * several at once) waits and then fails the optimistic-concurrency check
+   * instead of being silently overwritten by a result merged from a stale
+   * snapshot.
+   */
+  private exclusive<T>(taskId: string, operation: () => Promise<T>): Promise<T> {
+    const tail = this.taskLocks.get(taskId) ?? Promise.resolve();
+    const run = tail.then(operation, operation);
+    this.taskLocks.set(taskId, run.then(() => undefined, () => undefined));
+    return run;
+  }
+
   private async dispatch(method: string, params: unknown): Promise<unknown> {
+    if (READ_METHODS.has(method)) return this.dispatchTaskOperation(method, params);
+    let key = "";
+    try {
+      const record = params && typeof params === "object" && !Array.isArray(params) ? params as Record<string, unknown> : {};
+      if (typeof record.taskId === "string") key = record.taskId;
+      else {
+        const task = record.task as { id?: unknown } | undefined;
+        if (task && typeof task.id === "string") key = task.id;
+      }
+    } catch {
+      // bad params surface inside the locked operation
+    }
+    return this.exclusive(key, () => this.dispatchTaskOperation(method, params));
+  }
+
+  private async dispatchTaskOperation(method: string, params: unknown): Promise<unknown> {
     switch (method) {
       case "initialize":
         return { protocolVersion: AUGMENT_PROTOCOL_VERSION, capabilities: { tasks: true, modelRuntime: !(this.runtime instanceof UnavailableModelRuntime) } };

@@ -5,5 +5,6 @@ export * from "./augment/raw-diff.js";
 export * from "./augment/kernel.js";
 export * from "./augmentd/server.js";
 export * from "./augmentd/mcp.js";
+export * from "./augmentd/socket.js";
 export * from "./tui/controller.js";
 export * from "./tui/opencode-runtime.js";

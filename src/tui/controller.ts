@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
+import { serveAugmentSocket, type SocketService } from "../augmentd/socket.js";
 import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
@@ -41,6 +42,8 @@ export interface TuiActionState {
   relatedOnly: boolean;
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
+  /** Socket address external agents attach to (`augmentd --mcp --connect …`). */
+  socketPath?: string;
 }
 
 export interface AugmentTuiControllerOptions {
@@ -51,6 +54,8 @@ export interface AugmentTuiControllerOptions {
   persistTasks?: boolean;
   /** Challenge rounds per crystallize (0-2); defaults to the environment. */
   challengeRounds?: number;
+  /** Serve the embedded server on the agent socket so external MCP agents share this task store. `true`/undefined uses the default address; a string is an explicit path. */
+  serveSocket?: boolean | string;
 }
 
 const MAX_REPOSITORY_ENTRIES = 5_000;
@@ -238,7 +243,8 @@ export function candidatesForEntry(task: PlanTask | undefined, entry: PlanTreeEn
 export class AugmentTuiController {
   readonly directory: string;
   private readonly runtime?: ModelRuntime;
-  private readonly server: AugmentServer;
+  /** The embedded protocol server; hosts may serve it on additional transports. */
+  readonly server: AugmentServer;
   private readonly defaultLod: LOD;
   private readonly challengeRounds: number | undefined;
   private readonly persistTasks: boolean;
@@ -259,6 +265,8 @@ export class AugmentTuiController {
   private error?: string;
   private readonly foldedPaths = new Set<string>();
   private relatedOnly = false;
+  private readonly listeners = new Set<() => void>();
+  private socket?: SocketService;
 
   constructor(options: AugmentTuiControllerOptions) {
     this.directory = options.directory;
@@ -281,6 +289,90 @@ export class AugmentTuiController {
         this.message = `Resumed task: ${stored.task.objective}`;
       }
     }
+    this.watchExternalMutations();
+    const socketEnv = process.env.AUGMENT_TUI_SOCKET?.trim();
+    const explicitSocket = typeof options.serveSocket === "string" && options.serveSocket.trim()
+      ? options.serveSocket.trim()
+      : socketEnv || undefined;
+    if (options.serveSocket !== false && process.env.AUGMENT_TUI_NO_SOCKET !== "1") {
+      // Best-effort: an unusable address just means this TUI keeps working
+      // without an external agent channel.
+      void serveAugmentSocket(this.server, explicitSocket).then(
+        (service) => {
+          this.socket = service;
+          this.refresh();
+        },
+        () => {
+          // Another instance owns the socket, or the address is unusable;
+          // the TUI itself is unaffected.
+        },
+      );
+    }
+    this.refresh();
+  }
+
+  /** Re-render subscription for hosts (React) that do not poll. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Records a UI-level failure on the controller itself, so a repaint
+   * triggered by an external agent mutation does not erase it.
+   */
+  report(error: string): void {
+    this.error = error;
+    this.refresh();
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        // a broken listener must not break refresh
+      }
+    }
+  }
+
+  /** Stops serving external agents; the TUI's own state is untouched. */
+  async dispose(): Promise<void> {
+    await this.socket?.close();
+    this.socket = undefined;
+    this.refresh();
+  }
+
+  /**
+   * External mutations (an agent driving this task over the socket) adopt
+   * the server's authoritative task and repaint. The controller's own
+   * operations already carry their responses, so changes are only adopted
+   * while idle; a change that lands mid-operation is adopted when that
+   * operation ends — which also means the operation itself may fail the
+   * optimistic-concurrency check with the typed stale-revision error.
+   */
+  private externalPending = false;
+
+  private watchExternalMutations(): void {
+    this.server.onChange(async (change) => {
+      if (!this.task || change.taskId !== this.task.id) return;
+      if (this.busy) {
+        this.externalPending = true;
+        return;
+      }
+      await this.adoptExternalTask();
+    });
+  }
+
+  private async adoptExternalTask(): Promise<void> {
+    const active = this.task;
+    if (!active || this.busy) return;
+    const response = await this.server.handle({ jsonrpc: "2.0", id: 31, method: "task/get", params: { taskId: active.id } });
+    if (!response || "error" in response || !this.task || this.busy || this.task.id !== active.id) return;
+    const fetched = response.result as PlanTask;
+    if (fetched.revision <= this.task.revision) return;
+    this.task = fetched;
+    if (!this.error) this.message = `Agent update rendered (r${fetched.revision}).`;
     this.refresh();
   }
 
@@ -322,6 +414,7 @@ export class AugmentTuiController {
       relatedOnly: this.relatedOnly,
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
+      socketPath: this.socket?.path,
     };
   }
 
@@ -1089,6 +1182,7 @@ export class AugmentTuiController {
         .slice(0, MAX_STORED_TASKS);
       saveStoredTasks(entries);
     }
+    this.notify();
   }
 
   private async dispatch(operation: string, action: () => Promise<void>, nodeId?: string): Promise<void> {
@@ -1118,6 +1212,10 @@ export class AugmentTuiController {
       this.busy = false;
       this.operation = undefined;
       this.activeNodeId = undefined;
+      if (this.externalPending) {
+        this.externalPending = false;
+        void this.adoptExternalTask();
+      }
     }
   }
 }

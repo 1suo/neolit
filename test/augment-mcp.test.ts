@@ -85,7 +85,7 @@ describe("augmentd MCP tool provider", () => {
     const ping = await server.handle(request(2, "ping"));
     expect(ping && "result" in ping && init.result).toBeTruthy();
     const list = await server.handle(request(3, "tools/list")) as { result: { tools: Array<{ name: string; inputSchema: { required: string[] } }> } };
-    expect(list.result.tools.map((tool) => tool.name)).toEqual(["plan_start", "plan_status", "propose_approaches", "challenge_approaches", "select_approach", "refine_plan", "draft_file", "repair_patch"]);
+    expect(list.result.tools.map((tool) => tool.name)).toEqual(["plan_start", "plan_status", "read_diff", "propose_approaches", "challenge_approaches", "select_approach", "refine_plan", "draft_file", "repair_patch"]);
     for (const tool of list.result.tools) expect(Array.isArray(tool.inputSchema.required)).toBe(true);
   });
 
@@ -110,11 +110,44 @@ describe("augmentd MCP tool provider", () => {
     expect(drafted.structured).toMatchObject({ nodeId: expect.stringMatching(/^node:/u), path: "src/auth/session.ts", kind: "modify" });
     expect(drafted.text).toContain("not applied to the repository");
     const status = await callTool(session.server, "plan_status", { taskId: session.taskId });
-    const rows = status.structured!.rows as Array<{ path: string; drafted: boolean }>;
-    expect(rows.find((row) => row.path === "src/auth/session.ts")?.drafted).toBe(true);
+    const rows = status.structured!.rows as Array<{ path: string; drafted: boolean; diffIds: string[] }>;
+    const draftedRow = rows.find((row) => row.path === "src/auth/session.ts")!;
+    expect(draftedRow.drafted).toBe(true);
+    expect(draftedRow.diffIds).toEqual([drafted.structured!.diffId]);
     expect(status.structured!.draftTargets).toEqual(["test/auth/retry.test.ts"]);
     const task = (await session.native.handle(request(9, "task/get", { taskId: session.taskId }))) as { result: { constraints: Record<string, { text: string; source: string }> } };
     expect(Object.values(task.result.constraints).map((constraint) => constraint.text)).toEqual(["Draft assumption: the cutoff is configurable"]);
+  });
+
+  it("reads the exact proposed diff back by task, by id, and fails on unknown ids", async () => {
+    const session = await refinedSession();
+    const drafted = await callTool(session.server, "draft_file", {
+      taskId: session.taskId,
+      expectedRevision: session.revision,
+      path: "src/auth/session.ts",
+      patch: sessionPatch,
+    });
+    const revision = drafted.structured!.revision as number;
+    await callTool(session.server, "draft_file", {
+      taskId: session.taskId,
+      expectedRevision: revision,
+      path: "test/auth/retry.test.ts",
+      patch: testPatch,
+    });
+    const all = await callTool(session.server, "read_diff", { taskId: session.taskId });
+    const diffs = all.structured!.diffs as Array<{ id: string; path: string; patch: string }>;
+    expect(diffs.map((diff) => diff.path).sort()).toEqual(["src/auth/session.ts", "test/auth/retry.test.ts"]);
+    expect(diffs.find((diff) => diff.path === "src/auth/session.ts")?.patch).toBe(sessionPatch);
+    const one = await callTool(session.server, "read_diff", { taskId: session.taskId, diffId: drafted.structured!.diffId as string });
+    expect(one.structured!.diffs).toEqual([expect.objectContaining({ id: drafted.structured!.diffId, patch: sessionPatch })]);
+    const unknown = await callTool(session.server, "read_diff", { taskId: session.taskId, diffId: "diff:missing" });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.text).toContain("Unknown planned diff");
+    const empty = await refinedSession();
+    const none = await callTool(empty.server, "read_diff", { taskId: empty.taskId });
+    expect(none.isError).toBeUndefined();
+    expect(none.structured!.diffs).toEqual([]);
+    expect(none.text).toContain("no drafted diffs");
   });
 
   it("answers scope violations as tool errors with the exact reason and no state change", async () => {
