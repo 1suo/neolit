@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, render, useApp, useInput, useWindowSize, type RenderOptions } from "ink";
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
+import type { SessionStreamLine } from "./tool-session.js";
 import { AugmentTuiController, candidatesForEntry, type PlannedTreeRow, type TuiActionState } from "./controller.js";
 import { detailLines, entryName, entryState, entryTouchesNode, frameLayout, theme, type DetailLine, type FrameLayout, type InputMode, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
 import { Picker, availableModels, toPickerItems, type PickerItem } from "./setup.js";
@@ -30,6 +31,27 @@ function PlannedRow(props: { row: PlannedTreeRow; task?: PlanTask; selected: boo
           </>
         ) : null}
       </Text>
+    </Box>
+  );
+}
+
+const SESSION_COLORS: Record<SessionStreamLine["kind"], string> = {
+  step: theme.muted,
+  text: theme.text,
+  tool: theme.accent,
+  error: theme.error,
+};
+
+function SessionPane(props: { lines: SessionStreamLine[]; limit: number }) {
+  const visible = props.lines.slice(-props.limit);
+  return (
+    <Box borderStyle="round" borderColor={theme.border} flexDirection="column" overflow="hidden" paddingX={1} flexShrink={0} height={props.limit + 3}>
+      <Text color={theme.muted}>SESSION</Text>
+      {visible.length === 0
+        ? <Text color={theme.muted}>waiting for the agent…</Text>
+        : visible.map((line, index) => (
+          <Text key={`${index}:${line.text}`} wrap="truncate-end" color={SESSION_COLORS[line.kind]}>{line.text}</Text>
+        ))}
     </Box>
   );
 }
@@ -248,10 +270,15 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
     else if (command === "o") beginInput("reopen");
     else if (command === "s") beginInput("stale");
+    else if (command === "v") {
+      props.controller.toggleSessionView();
+      sync();
+    }
   });
 
   const selectedIndex = state.rows.findIndex((row) => row.id === state.selectedRowId);
-  const layout = frameLayout(windowSize.rows, mode);
+  const sessionVisible = Boolean(state.toolSession && state.sessionView);
+  const layout = frameLayout(windowSize.rows, mode, sessionVisible);
   const treeRows = visibleWindow(state.rows, selectedIndex, layout.treeRows);
   const treeWidth = Math.max(30, Math.floor(windowSize.columns * 0.42) - 6);
   const detailLimit = layout.detailRows;
@@ -329,29 +356,32 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         </Box>
       ) : (
       <Box flexGrow={1} minHeight={0} gap={1}>
-        <Box width="42%" flexShrink={0} borderStyle="round" borderColor={pane === "tree" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingX={1}>
-          <Text color={pane === "tree" ? theme.primary : theme.muted} bold>FILES</Text>
-          {treeRows.length === 0 ? (
-            <Text color={theme.muted}>No plan yet. Press [N].</Text>
-          ) : treeRows.map((row) => {
-            const activeRow = entryTouchesNode(row.entry, state.active?.nodeId);
-            const failedRow = entryTouchesNode(row.entry, state.failed?.nodeId);
-            return (
-              <PlannedRow
-                key={row.id}
-                row={row}
-                task={state.task}
-                selected={state.selectedRowId === row.id}
-                width={treeWidth}
-                view={{
-                  pendingMarks: state.pendingMarks,
-                  pendingMode: state.pendingMode,
-                  appliedDiffIds: state.appliedDiffIds,
-                  live: activeRow || failedRow ? { active: activeRow, failed: failedRow, spinner, operation: state.active?.operation } : undefined,
-                }}
-              />
-            );
-          })}
+        <Box flexDirection="column" width="42%" flexShrink={0}>
+          <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "tree" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingX={1}>
+            <Text color={pane === "tree" ? theme.primary : theme.muted} bold>FILES</Text>
+            {treeRows.length === 0 ? (
+              <Text color={theme.muted}>No plan yet. Press [N].</Text>
+            ) : treeRows.map((row) => {
+              const activeRow = entryTouchesNode(row.entry, state.active?.nodeId);
+              const failedRow = entryTouchesNode(row.entry, state.failed?.nodeId);
+              return (
+                <PlannedRow
+                  key={row.id}
+                  row={row}
+                  task={state.task}
+                  selected={state.selectedRowId === row.id}
+                  width={treeWidth}
+                  view={{
+                    pendingMarks: state.pendingMarks,
+                    pendingMode: state.pendingMode,
+                    appliedDiffIds: state.appliedDiffIds,
+                    live: activeRow || failedRow ? { active: activeRow, failed: failedRow, spinner, operation: state.active?.operation } : undefined,
+                  }}
+                />
+              );
+            })}
+          </Box>
+          {sessionVisible ? <SessionPane lines={state.sessionLines} limit={layout.sessionRows} /> : null}
         </Box>
 
         <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
@@ -384,6 +414,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.primary}> new · </Text>
           <Text color={theme.muted} bold>[F]</Text>
           <Text color={theme.muted}> fold · </Text>
+          <Text color={theme.muted} bold>[V]</Text>
+          <Text color={theme.muted}> session · </Text>
           <Text color={theme.muted} bold>[H]</Text>
           <Text color={theme.muted}> related · </Text>
           <Text color={theme.muted} bold>[Tab]</Text>

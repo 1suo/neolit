@@ -28,6 +28,42 @@ import type { CliAgentBackend } from "./agent-backends.js";
 /** Backends whose non-interactive runs accept generated MCP wiring today. */
 const SUPPORTED_BACKENDS = new Set(["opencode", "claude"]);
 
+/** One display line of the live agent-session stream (view-only). */
+export interface SessionStreamLine {
+  kind: "step" | "text" | "tool" | "error";
+  text: string;
+}
+
+/**
+ * Maps one CLI JSON event onto a display line for the session pane. Only
+ * presentation: unknown shapes are ignored, and nothing here touches task
+ * state — the plan still only changes when a complete tool call lands.
+ */
+export function formatStreamEvent(message: unknown): SessionStreamLine | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  const record = message as Record<string, unknown>;
+  if (record.type === "error") {
+    const failure = record.error as { message?: unknown } | undefined;
+    const text = typeof record.message === "string" ? record.message : typeof failure?.message === "string" ? failure.message : undefined;
+    return text ? { kind: "error", text: `✗ ${text}` } : undefined;
+  }
+  if (record.type === "step_start") return { kind: "step", text: "▸ step" };
+  const part = record.part as Record<string, unknown> | undefined;
+  const partText = part && typeof part.text === "string" ? part.text : typeof record.text === "string" ? record.text : undefined;
+  if ((record.type === "text" || part?.type === "text") && partText) {
+    return { kind: "text", text: partText.replace(/\s+/g, " ").slice(0, 160) };
+  }
+  if (part?.type === "tool" && part.state && typeof part.state === "object") {
+    const state = part.state as { status?: unknown; title?: unknown; input?: unknown };
+    const title = typeof state.title === "string" && state.title ? state.title : "tool";
+    if (state.status === "completed") return { kind: "tool", text: `✓ ${title}` };
+    if (state.status === "error") return { kind: "tool", text: `✗ ${title}` };
+    const input = state.input === undefined ? "" : ` ${JSON.stringify(state.input).replace(/\s+/g, " ").slice(0, 90)}`;
+    return { kind: "tool", text: `→ ${title}${input}` };
+  }
+  return undefined;
+}
+
 export function toolSessionSupported(backendId: string): boolean {
   return SUPPORTED_BACKENDS.has(backendId);
 }
@@ -121,6 +157,9 @@ export class ToolSessionDriver {
   private readonly sessions = new Map<string, string>();
   private readonly opened = new Set<string>();
   private wiring?: { env: Record<string, string>; extraArgs: string[]; file: string; socketPath: string };
+
+  /** Live session-stream tap: every parsed CLI event becomes a display line as it arrives. */
+  onLine?: (line: SessionStreamLine) => void;
 
   constructor(options: ToolSessionOptions) {
     this.options = options;
@@ -285,6 +324,27 @@ export class ToolSessionDriver {
     }
   }
 
+  private stream = "";
+
+  /** Emits one display line per complete JSON event as the CLI prints it. */
+  private streamChunk(chunk: string): void {
+    if (!this.onLine) return;
+    this.stream += chunk;
+    const lines = this.stream.split("\n");
+    this.stream = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let message: unknown;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const display = formatStreamEvent(message);
+      if (display) this.onLine(display);
+    }
+  }
+
   private run(argv: string[], env: Record<string, string>): Promise<{ stdout: string; code: number; stderr: string }> {
     return new Promise((resolve, reject) => {
       const child = spawn(this.options.command, argv, { cwd: this.options.directory, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
@@ -295,7 +355,10 @@ export class ToolSessionDriver {
         reject(new Error(`The agent session timed out after ${this.options.timeoutMs ?? 600_000}ms (AUGMENT_OPENCODE_TIMEOUT_MS adjusts this).`));
       }, this.options.timeoutMs ?? 600_000);
       const finish = () => clearTimeout(timer);
-      child.stdout?.on("data", (chunk: string) => { stdout += chunk; });
+      child.stdout?.on("data", (chunk: string) => {
+        stdout += chunk;
+        this.streamChunk(chunk);
+      });
       child.stderr?.on("data", (chunk: string) => { stderr += chunk; });
       child.on("error", (error) => {
         finish();

@@ -957,10 +957,18 @@ describe("augment TUI rendering", () => {
   });
 
   it("keeps every frame inside the viewport at any terminal height", () => {
-    expect(frameLayout(10, "idle")).toEqual({ frameRows: 10, treeRows: 1, detailRows: 1 });
+    expect(frameLayout(10, "idle")).toEqual({ frameRows: 10, treeRows: 1, detailRows: 1, sessionRows: 0 });
     expect(frameLayout(14, "idle").detailRows).toBe(3);
     expect(frameLayout(40, "idle").detailRows).toBe(29);
     expect(frameLayout(40, "objective").detailRows).toBe(29);
+    // The session pane shares the left column without overflowing it: it
+    // takes a bounded slice, the tree keeps the rest, and cramped frames
+    // drop the pane entirely instead of blowing the viewport.
+    const shared = frameLayout(40, "idle", true);
+    expect(shared.sessionRows).toBeGreaterThanOrEqual(2);
+    expect(shared.sessionRows).toBeLessThanOrEqual(8);
+    expect(shared.treeRows + shared.sessionRows + 3).toBe(shared.detailRows);
+    expect(frameLayout(14, "idle", true).sessionRows).toBe(0);
     for (const windowRows of [10, 12, 14, 20, 40]) {
       const idle = frameLayout(windowRows, "idle");
       if (windowRows >= IDLE_PANE_CHROME_ROWS) {

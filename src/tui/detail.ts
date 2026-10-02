@@ -349,6 +349,8 @@ export interface FrameLayout {
   frameRows: number;
   treeRows: number;
   detailRows: number;
+  /** Inner rows of the session stream pane (0 when it is not shown). */
+  sessionRows: number;
 }
 
 /**
@@ -356,13 +358,18 @@ export interface FrameLayout {
  * and scrolls the terminal whenever a frame exceeds the viewport, which reads
  * as a flash on every repaint, so the fixed chrome (root padding, header,
  * legend, status or input box, pane borders and labels) is subtracted first and
- * the panes receive only what is left.
+ * the panes receive only what is left. The session pane shares the left column
+ * under the tree: it takes a bounded slice and never squeezes the tree below
+ * the minimum.
  */
-export function frameLayout(rows: number | undefined, mode: InputMode): FrameLayout {
+export function frameLayout(rows: number | undefined, mode: InputMode, sessionVisible = false): FrameLayout {
   const frameRows = typeof rows === "number" && Number.isFinite(rows) && rows > 0 ? Math.floor(rows) : UNKNOWN_WINDOW_ROWS;
   void mode;
   const chromeRows = FRAME_PADDING_ROWS + HEADER_ROWS + LEGEND_ROWS + MESSAGE_PANEL_ROWS;
   const paneRows = Math.max(MIN_PANE_ROWS, frameRows - chromeRows - PANE_FRAME_ROWS);
-  return { frameRows, treeRows: paneRows, detailRows: paneRows };
+  // Below ten pane rows there is no room to share: the tree keeps everything.
+  if (!sessionVisible || paneRows < 10) return { frameRows, treeRows: paneRows, detailRows: paneRows, sessionRows: 0 };
+  const sessionRows = Math.min(8, Math.max(2, Math.floor(paneRows * 0.3)));
+  return { frameRows, treeRows: Math.max(MIN_PANE_ROWS, paneRows - sessionRows - PANE_FRAME_ROWS), detailRows: paneRows, sessionRows };
 }
 

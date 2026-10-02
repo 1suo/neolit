@@ -4,7 +4,7 @@
 
 ## Layout
 
-The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place. `F` folds a directory shut (`▸`, subtree hidden) and `H` filters the tree down to related paths — planned entries, restriction-plain marks, and the ancestors that connect them (a `[RELATED]` chip in the header marks the active filter; the full tree is one keypress away).
+The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place. `F` folds a directory shut (`▸`, subtree hidden) and `H` filters the tree down to related paths — planned entries, restriction-plain marks, and the ancestors that connect them (a `[RELATED]` chip in the header marks the active filter; the full tree is one keypress away). While a tool session runs, a bounded **SESSION** pane under the tree streams the agent's live work — steps, tool calls, and retries — as it happens; it is view-only and `V` toggles it (cramped frames drop it automatically).
 
 ```text
 FILES
@@ -85,6 +85,7 @@ C  commit exactly the paths this session applied (pathspec commit; unrelated dir
 L  mark/unmark the selected path in the restriction plain, lock polarity: marked (`#`, red) paths must not change, everything else may
 W  mark/unmark the selected path, allow polarity: marked (`#`, accent) paths are the only ones that may change. One plain, one marked set: pressing the other polarity key inverts it (the set stays, its meaning flips). Marks made before a task starts are applied before its first model run
 F  fold/unfold the selected directory (folded folders show `▸` and hide their subtree)
+V  show/hide the agent session stream pane under the files tree (tool sessions)
 H  toggle the related-only filter: show only planned paths (nodes, approaches, drafts, explanations) and restriction-plain marks with their connecting ancestors; press again for the full repository tree. A `[RELATED]` chip marks the active filter
 M  switch the live runtime's default/draft/challenge model — arrow-key picker over the backend's current catalog, applied without restarting the session
 O  reopen selected node with a reason

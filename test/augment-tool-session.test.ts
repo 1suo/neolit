@@ -3,7 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import React from "react";
+import { renderToString } from "ink";
 import { AugmentTuiController } from "../src/tui/controller.js";
+import { AugmentTui } from "../src/tui/augment.js";
 import { ToolSessionDriver, claudeToolConfig, openCodeToolConfig, toolPrompts, toolSessionSupported } from "../src/tui/tool-session.js";
 import { opencodeBackend } from "../src/tui/agent-backends.js";
 
@@ -56,6 +59,13 @@ const taskId = (prompt.match(/task id (task:[^\\s)]+)/) ?? [])[1];
 const log = (entry) => { if (process.env.NEOLIT_FAKE_LOG) fs.appendFileSync(process.env.NEOLIT_FAKE_LOG, entry + "\\n"); };
 log(\`ARGV \${argv.join(" ")}\`);
 log(\`PROMPT \${prompt.replace(/\\s+/g, " ").slice(0, 160)}\`);
+// A live event stream: emitted while the step is still running, with gaps,
+// exactly like a real agent session's stdout.
+process.stdout.write(JSON.stringify({ type: "step_start" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "text", part: { type: "text", text: "reading the plan" } }) + "\\n");
+await new Promise((resolve) => setTimeout(resolve, 300));
+process.stdout.write(JSON.stringify({ type: "tool", part: { type: "tool", state: { status: "pending", title: "plan_status", input: { taskId: "task:soon" } } } }) + "\\n");
+await new Promise((resolve) => setTimeout(resolve, 100));
 
 let nextId = 100;
 try {
@@ -225,6 +235,31 @@ describe("tool sessions drive the plan from the TUI", () => {
     expect(after).toContain("regenerated-by-agent");
     expect(prompts()).toContain('the operator said: "make it greener"');
     expect(controller.snapshot().message).toContain("Patch regenerated");
+  });
+
+  it("streams the agent session live into the pane under the tree", async () => {
+    const { controller } = await harnessed();
+    await controller.start("edit session");
+    const running = controller.crystallize();
+    // Lines arrive while the step is still running — the pane shows the
+    // agent working, not a post-mortem.
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && !controller.snapshot().sessionLines.some((line) => line.text.includes("reading the plan"))) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    const midStep = controller.snapshot();
+    expect(midStep.busy).toBe(true);
+    expect(midStep.sessionLines.some((line) => line.kind === "step")).toBe(true);
+    expect(midStep.sessionLines.some((line) => line.text.includes("reading the plan"))).toBe(true);
+    await running;
+    const after = controller.snapshot();
+    expect(after.sessionLines.some((line) => line.kind === "tool" && line.text.startsWith("→"))).toBe(true);
+    expect(after.sessionLines.some((line) => line.text.includes("plan_status"))).toBe(true);
+    const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
+    expect(output).toContain("SESSION");
+    expect(output).toContain("reading the plan");
+    controller.toggleSessionView();
+    expect(renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }))).not.toContain("SESSION");
   });
 
   it("surfaces the agent's answer when a step changes nothing", async () => {

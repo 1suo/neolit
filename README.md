@@ -216,6 +216,9 @@ read the file, then call draft_file`): the model writes into the plan
 exclusively through the neolit tools on the TUI's socket, every call is
 controller-validated and renders as it lands, and diagnostics loop inside the
 session (`read_diff` → `repair_patch`) instead of burning fresh invocations.
+The agent's live session stream — steps, tool calls, and retries — renders in
+a pane under the files tree (`V` toggles it); it is view-only, and diffs still
+land atomically per completed tool call.
 The header shows `[TOOLS]`; `AUGMENT_TUI_NO_TOOLS=1` falls back to one-shot
 prompts (Codex falls back until an adapter exists).
 Its layout and interaction conventions are documented in

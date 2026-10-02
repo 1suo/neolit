@@ -7,7 +7,7 @@ import { serveAugmentSocket, type SocketService } from "../augmentd/socket.js";
 import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
-import type { ToolSessionDriver } from "./tool-session.js";
+import type { SessionStreamLine, ToolSessionDriver } from "./tool-session.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
@@ -47,6 +47,10 @@ export interface TuiActionState {
   socketPath?: string;
   /** Model operations run as prompts in one tool-using agent session per task. */
   toolSession?: boolean;
+  /** Live agent-session stream (view-only), oldest first, bounded. */
+  sessionLines: SessionStreamLine[];
+  /** Whether the session stream pane is shown under the files tree. */
+  sessionView: boolean;
 }
 
 export interface AugmentTuiControllerOptions {
@@ -65,6 +69,9 @@ const MAX_REPOSITORY_ENTRIES = 5_000;
 
 /** Deterministic bound for one [D] keypress: enough for any legal subtree. */
 const MAX_DEVELOP_STEPS = 256;
+
+/** The session stream is a bounded tail, not an unbounded transcript. */
+const MAX_SESSION_LINES = 200;
 
 export interface StoredTask {
   task: PlanTask;
@@ -272,6 +279,8 @@ export class AugmentTuiController {
   private socket?: SocketService;
   private toolDriver?: ToolSessionDriver;
   private toolFlow = false;
+  private sessionLines: SessionStreamLine[] = [];
+  private sessionView = true;
 
   constructor(options: AugmentTuiControllerOptions) {
     this.directory = options.directory;
@@ -329,7 +338,20 @@ export class AugmentTuiController {
    */
   useToolSession(driver: ToolSessionDriver): void {
     this.toolDriver = driver;
+    driver.onLine = (line) => {
+      this.sessionLines.push(line);
+      if (this.sessionLines.length > MAX_SESSION_LINES) this.sessionLines.splice(0, this.sessionLines.length - MAX_SESSION_LINES);
+      this.refresh();
+    };
     this.refresh();
+  }
+
+  /** Shows or hides the agent session stream pane under the files tree. */
+  toggleSessionView(): void {
+    this.sessionView = !this.sessionView;
+    this.error = undefined;
+    this.refresh();
+    this.message = this.sessionView ? "Showing the agent session stream." : "Hiding the agent session stream.";
   }
 
   /**
@@ -454,6 +476,8 @@ export class AugmentTuiController {
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
       socketPath: this.socket?.path,
       toolSession: this.toolDriver !== undefined,
+      sessionLines: [...this.sessionLines],
+      sessionView: this.sessionView,
     };
   }
 
@@ -539,6 +563,7 @@ export class AugmentTuiController {
       return;
     }
     await this.dispatch("Starting plan", async () => {
+      this.sessionLines = [];
       const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision, mode: "change" } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       if (this.pendingMode !== "lock" || this.pendingMarks.length) {
