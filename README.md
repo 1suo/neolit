@@ -115,8 +115,7 @@ envelope, and the same operations are exposed as MCP agent tools with
 ```sh
 npx augmentd <<'JSON'
 {"jsonrpc":"2.0","id":1,"method":"initialize"}
-{"jsonrpc":"2.0","id":2,"method":"task/start
-task/restore","params":{"objective":"make retries bounded","basisRevision":"commit:1"}}
+{"jsonrpc":"2.0","id":2,"method":"task/start","params":{"objective":"make retries bounded","basisRevision":"commit:1"}}
 JSON
 ```
 
@@ -125,34 +124,11 @@ operations work without provider credentials. A host that needs
 `crystallize`/`refine` embeds `new AugmentServer({ runtime })` and injects
 its own OpenCode, Codex, or direct-provider adapter.
 
-Operations include:
-
-```text
-initialize
-task/start
-task/get
-tree/get
-node/get
-node/constrain
-node/select
-node/reject
-node/reopen
-node/stale
-node/refresh
-path/restrict
-crystallize
-refine
-domain/propose
-domain/challenge
-node/refine
-patch/attach
-patch/draft
-patch/draft-batch
-patch/repair
-patch/set
-diff/get
-shutdown
-```
+Operations cover task and tree lifecycle (including `task/restore` and
+`explain`), node selection and constraints, staleness and refresh, the
+deterministic domain seams, and patch attach/draft/repair/set; the canonical
+method list lives in
+[`src/augmentd/README.md`](./src/augmentd/README.md).
 
 Mutating requests carry `expectedRevision`; stale requests are rejected before
 state changes, and mutating dispatch is serialized per task so concurrent
@@ -183,46 +159,22 @@ npm run build
 AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
-After a change task is entered, the TUI automatically generates approaches for the root node; a single viable approach is adopted automatically, multiple approaches ask for `1-7`. Lower nodes receive candidates only when explicitly opened. Then:
-
-```text
-Enter  prompt for the selected path — on a file: saves the message and re-drafts its patch; on the root/folder: regenerates approaches for that subtree (empty submit rethinks; folders with drafted files point at [O] instead of discarding)
-1-7    choose numbered approach
-D      develop selected path and its whole subtree (expand, crystallize, refine, and draft every undrafted file; stops only where 1-7 needs a human); a file target always drafts its patch
-A      apply drafted patch to working tree
-C      commit the session-applied paths only (never unrelated changes)
-L      mark/unmark path in the restriction plain (lock polarity: marked = must not change)
-W      mark/unmark path in the restriction plain (allow polarity: marked = the only thing that may change); pressing the other key inverts the plain
-F      fold/unfold the selected directory
-H      toggle related-only view: just planned and marked paths, or the full repository
-E      explain selected path (whole repository when no task is active)
-N      new change task
-O      reopen selected node with a reason (discards its subtree and drafts)
-S      mark a repository path changed outside the plan (stale)
-Tab    switch pane
-Q      quit
-```
-
-Directories aggregate descendant change state (`added`, `removed`, `changed`) and show a contents summary of their planned children with per-path change reasons (unchanged entries are omitted), aggregated change counts, and descendant patch previews. Files show their complete exact patch directly in the right pane; `j`/`k` scroll it while the detail pane is focused. While a model operation runs, its target animates in the tree and the preview leads with live status; failures mark the path with `×` until a retry succeeds.
-
-The TUI can apply drafted patches to the working tree on request (`A`): every selected patch is preflighted with `git apply --check` against the current working tree — uncommitted edits included — and applied as one unit, so a conflict anywhere leaves the tree untouched. Nothing is staged or committed, and the repository tree refreshes after applying.
-While it runs, the TUI serves its embedded server on a Unix socket, so an external agent (`augmentd --mcp --connect`) drives the same task store and every tool-driven mutation renders in the panes as it lands; see [`src/tui/README.md`](./src/tui/README.md).
-When the backend can carry MCP tools into non-interactive runs (OpenCode via a
-generated `OPENCODE_CONFIG` layer plus `--standalone` steps, Claude via
-`--mcp-config`), the TUI instead
-keeps **one tool-using agent session per task** and turns its own operations
-into short prompts that point rather than embed (`Draft src/auth/session.ts —
-read the file, then call draft_file`): the model writes into the plan
-exclusively through the neolit tools on the TUI's socket, every call is
-controller-validated and renders as it lands, and diagnostics loop inside the
-session (`read_diff` → `repair_patch`) instead of burning fresh invocations.
-The agent's live session stream — steps, tool calls, and retries — renders in
-a pane under the files tree (`V` toggles it); it is view-only, and diffs still
-land atomically per completed tool call.
-The header shows `[TOOLS]`; `AUGMENT_TUI_NO_TOOLS=1` falls back to one-shot
-prompts (Codex falls back until an adapter exists).
-Its layout and interaction conventions are documented in
-[`src/tui/README.md`](./src/tui/README.md).
+After a change task is entered, the TUI automatically generates approaches for
+the root node; a single viable approach is adopted automatically, multiple
+approaches ask for `1-7`, and lower nodes receive candidates only when
+explicitly opened. `D` develops a selected path and its whole subtree —
+expand, crystallize, refine, draft every undrafted file — stopping only where
+an approach choice needs a human. Drafted patches touch the working tree only
+on request: `A` preflights each selected patch with `git apply --check`
+(uncommitted edits included) and applies them as one unit, and `C` commits
+exactly the session-applied paths. While it runs, the TUI serves its embedded
+server on a Unix socket, so an external agent (`augmentd --mcp --connect`)
+drives the same task store and every tool-driven mutation renders in the panes
+as it lands. When the backend can carry MCP tools into non-interactive runs,
+the TUI keeps one tool-using agent session per task and its own operations
+become short pointing prompts against that socket; `AUGMENT_TUI_NO_TOOLS=1`
+falls back to one-shot prompts. The full keymap, layout, and interaction
+conventions are canonical in [`src/tui/README.md`](./src/tui/README.md).
 
 ## Documentation
 
@@ -233,8 +185,10 @@ Its layout and interaction conventions are documented in
   server responsibilities.
 - [`src/tui/README.md`](./src/tui/README.md) — standalone TUI layout,
   operations, and OpenCode CLI runtime.
-- `TODO-augment.md` — known gaps, including persistence, repository watching,
-  apply/verify transactions, and host adapters.
+- `TODO-augment.md` — known gaps between shipped behavior and
+  `src/augment/SPEC.md`.
+- `SOTA-GAPS.md` — external gap analysis: what the tool and protocol lack
+  to reach the state of the art.
 
 The former LangGraph/OpenCode solution graph lives in the sibling
 [`opencode-langgraph`](https://github.com/1suo/opencode-langgraph) repository.
