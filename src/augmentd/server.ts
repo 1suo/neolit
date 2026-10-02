@@ -1,6 +1,6 @@
-import { assertTaskIntegrity, createPlanTask, addConstraint, markPathStale, planTree, PlanStateError, refreshNode, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
-import { AugmentModelError, crystallizeNode, draftPatchesWithModel, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
-import { PlanTaskSchema } from "../augment/schemas.js";
+import { assertTaskIntegrity, createPlanTask, addConstraint, attachPatch, markPathStale, planTree, PlanStateError, refineNode, refreshNode, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
+import { applyChallenge, applyDomainProposal, AugmentModelError, crystallizeNode, draftPatchesWithModel, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
+import { ChallengeDomainSchema, DomainProposalSchema, PatchProposalSchema, PlanTaskSchema, RefinementProposalSchema } from "../augment/schemas.js";
 import type { LOD, ModelRuntime, PlanRevision, PlanTask, Temperature } from "../augment/types.js";
 
 export const AUGMENT_PROTOCOL_VERSION = 1;
@@ -99,6 +99,20 @@ function lod(value: unknown): LOD {
 function taskMutation(value: unknown): TaskMutationParams {
   const params = object(value);
   return { taskId: string(params.taskId, "taskId"), expectedRevision: revision(params.expectedRevision) };
+}
+
+/**
+ * Boundary parse for proposal payloads entering the controller directly
+ * (tool-driven hosts, not model output): one zod failure becomes one typed
+ * protocol error naming the first problem.
+ */
+function proposal<T>(parse: () => T): T {
+  try {
+    return parse();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.split("\n")[0] : String(error);
+    throw new ProtocolError(-32602, `Proposal payload is invalid: ${detail}`);
+  }
 }
 
 export interface TaskChange {
@@ -309,6 +323,49 @@ export class AugmentServer {
         this.store(updated);
         return updated;
       }
+      case "domain/propose": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const nodeId = string(input.nodeId, "nodeId");
+        const parsed = proposal(() => DomainProposalSchema.parse({ candidates: input.candidates }));
+        const updated = applyDomainProposal(this.requireTask(base.taskId), {
+          ...base,
+          nodeId,
+          candidates: parsed.candidates,
+          replace: input.replace === true,
+        });
+        this.store(updated);
+        return updated;
+      }
+      case "domain/challenge": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const nodeId = string(input.nodeId, "nodeId");
+        const verdict = proposal(() => ChallengeDomainSchema.parse(input.verdict));
+        const applied = applyChallenge(this.requireTask(base.taskId), { ...base, nodeId, verdict });
+        this.store(applied.task);
+        return applied.task;
+      }
+      case "node/refine": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const parsed = proposal(() => RefinementProposalSchema.parse({ children: input.children }));
+        const updated = refineNode(this.requireTask(base.taskId), { ...base, nodeId: string(input.nodeId, "nodeId"), children: parsed.children });
+        this.store(updated);
+        return updated;
+      }
+      case "patch/attach": {
+        const base = taskMutation(params);
+        const input = object(params);
+        const nodeId = string(input.nodeId, "nodeId");
+        const parsed = proposal(() => PatchProposalSchema.parse({ patch: input.patch, assumptions: input.assumptions ?? [] }));
+        let updated = attachPatch(this.requireTask(base.taskId), { ...base, nodeId, patch: parsed.patch });
+        for (const assumption of parsed.assumptions) {
+          updated = addConstraint(updated, { taskId: updated.id, expectedRevision: updated.revision, nodeId, text: `Draft assumption: ${assumption}`, source: "model" });
+        }
+        this.store(updated);
+        return updated;
+      }
       case "patch/draft": {
         const base = taskMutation(params);
         const input = object(params);
@@ -351,6 +408,7 @@ export class AugmentServer {
           expectedRevision: base.expectedRevision,
           diffId: string(input.diffId, "diffId"),
           patch: string(input.patch, "patch"),
+          failedCheck: typeof input.failedCheck === "string" && input.failedCheck.trim() ? input.failedCheck : undefined,
         });
         this.store(updated);
         return updated;

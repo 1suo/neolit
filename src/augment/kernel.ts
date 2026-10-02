@@ -5,7 +5,9 @@ import {
   PatchProposalSchema,
   RefinementProposalSchema,
   BatchPatchProposalSchema,
+  type PatchProposal,
 } from "./schemas.js";
+import { parseRawDraftReply } from "./raw-diff.js";
 import {
   acceptDomain,
   addCandidate,
@@ -159,19 +161,51 @@ function parseWith<T>(schema: { parse(value: unknown): T }): (value: unknown) =>
   return (value: unknown) => schema.parse(value);
 }
 
-export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, input: CrystallizeNodeInput): Promise<PlanTask> {
-  requireNode(task, input.nodeId);
-  const proposal = await call(runtime, task, task.nodes[input.nodeId]!, "generate-domain", input.temperature, input.lod, parseWith(DomainProposalSchema));
-  const scope = task.nodes[input.nodeId]!.path ?? ".";
-  const escapes = proposal.candidates.map((candidate) => candidateScopeEscapes(task, input.nodeId, candidate.touchedPaths));
-  const escaping = proposal.candidates
+/**
+ * Draft replies may be raw unified-diff text instead of the JSON envelope:
+ * a diff is self-delimiting, so wrapping it in a JSON string only invites
+ * escape errors and mid-string truncation. A raw reply's assumptions are
+ * trailing `Assumption:` lines parsed out of the text. Both shapes pass the
+ * same schema validation afterwards.
+ */
+function parseDraftReply(value: unknown): PatchProposal {
+  if (typeof value === "string") {
+    const raw = parseRawDraftReply(value);
+    if (!raw) {
+      throw new Error("the reply contains no unified diff (expected a `diff --git` or `--- a/…` header followed by `@@` hunks)");
+    }
+    return PatchProposalSchema.parse(raw);
+  }
+  return PatchProposalSchema.parse(value);
+}
+
+export interface DomainProposalInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId: string;
+  candidates: Array<{ label: string; rationale: string; confidence: number; touchedPaths: string[] }>;
+  replace?: boolean;
+}
+
+/**
+ * Deterministic merge of one proposed candidate domain: candidates whose
+ * touched paths escape the node's scope are recorded as out-of-scope
+ * constraints instead of candidates (the omission stays inspectable), and a
+ * proposal with nothing in scope fails naming the escapes. Shared by the
+ * model-driven `crystallizeNode` and the protocol's tool-driven
+ * `domain/propose`, so both paths enforce identical controller authority.
+ */
+export function applyDomainProposal(task: PlanTask, input: DomainProposalInput): PlanTask {
+  const scope = task.nodes[input.nodeId]?.path ?? ".";
+  const escapes = input.candidates.map((candidate) => candidateScopeEscapes(task, input.nodeId, candidate.touchedPaths));
+  const escaping = input.candidates
     .map((candidate, index) => ({ label: candidate.label, paths: escapes[index]! }))
     .filter((entry) => entry.paths.length > 0);
-  const inScope = proposal.candidates.filter((_, index) => escapes[index]!.length === 0);
+  const inScope = input.candidates.filter((_, index) => escapes[index]!.length === 0);
   if (!inScope.length) {
     throw new AugmentModelError(
       `Every proposed candidate escapes ${scope}: ${escaping.map((entry) => `${entry.label} (${entry.paths.join(", ")})`).join("; ")}. `
-      + `Develop the parent path so this work lands in its own node, or press Enter to rethink with that limit in mind.`,
+      + `Develop the parent path so this work lands in its own node, or rethink with that limit in mind.`,
     );
   }
   let current = generateDomain(task, {
@@ -189,44 +223,100 @@ export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, inp
       text: `Out-of-scope dependency noted by domain: ${escaping.map((entry) => `${entry.label} (${entry.paths.join(", ")})`).join("; ")} — belongs outside ${scope}.`,
     });
   }
+  return current;
+}
+
+export type ChallengeVerdict =
+  | { kind: "accept" }
+  | { kind: "missing-candidate"; candidate: { label: string; rationale: string; confidence: number; touchedPaths: string[] }; reason: string }
+  | { kind: "missing-path"; path: string; reason: string };
+
+export interface ApplyChallengeInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  nodeId: string;
+  verdict: ChallengeVerdict;
+}
+
+/**
+ * Deterministic application of one challenge verdict against a live domain:
+ * acceptance records the challenge round; a concrete omission becomes a
+ * candidate (or an out-of-scope constraint when its paths escape the node);
+ * exhausting the bounded budget records `challengeExhausted`, which permits
+ * collapse without claiming acceptance. Shared by the model-driven
+ * `crystallizeNode` loop and the protocol's tool-driven `domain/challenge`.
+ */
+export function applyChallenge(task: PlanTask, input: ApplyChallengeInput): { task: PlanTask; outcome: "accepted" | "counterexample" | "exhausted" } {
+  const node = task.nodes[input.nodeId];
+  if (!node) throw new AugmentModelError(`Unknown plan node: ${input.nodeId}`, "unknown-node");
+  // challengeRound counts every round spent on the current domain instance
+  // (it resets on regeneration and reopen), so the budget survives across
+  // separate tool calls instead of relying on one caller's loop.
+  const round = node.challengeRound + 1;
+  if (round > MAX_DOMAIN_CHALLENGE_ROUNDS) {
+    throw new AugmentModelError(`Challenge budget exhausted for ${input.nodeId}: selection is already permitted, or re-propose the domain.`, "node-state");
+  }
+  if (input.verdict.kind === "accept") {
+    return { task: acceptDomain(task, { taskId: input.taskId, expectedRevision: input.expectedRevision, nodeId: input.nodeId, challengeRound: round }), outcome: "accepted" };
+  }
+  const proposal = input.verdict.kind === "missing-candidate"
+    ? { label: input.verdict.candidate.label, rationale: `Missing family: ${input.verdict.reason}`, confidence: input.verdict.candidate.confidence, touchedPaths: input.verdict.candidate.touchedPaths, note: `the domain omits a materially distinct approach: ${input.verdict.reason}` }
+    : { label: `Cover ${input.verdict.path}`, rationale: input.verdict.reason, confidence: 0, touchedPaths: [input.verdict.path], note: `challenge reported missing path ${input.verdict.path}: ${input.verdict.reason}` };
+  let current: PlanTask;
+  try {
+    current = addCandidate(task, {
+      taskId: input.taskId,
+      expectedRevision: input.expectedRevision,
+      nodeId: input.nodeId,
+      candidate: {
+        label: proposal.label,
+        rationale: proposal.rationale,
+        confidence: proposal.confidence,
+        touchedPaths: proposal.touchedPaths,
+      },
+      reason: proposal.note,
+    });
+  } catch (error) {
+    // A challenger candidate touching paths outside this node's scope is a
+    // real dependency, but it cannot become a candidate here. Record it as a
+    // constraint so the omission is not lost and keep going. Locked-path
+    // proposals stay failures: the plain is controller authority.
+    if (!(error instanceof PlanStateError) || error.code !== "scope-escape") throw error;
+    current = addConstraint(task, {
+      taskId: input.taskId,
+      expectedRevision: input.expectedRevision,
+      nodeId: input.nodeId,
+      text: `Out-of-scope dependency noted by challenge: ${proposal.note} (paths: ${proposal.touchedPaths.join(", ")})`,
+    });
+  }
+  current.nodes[input.nodeId]!.challengeRound = round;
+  if (round >= MAX_DOMAIN_CHALLENGE_ROUNDS) {
+    return {
+      task: exhaustDomainChallenge(current, { taskId: input.taskId, expectedRevision: current.revision, nodeId: input.nodeId, challengeRound: MAX_DOMAIN_CHALLENGE_ROUNDS }),
+      outcome: "exhausted",
+    };
+  }
+  return { task: current, outcome: "counterexample" };
+}
+
+export async function crystallizeNode(runtime: ModelRuntime, task: PlanTask, input: CrystallizeNodeInput): Promise<PlanTask> {
+  requireNode(task, input.nodeId);
+  const proposal = await call(runtime, task, task.nodes[input.nodeId]!, "generate-domain", input.temperature, input.lod, parseWith(DomainProposalSchema));
+  let current = applyDomainProposal(task, {
+    taskId: task.id,
+    expectedRevision: task.revision,
+    nodeId: input.nodeId,
+    candidates: proposal.candidates,
+    replace: input.replace,
+  });
 
   const rounds = Math.max(0, Math.min(input.challengeRounds ?? MAX_DOMAIN_CHALLENGE_ROUNDS, MAX_DOMAIN_CHALLENGE_ROUNDS));
   for (let round = 1; round <= rounds; round++) {
     const node = current.nodes[input.nodeId]!;
     const challenge = await call(runtime, current, node, "challenge-domain", input.temperature, input.lod, parseWith(ChallengeDomainSchema));
-    if (challenge.kind === "accept") {
-      current = acceptDomain(current, { taskId: current.id, expectedRevision: current.revision, nodeId: input.nodeId, challengeRound: round });
-      return current;
-    }
-    const proposal = challenge.kind === "missing-candidate"
-      ? { label: challenge.candidate.label, rationale: `Missing family: ${challenge.reason}`, confidence: challenge.candidate.confidence, touchedPaths: challenge.candidate.touchedPaths, note: `the domain omits a materially distinct approach: ${challenge.reason}` }
-      : { label: `Cover ${challenge.path}`, rationale: challenge.reason, confidence: 0, touchedPaths: [challenge.path], note: `challenge reported missing path ${challenge.path}: ${challenge.reason}` };
-    try {
-      current = addCandidate(current, {
-        taskId: current.id,
-        expectedRevision: current.revision,
-        nodeId: input.nodeId,
-        candidate: {
-          label: proposal.label,
-          rationale: proposal.rationale,
-          confidence: proposal.confidence,
-          touchedPaths: proposal.touchedPaths,
-        },
-        reason: proposal.note,
-      });
-    } catch (error) {
-      // A challenger candidate touching paths outside this node's scope is a
-      // real dependency, but it cannot become a candidate here. Record it as a
-      // constraint so the omission is not lost and keep going. Locked-path
-      // proposals stay failures: the plain is controller authority.
-      if (!(error instanceof PlanStateError) || error.code !== "scope-escape") throw error;
-      current = addConstraint(current, {
-        taskId: current.id,
-        expectedRevision: current.revision,
-        nodeId: input.nodeId,
-        text: `Out-of-scope dependency noted by challenge: ${proposal.note} (paths: ${proposal.touchedPaths.join(", ")})`,
-      });
-    }
+    const applied = applyChallenge(current, { taskId: current.id, expectedRevision: current.revision, nodeId: input.nodeId, verdict: challenge });
+    current = applied.task;
+    if (applied.outcome !== "counterexample") return current;
   }
   if (rounds === 0) return current;
   return exhaustDomainChallenge(current, {
@@ -250,7 +340,7 @@ export async function refineWithModel(runtime: ModelRuntime, task: PlanTask, inp
 
 export async function draftPatchWithModel(runtime: ModelRuntime, task: PlanTask, input: DraftPatchWithModelInput): Promise<PlanTask> {
   const node = requireNode(task, input.nodeId);
-  const proposal = await call(runtime, task, node, "draft-patch", input.temperature, node.lod, parseWith(PatchProposalSchema));
+  const proposal = await call(runtime, task, node, "draft-patch", input.temperature, node.lod, parseDraftReply);
   let current = attachPatch(task, { taskId: task.id, expectedRevision: task.revision, nodeId: input.nodeId, patch: proposal.patch });
   for (const assumption of proposal.assumptions) {
     current = addConstraint(current, { taskId: current.id, expectedRevision: current.revision, nodeId: input.nodeId, text: `Draft assumption: ${assumption}`, source: "model" });
@@ -273,7 +363,7 @@ export async function repairPatchWithModel(runtime: ModelRuntime, task: PlanTask
   const diff = task.diffs[input.diffId];
   if (!diff) throw new AugmentModelError(`Unknown planned diff: ${input.diffId}`, "unknown-diff");
   const node = requireNode(task, diff.nodeId);
-  const proposal = await call(runtime, task, node, "repair-patch", input.temperature, node.lod, parseWith(PatchProposalSchema));
+  const proposal = await call(runtime, task, node, "repair-patch", input.temperature, node.lod, parseDraftReply);
   let current = replacePatch(task, {
     taskId: task.id,
     expectedRevision: task.revision,

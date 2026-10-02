@@ -1204,6 +1204,82 @@ describe("OpenCode CLI runtime parsing", () => {
     expect(captured).toContain("must create it as a new file");
   });
 
+  it("accepts a raw unified-diff reply for one-shot drafts and asks for it", async () => {
+    const capture = path.join(os.tmpdir(), `augment-capture-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(capture);
+    const rawDiff = "```diff\n--- a/package.json\n+++ b/package.json\n@@ -1,2 +1,3 @@\n {\n+  \"x\": 1\n }\n```\nAssumption: the key is optional";
+    const output = JSON.stringify({ type: "message", parts: [{ type: "text", text: rawDiff }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s' "$*" > ${JSON.stringify(capture)}\ncat <<'JSON'\n${output}\nJSON\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
+    const result = await runtime.call({
+      operation: "draft-patch",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: { path: "package.json", kind: "file" } as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "low",
+      lod: "hunk",
+    });
+    // The raw reply text passes through as the value; the kernel's
+    // controller parser owns extracting the diff and assumptions.
+    expect(typeof result.value).toBe("string");
+    const { parseRawDraftReply } = await import("../src/augment/raw-diff.js");
+    expect(parseRawDraftReply(result.value as string)).toEqual({
+      patch: "--- a/package.json\n+++ b/package.json\n@@ -1,2 +1,3 @@\n {\n+  \"x\": 1\n }",
+      assumptions: ["the key is optional"],
+    });
+    const captured = fs.readFileSync(capture, "utf8");
+    expect(captured).toContain("raw unified diff text itself");
+    expect(captured).toContain("'Assumption: one short sentence'");
+  });
+
+  it("retries a draft that replies with prose instead of a diff", async () => {
+    const marker = path.join(os.tmpdir(), `augment-rawretry-${process.pid}-${temporaryFiles.length}.flag`);
+    const log = path.join(os.tmpdir(), `augment-rawretry-log-${process.pid}-${temporaryFiles.length}.txt`);
+    temporaryFiles.push(marker, log);
+    const prose = JSON.stringify({ type: "message", parts: [{ type: "text", text: "I will edit package.json for you." }] });
+    const rawDiff = JSON.stringify({ type: "message", parts: [{ type: "text", text: "--- a/package.json\n+++ b/package.json\n@@ -1,2 +1,3 @@\n {\n+  \"generated\": true,\n   \"name\": \"neolit\"," }] });
+    const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+    fs.writeFileSync(file, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nif [ -f ${JSON.stringify(marker)} ]; then cat <<'JSON'\n${rawDiff}\nJSON\nelse touch ${JSON.stringify(marker)}; cat <<'JSON'\n${prose}\nJSON\nfi\n`);
+    fs.chmodSync(file, 0o755);
+    temporaryFiles.push(file);
+    const runtime = new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 });
+    const result = await runtime.call({
+      operation: "draft-patch",
+      context: {
+        taskId: "task:1",
+        taskRevision: 1,
+        objective: "objective",
+        basisRevision: "commit:1",
+        node: { path: "package.json", kind: "file" } as never,
+        candidates: [],
+        constraints: [],
+        obligations: [],
+        diffs: [],
+        lockedPaths: [],
+        rejectedCandidates: [],
+      },
+      temperature: "low",
+      lod: "hunk",
+    });
+    expect(result.value).toContain("--- a/package.json");
+    const logged = fs.readFileSync(log, "utf8");
+    expect(logged).toContain("no complete unified diff");
+    expect(logged.match(/--title augment-draft-patch/g)?.length).toBe(2);
+  });
+
   it("retries once with a correction when a draft comes back with an empty patch", async () => {
     const marker = path.join(os.tmpdir(), `augment-retried-${process.pid}-${temporaryFiles.length}.flag`);
     const log = path.join(os.tmpdir(), `augment-retry-log-${process.pid}-${temporaryFiles.length}.txt`);
@@ -1235,7 +1311,7 @@ describe("OpenCode CLI runtime parsing", () => {
     });
     expect(result.value).toEqual({ patch: "--- a/package.json", assumptions: [] });
     const logged = fs.readFileSync(log, "utf8");
-    expect(logged).toContain("patch field must be a non-empty string");
+    expect(logged).toContain("must contain the complete diff content");
     expect(logged.match(/--title augment-draft-patch/g)?.length).toBe(2);
   });
 

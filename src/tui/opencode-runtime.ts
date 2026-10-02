@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ModelCallRequest, ModelContextPacket, ModelRuntime } from "../augment/types.js";
+import { parseRawDraftReply } from "../augment/raw-diff.js";
 import { preflightPatches } from "./apply.js";
 import { backendById, opencodeBackend, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
 
@@ -31,11 +32,76 @@ function noJsonObjectMessage(operation: string, text: string, reasoningOnly: boo
   return `OpenCode returned no JSON object for ${operation}:${hint}\n${text.slice(0, 2000)}`;
 }
 
+function noUnifiedDiffMessage(operation: string, text: string, reasoningOnly: boolean): string {
+  const trimmed = text.trim();
+  const hint = reasoningOnly
+    ? " the model reasoned but wrote no answer text"
+    : !trimmed
+      ? " the reply was empty"
+      : "";
+  return `OpenCode returned no unified diff for ${operation}:${hint}\n${text.slice(0, 2000)}`;
+}
+
+/**
+ * Single-file drafts answer in raw unified-diff text — self-delimiting, no
+ * JSON string escaping to break, nothing to truncate mid-envelope — so the
+ * raw text is passed through as the reply value and the kernel's controller
+ * parser extracts the diff and any trailing assumption lines. A legacy JSON
+ * envelope reply is still accepted.
+ */
+function draftReplyValue(text: string, raw: boolean): unknown | undefined {
+  if (!raw) return extractJsonOnly(text);
+  if (parseRawDraftReply(text)) return text;
+  return extractJsonOnly(text);
+}
+
+/** The patch text of a draft reply, from either a raw string or a JSON envelope. */
+function patchOf(value: unknown): string | undefined {
+  if (typeof value === "string") return parseRawDraftReply(value)?.patch;
+  if (value && typeof value === "object") {
+    const patch = (value as { patch?: unknown }).patch;
+    if (typeof patch === "string") return patch;
+  }
+  return undefined;
+}
+
+function isEmptyDraft(value: unknown): boolean {
+  if (value && typeof value === "object" && Array.isArray((value as { patches?: unknown }).patches)) {
+    const patches = (value as { patches: Array<{ patch?: unknown }> }).patches;
+    return patches.length === 0 || patches.some((entry) => !entry || typeof entry.patch !== "string" || entry.patch.trim().length === 0);
+  }
+  const patch = patchOf(value);
+  return patch === undefined || patch.trim().length === 0;
+}
+
+/**
+ * Deterministic draft gate: a patch must parse as a unified diff git would
+ * accept against the current working tree AND together with every other
+ * drafted patch in the task, so stored diffs are jointly applicable. git
+ * itself is the parser, so the corrective retry can quote git's exact
+ * diagnostic back to the model.
+ */
+function draftCorrection(value: unknown, directory: string, taskDiffs: Array<{ nodeId: string; patch: string }> = [], selfNodeId?: string): string | undefined {
+  if (isEmptyDraft(value)) {
+    return "Your previous answer is unusable: it must contain the complete diff content — the raw single-file unified diff for the target path, or every target's patch when the reply is a batch. Return the real diff(s) now.";
+  }
+  const patch = patchOf(value);
+  if (patch === undefined) return undefined;
+  const others = taskDiffs
+    .filter((diff) => diff.nodeId !== selfNodeId && typeof diff.patch === "string" && diff.patch.trim().length > 0)
+    .map((diff) => diff.patch);
+  const failure = preflightPatches(directory, [patch, ...others]);
+  if (!failure) return undefined;
+  return `Your patch does not apply cleanly — ${failure} Regenerate the complete single-file unified diff so it stays coherent with the working tree and with this task's other drafted changes.`;
+}
+
 const NO_ANSWER_TEXT_CORRECTION = "Your previous reply contained no answer text — it was empty or reasoning-only. Return the JSON object now as your actual reply text; do not stop after thinking.";
 
 const TRUNCATED_REPLY_CORRECTION = "Your previous reply was cut off before the JSON object closed. Return a much shorter answer now: only the minimal hunks the change needs (at most 3 context lines each, never whole paragraphs as context), no prose, no repetition of file content, and finish with the closing brace.";
 
-const DRAFT_MODEL_FALLBACK_NOTE = "The faster draft model could not produce a parseable answer, so you are the reliable fallback. Answer with the JSON object only: minimal hunks, no prose, close the brace.";
+const TRUNCATED_DIFF_CORRECTION = "Your previous reply contained no complete unified diff — it was prose, or it was cut off before the diff completed. Return only the diff now: the minimal hunks the change needs (at most 3 context lines each, never whole paragraphs as context), no prose, no repetition of file content, complete to the last hunk.";
+
+const DRAFT_MODEL_FALLBACK_NOTE = "The faster draft model could not produce a usable answer, so you are the reliable fallback. Answer with only the requested diff: minimal hunks, no prose, complete to the end.";
 
 function sessionsStorePath(): string {
   const base = process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim()
@@ -64,6 +130,8 @@ function saveSessions(sessions: Map<string, string>): void {
 
 const DRAFT_FILE_EMBED_LIMIT = 64_000;
 const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch", "draft-patches"]);
+/** Single-file drafts reply with the raw unified diff itself, not JSON. */
+const SINGLE_DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch"]);
 
 /**
  * Drafts should behave like auto-complete, not exploration: embed the target
@@ -266,19 +334,22 @@ export class CliAgentRuntime implements ModelRuntime {
    */
   private async complete(request: ModelCallRequest, corrections: string[] = [], modelOverride?: string): Promise<{ text: string; value: unknown }> {
     const attempts = 1 + this.retries;
+    const raw = SINGLE_DRAFT_OPERATIONS.has(request.operation);
     let failure: unknown;
     for (let attempt = 0; attempt < attempts; attempt++) {
       if (attempt > 0) await sleep(this.retryDelayMs * attempt);
       try {
         const { text, stdout } = await this.prompt(request, corrections, modelOverride);
-        const value = extractJsonOnly(text);
+        const value = draftReplyValue(text, raw);
         if (value !== undefined) return { text, value };
         const reasoningOnly = !text.trim() && /"type":\s*"reasoning"/.test(stdout);
-        failure = new Error(noJsonObjectMessage(request.operation, text, reasoningOnly));
+        failure = new Error(raw
+          ? noUnifiedDiffMessage(request.operation, text, reasoningOnly)
+          : noJsonObjectMessage(request.operation, text, reasoningOnly));
         // Corrections are symptom-specific: an empty reply needs the
         // answer-now nudge; a non-empty unparseable reply is almost always
         // output truncation, which only a shorter answer survives.
-        corrections = [...corrections, text.trim() ? TRUNCATED_REPLY_CORRECTION : NO_ANSWER_TEXT_CORRECTION];
+        corrections = [...corrections, text.trim() ? (raw ? TRUNCATED_DIFF_CORRECTION : TRUNCATED_REPLY_CORRECTION) : NO_ANSWER_TEXT_CORRECTION];
       } catch (error) {
         if (!isRetryable(error) || attempt === attempts - 1) throw error;
         failure = error;
@@ -301,8 +372,10 @@ export class CliAgentRuntime implements ModelRuntime {
     const baseParts = [
       ...(regenerationNote ? [regenerationNote] : []),
       `You are executing exactly one Neolit planned-diff operation: ${request.operation}.`,
-      `Return ONE valid JSON object and no prose, Markdown, or code fence.`,
-      `JSON contract:\n${operationContract(request)}`,
+      SINGLE_DRAFT_OPERATIONS.has(request.operation)
+        ? `Reply with the raw unified diff text itself — no JSON, no code fence, no prose before or after it.`
+        : `Return ONE valid JSON object and no prose, Markdown, or code fence.`,
+      `Reply contract:\n${operationContract(request)}`,
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
       ...(draftFileSection(request, this.directory) ? [draftFileSection(request, this.directory)] : []),
       ...corrections,
@@ -376,33 +449,6 @@ export class CliAgentRuntime implements ModelRuntime {
   }
 }
 
-function isEmptyDraft(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  const patch = (value as { patch?: unknown }).patch;
-  return typeof patch !== "string" || patch.trim().length === 0;
-}
-
-/**
- * Deterministic draft gate: a patch must parse as a unified diff git would
- * accept against the current working tree AND together with every other
- * drafted patch in the task, so stored diffs are jointly applicable. git
- * itself is the parser, so the corrective retry can quote git's exact
- * diagnostic back to the model.
- */
-function draftCorrection(value: unknown, directory: string, taskDiffs: Array<{ nodeId: string; patch: string }> = [], selfNodeId?: string): string | undefined {
-  if (isEmptyDraft(value)) {
-    return "Your previous answer is unusable: the patch field must be a non-empty string holding the complete single-file unified diff with JSON-escaped line breaks. Return the full JSON object again with the real patch.";
-  }
-  const patch = (value as { patch?: unknown }).patch;
-  if (typeof patch !== "string") return undefined;
-  const others = taskDiffs
-    .filter((diff) => diff.nodeId !== selfNodeId && typeof diff.patch === "string" && diff.patch.trim().length > 0)
-    .map((diff) => diff.patch);
-  const failure = preflightPatches(directory, [patch, ...others]);
-  if (!failure) return undefined;
-  return `Your patch does not apply cleanly — ${failure} Regenerate the complete single-file unified diff so it stays coherent with the working tree and with this task's other drafted changes.`;
-}
-
 function operationContract(request: ModelCallRequest): string {
   switch (request.operation) {
     case "generate-domain":
@@ -413,7 +459,7 @@ function operationContract(request: ModelCallRequest): string {
       return `{"children":[{"path":"src/example.ts","kind":"file|dir|hunk|virtual","lod":"architecture|file|hunk","reason":"one sentence","obligations":[{"kind":"test|documentation|check|todo","description":"..."}]}]} (1-16 children; every child needs one reason of at most 200 characters; directory children summarize their whole subtree in that one sentence; at most 4 obligations per child, each description <= 160 characters; omit the diff field entirely — patches are drafted by a separate later operation, never here; never generate descendant candidate domains; lockedPaths are immutable)`;
     case "draft-patch":
     case "repair-patch":
-      return `{"patch":"unified diff text","assumptions":["explicit assumption"]} (the patch must be a single-file unified diff touching ONLY the target path whose content is embedded in this prompt — never a multi-file or diff --git series covering other paths; include only the hunks the node reason requires; keep hunks minimal — at most 3 context lines around each change, never whole paragraphs or sentences as context; keep the ENTIRE reply short: never echo the file, never explain, close the JSON object; at most 3 assumptions, each <= 160 characters; answer in one shot without reading files or running tools)`;
+      return `the raw unified diff text — a single-file unified diff touching ONLY the target path whose content is embedded in this prompt — never JSON, never a code fence, never a multi-file or diff --git series covering other paths; start directly at the --- / +++ headers and @@ hunks; include only the hunks the node reason requires; keep hunks minimal — at most 3 context lines around each change, never whole paragraphs or sentences as context; after the final hunk you may add up to 3 assumption lines, each formatted exactly as 'Assumption: one short sentence' (<=160 characters); no other prose before or after; answer in one shot without reading files or running tools)`;
     case "draft-patches":
       return `{"patches":[{"path":"exact target path","patch":"unified diff text"}]} (one entry for EVERY target listed in this prompt, in that order — never omit one, never invent an extra; each patch is a single-file unified diff for exactly its own path with the same rules as a single draft: only the hunks its node reason requires, at most 3 context lines around each change, never echo file content, no prose; keep the ENTIRE reply short and close the JSON object; answer in one shot without reading files or running tools)`;
     case "explain-project":
