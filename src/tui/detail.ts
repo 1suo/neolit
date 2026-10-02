@@ -354,6 +354,35 @@ export interface FrameLayout {
 }
 
 /**
+ * Rows one display line occupies when wrapped at the given width: greedy
+ * word wrap with hard splits for tokens longer than the line. Used to
+ * budget how many stream events fit a fixed-height pane.
+ */
+export function wrappedRows(text: string, width: number): number {
+  if (width <= 0 || !text) return 1;
+  let rows = 1;
+  let column = 0;
+  for (const word of text.split(/ +/)) {
+    if (!word) continue;
+    if (column > 0) column += 1;
+    if (column + word.length <= width) {
+      column += word.length;
+      continue;
+    }
+    if (word.length <= width) {
+      rows += 1;
+      column = word.length;
+      continue;
+    }
+    const usable = Math.max(0, width - column);
+    const remaining = word.length - usable;
+    rows += Math.ceil(remaining / width);
+    column = remaining % width === 0 ? width : remaining % width;
+  }
+  return rows;
+}
+
+/**
  * Derives the vertical budget of one frame from the terminal height. Ink clears
  * and scrolls the terminal whenever a frame exceeds the viewport, which reads
  * as a flash on every repaint, so the fixed chrome (root padding, header,

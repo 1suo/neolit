@@ -10,7 +10,7 @@ import { preflightPatches } from "../src/tui/apply.js";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
-import { detailLines, entryState, frameLayout } from "../src/tui/detail.js";
+import { detailLines, entryState, frameLayout, wrappedRows } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
@@ -988,6 +988,15 @@ describe("augment TUI rendering", () => {
     const unknown = frameLayout(undefined, "idle");
     expect(unknown.frameRows).toBeGreaterThan(0);
     expect(IDLE_PANE_CHROME_ROWS + unknown.detailRows).toBeLessThanOrEqual(unknown.frameRows);
+  });
+
+  it("counts wrapped rows for the session pane budget", () => {
+    expect(wrappedRows("short line", 30)).toBe(1);
+    expect(wrappedRows("", 10)).toBe(1);
+    expect(wrappedRows("word word word word word word", 10)).toBe(3);
+    expect(wrappedRows("x".repeat(40), 10)).toBe(4);
+    // An overlong token after existing content fills the line before splitting.
+    expect(wrappedRows("a bbbbbbbbbbbbbbbbbbbbbb", 10)).toBe(3);
   });
 
   it("paints frames incrementally inside the alternate screen", () => {

@@ -3,7 +3,7 @@ import { Box, Text, render, useApp, useInput, useWindowSize, type RenderOptions 
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
 import type { SessionStreamLine } from "./tool-session.js";
 import { AugmentTuiController, candidatesForEntry, type PlannedTreeRow, type TuiActionState } from "./controller.js";
-import { detailLines, entryName, entryState, entryTouchesNode, frameLayout, theme, type DetailLine, type FrameLayout, type InputMode, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
+import { detailLines, entryName, entryState, entryTouchesNode, frameLayout, theme, wrappedRows, type DetailLine, type FrameLayout, type InputMode, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
 import { Picker, availableModels, toPickerItems, type PickerItem } from "./setup.js";
 
 
@@ -42,15 +42,26 @@ const SESSION_COLORS: Record<SessionStreamLine["kind"], string> = {
   error: theme.error,
 };
 
-function SessionPane(props: { lines: SessionStreamLine[]; limit: number }) {
-  const visible = props.lines.slice(-props.limit);
+function SessionPane(props: { lines: SessionStreamLine[]; limit: number; width: number }) {
+  // Tail-follow under a row budget: wrapped lines span several rows, so
+  // events are taken from the end until the pane fills; the newest line
+  // always shows, even when it alone exceeds the budget.
+  const recent: SessionStreamLine[] = [];
+  let budget = props.limit;
+  for (let index = props.lines.length - 1; index >= 0 && budget > 0; index--) {
+    const line = props.lines[index]!;
+    const rows = wrappedRows(line.text, props.width);
+    if (rows > budget && recent.length > 0) break;
+    recent.unshift(line);
+    budget -= rows;
+  }
   return (
     <Box borderStyle="round" borderColor={theme.border} flexDirection="column" overflow="hidden" paddingX={1} flexShrink={0} height={props.limit + 3}>
       <Text color={theme.muted}>SESSION</Text>
-      {visible.length === 0
+      {recent.length === 0
         ? <Text color={theme.muted}>waiting for the agent…</Text>
-        : visible.map((line, index) => (
-          <Text key={`${index}:${line.text}`} wrap="truncate-end" color={SESSION_COLORS[line.kind]}>{line.text}</Text>
+        : recent.map((line, index) => (
+          <Text key={`${recent.length - index}:${line.text}`} wrap="wrap" color={SESSION_COLORS[line.kind]}>{line.text}</Text>
         ))}
     </Box>
   );
@@ -281,6 +292,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const layout = frameLayout(windowSize.rows, mode, sessionVisible);
   const treeRows = visibleWindow(state.rows, selectedIndex, layout.treeRows);
   const treeWidth = Math.max(30, Math.floor(windowSize.columns * 0.42) - 6);
+  const sessionWidth = Math.max(20, Math.floor(windowSize.columns * 0.42) - 4);
   const detailLimit = layout.detailRows;
   const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]!;
   const liveStatus: LiveStatus | undefined = state.active || state.failed
@@ -381,7 +393,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
               );
             })}
           </Box>
-          {sessionVisible ? <SessionPane lines={state.sessionLines} limit={layout.sessionRows} /> : null}
+          {sessionVisible ? <SessionPane lines={state.sessionLines} limit={layout.sessionRows} width={sessionWidth} /> : null}
         </Box>
 
         <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
