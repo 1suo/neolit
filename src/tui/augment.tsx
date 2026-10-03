@@ -97,9 +97,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   const { exit } = useApp();
   const windowSize = useWindowSize();
   const [state, setState] = useState<TuiActionState>(() => props.controller.snapshot());
-  const [pane, setPane] = useState<"tree" | "detail">("tree");
+  const [pane, setPane] = useState<"tree" | "diff" | "description">("tree");
   const [contentView, setContentView] = useState<"diff" | "session" | "description">("diff");
-  const [detailOffset, setDetailOffset] = useState(0);
+  const [diffOffset, setDiffOffset] = useState(0);
+  const [descOffset, setDescOffset] = useState(0);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [mode, setMode] = useState<InputMode>("idle");
   const [modelPicker, setModelPicker] = useState<
@@ -161,7 +162,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
   }, [props.controller, props.modelAvailable, initialSnapshot]);
 
   useEffect(() => {
-    setDetailOffset(0);
+    setDiffOffset(0);
+    setDescOffset(0);
   }, [state.selectedRowId]);
 
   const beginInput = (next: InputMode) => {
@@ -184,6 +186,33 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     else if (activeMode === "stale") run(props.controller.markStale(value));
   };
 
+  // Derived view model — computed before useInput so the key handler can
+  // cycle focus through the panes that actually exist in this frame.
+  const selectedIndex = state.rows.findIndex((row) => row.id === state.selectedRowId);
+  const sessionVisible = Boolean(state.toolSession && state.sessionView);
+  const layout = adaptiveLayout(windowSize.columns, windowSize.rows, mode, sessionVisible);
+  const treeRows = visibleWindow(state.rows, selectedIndex, layout.treeRows);
+  const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]!;
+  const liveStatus: LiveStatus | undefined = state.active || state.failed
+    ? { spinner, active: state.active, failed: state.failed }
+    : undefined;
+  const selectedRow = state.rows.find((row) => row.id === state.selectedRowId);
+  const sections = useMemo(() => detailSections(state.task, selectedRow, {
+    pendingMarks: state.pendingMarks,
+    pendingMode: state.pendingMode,
+    appliedDiffIds: state.appliedDiffIds,
+    live: liveStatus,
+  }), [state.task, selectedRow, state.pendingMarks, state.pendingMode, state.appliedDiffIds, liveStatus]);
+  const visibleDiff = contentView === "description" ? [] : sections.diff;
+  const paneLines = visibleDiff.length ? visibleDiff : sections.description;
+  const statusMessage = state.busy ? `${state.operation ?? "Working"}...` : state.error ?? state.message;
+  // The diff section is its own focus target whenever it renders separately
+  // (the wide middle column, or the top half of a split content column).
+  const diffFocusable = visibleDiff.length > 0 && (layout.mode === "wide" || layout.split);
+  const focusCycle: Array<"tree" | "diff" | "description"> = diffFocusable
+    ? ["tree", "diff", "description"]
+    : ["tree", "description"];
+
   useInput((input, key) => {
     if (modelPicker) return;
     if (mode !== "idle") {
@@ -205,12 +234,22 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       setState((current) => ({ ...current, message: "Cancelling the running operation…" }));
       return;
     }
-    if (pane === "detail" && (key.upArrow || input === "k")) {
-      setDetailOffset((current) => Math.max(0, current - 1));
+    // Per-pane scrolling: j/k moves the focused pane's own window, never the
+    // tree selection and never both content panes at once.
+    if (pane === "diff" && (key.upArrow || input === "k")) {
+      setDiffOffset((current) => Math.max(0, current - 1));
       return;
     }
-    if (pane === "detail" && (key.downArrow || input === "j")) {
-      setDetailOffset((current) => current + 1);
+    if (pane === "diff" && (key.downArrow || input === "j")) {
+      setDiffOffset((current) => current + 1);
+      return;
+    }
+    if (pane === "description" && (key.upArrow || input === "k")) {
+      setDescOffset((current) => Math.max(0, current - 1));
+      return;
+    }
+    if (pane === "description" && (key.downArrow || input === "j")) {
+      setDescOffset((current) => current + 1);
       return;
     }
     if (key.upArrow || input === "k") {
@@ -223,12 +262,14 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       sync();
       return;
     }
+    // Tab/Right cycles tree → diff → description through the panes that
+    // actually exist; Left steps back.
     if (key.tab || key.rightArrow) {
-      setPane((current) => (current === "tree" ? "detail" : "tree"));
+      setPane((current) => focusCycle[(focusCycle.indexOf(current) + 1) % focusCycle.length] ?? "tree");
       return;
     }
     if (key.leftArrow) {
-      setPane("tree");
+      setPane((current) => focusCycle[Math.max(0, focusCycle.indexOf(current) - 1)] ?? "tree");
       return;
     }
     if (key.return || input === "\r" || input === "\n") {
@@ -286,30 +327,12 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
   });
 
-  const selectedIndex = state.rows.findIndex((row) => row.id === state.selectedRowId);
-  const sessionVisible = Boolean(state.toolSession && state.sessionView);
-  const layout = adaptiveLayout(windowSize.columns, windowSize.rows, mode, sessionVisible);
-  const treeRows = visibleWindow(state.rows, selectedIndex, layout.treeRows);
-  const spinner = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]!;
-  const liveStatus: LiveStatus | undefined = state.active || state.failed
-    ? { spinner, active: state.active, failed: state.failed }
-    : undefined;
   const rootStatus = state.task?.nodes[state.task.rootNodeId]?.status;
   const status = state.busy
     ? "BUSY"
     : state.task?.mode === "explanation"
       ? Object.keys(state.task.explanations).length ? "EXPLAINED" : "EXPLAINING"
       : rootStatus ? rootStatus.toUpperCase() : "IDLE";
-  const selectedRow = state.rows.find((row) => row.id === state.selectedRowId);
-  const sections = useMemo(() => detailSections(state.task, selectedRow, {
-    pendingMarks: state.pendingMarks,
-    pendingMode: state.pendingMode,
-    appliedDiffIds: state.appliedDiffIds,
-    live: liveStatus,
-  }), [state.task, selectedRow, state.pendingMarks, state.pendingMode, state.appliedDiffIds, liveStatus]);
-  const visibleDiff = contentView === "description" ? [] : sections.diff;
-  const paneLines = visibleDiff.length ? visibleDiff : sections.description;
-  const statusMessage = state.busy ? `${state.operation ?? "Working"}...` : state.error ?? state.message;
 
   return (
     <Box flexDirection="column" height={layout.frameRows} width={windowSize.columns} padding={1}>
@@ -407,33 +430,33 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
                 {contentView === "session" && state.toolSession ? (
                   <SessionPane lines={state.sessionLines} limit={layout.diffRows} width={Math.max(20, layout.diffColumns - 4)} />
                 ) : (
-                  <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
-                    <SectionView lines={visibleDiff} offset={detailOffset} limit={layout.diffRows} />
+                  <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "diff" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
+                    <SectionView lines={visibleDiff} offset={diffOffset} limit={layout.diffRows} />
                   </Box>
                 )}
               </Box>
             ) : null}
             <Box flexDirection="column" flexGrow={1} minWidth={30}>
-              <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
-                <SectionView lines={sections.description} offset={detailOffset} limit={layout.descriptionRows} />
+              <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "description" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
+                <SectionView lines={sections.description} offset={descOffset} limit={layout.descriptionRows} />
               </Box>
               {sessionVisible && contentView !== "session" ? <SessionPane lines={state.sessionLines} limit={layout.sessionRows} width={Math.max(20, layout.descriptionColumns - 4)} /> : null}
             </Box>
           </>
         ) : layout.split && visibleDiff.length ? (
           <Box flexDirection="column" flexGrow={1} minWidth={30}>
-            <Box height={layout.diffRows + 3} flexShrink={0} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
-              <SectionView lines={visibleDiff} offset={detailOffset} limit={layout.diffRows} />
+            <Box height={layout.diffRows + 3} flexShrink={0} borderStyle="round" borderColor={pane === "diff" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
+              <SectionView lines={visibleDiff} offset={diffOffset} limit={layout.diffRows} />
               </Box>
-            <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
-              <SectionView lines={sections.description} offset={detailOffset} limit={layout.descriptionRows} />
+            <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "description" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
+              <SectionView lines={sections.description} offset={descOffset} limit={layout.descriptionRows} />
             </Box>
           </Box>
         ) : contentView === "session" && state.toolSession ? (
           <SessionPane lines={state.sessionLines} limit={Math.max(layout.diffRows, layout.descriptionRows)} width={Math.max(20, windowSize.columns - 2)} />
         ) : layout.diffRows > 0 ? (
-          <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
-            <SectionView lines={paneLines} offset={detailOffset} limit={sharedContentRows(layout)} />
+          <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane !== "tree" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
+            <SectionView lines={paneLines} offset={descOffset} limit={sharedContentRows(layout)} />
           </Box>
         ) : null}
       </Box>

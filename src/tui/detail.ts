@@ -470,6 +470,16 @@ export const TREE_COLUMNS_WIDE = 44;
 const TREE_COLUMNS_MIN = 36;
 const UNKNOWN_WINDOW_COLUMNS = MEDIUM_MIN_COLUMNS;
 
+/**
+ * The tree column width for two- and three-column arrangements: fixed and
+ * narrow (up to 40% of the terminal, clamped 36–44), so the content beside
+ * it keeps at least half the terminal instead of splitting 50/50 with a
+ * tree that does not need the room.
+ */
+export function treeColumnsFor(width: number): number {
+  return Math.max(TREE_COLUMNS_MIN, Math.min(TREE_COLUMNS_WIDE, Math.floor(width * 0.4)));
+}
+
 function normalizedColumns(columns: number | undefined): number {
   return typeof columns === "number" && Number.isFinite(columns) && columns > 0 ? Math.floor(columns) : UNKNOWN_WINDOW_COLUMNS;
 }
@@ -600,17 +610,18 @@ export function adaptiveLayout(columns: number | undefined, rows: number | undef
     // Narrow fixed tree; the remaining width halves between the diff column
     // (full height — the session never eats its rows) and the description
     // column, which shares its height with the session stream below it.
-    const treeColumns = Math.max(TREE_COLUMNS_MIN, Math.min(TREE_COLUMNS_WIDE, Math.floor(width / 3)));
-    const diffColumns = Math.floor((width - treeColumns) / 2);
-    return { mode: arrangement, frameRows: base.frameRows, treeColumns, treeRows: paneRows, diffColumns, diffRows: paneRows, descriptionColumns: width - treeColumns - diffColumns, descriptionRows: underSession(paneRows), sessionRows, split: true };
+    const tree = treeColumnsFor(width);
+    const diffColumns = Math.floor((width - tree) / 2);
+    return { mode: arrangement, frameRows: base.frameRows, treeColumns: tree, treeRows: paneRows, diffColumns, diffRows: paneRows, descriptionColumns: width - tree - diffColumns, descriptionRows: underSession(paneRows), sessionRows, split: true };
   }
   if (arrangement === "medium") {
-    // Two 50/50 columns with the description stacked under the diff window;
-    // the session stream stays under the tree. Too short to stack, the
-    // right column becomes one pane following the diff-where-it-exists rule.
-    const half = Math.floor(width / 2);
-    if (stackRows < 2) return { mode: arrangement, frameRows: base.frameRows, treeColumns: half, treeRows: paneRows, diffColumns: width - half, diffRows: paneRows, descriptionColumns: 0, descriptionRows: paneRows, sessionRows, split: false };
-    return { mode: arrangement, frameRows: base.frameRows, treeColumns: half, treeRows: underSession(paneRows), diffColumns: width - half, diffRows: halves.top, descriptionColumns: width - half, descriptionRows: halves.bottom, sessionRows, split: true };
+    // The same narrow tree beside one content column; the description
+    // stacks under the diff window at a fixed half inside it. The session
+    // stream stays under the tree. Too short to stack, the content column
+    // becomes one pane following the diff-where-it-exists rule.
+    const tree = treeColumnsFor(width);
+    if (stackRows < 2) return { mode: arrangement, frameRows: base.frameRows, treeColumns: tree, treeRows: paneRows, diffColumns: width - tree, diffRows: paneRows, descriptionColumns: 0, descriptionRows: paneRows, sessionRows, split: false };
+    return { mode: arrangement, frameRows: base.frameRows, treeColumns: tree, treeRows: underSession(paneRows), diffColumns: width - tree, diffRows: halves.top, descriptionColumns: width - tree, descriptionRows: halves.bottom, sessionRows, split: true };
   }
   // Narrow: one column, tree over a single content pane, both halves fixed
   // at 50/50; below the stacking minimum the tree keeps the whole column.

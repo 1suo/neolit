@@ -293,6 +293,31 @@ describe("augment TUI controller", () => {
     }
   });
 
+  it("never resumes a task from another repository directory", async () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = state;
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "augment-other-repo-"));
+    temporaryDirectories.push(other);
+    try {
+      const first = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
+      await first.start("bounded retries", "commit:1");
+      // Opening the panel in a different folder starts empty, and its own
+      // task never evicts the other folder's entry from the store.
+      const elsewhere = new AugmentTuiController({ directory: other, runtime: modelRuntime(), persistTasks: true });
+      expect(elsewhere.snapshot().task).toBeUndefined();
+      await elsewhere.start("other folder work", "commit:9");
+      const stored = JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-tasks.json"), "utf8")) as Array<{ directory: string }>;
+      expect(stored.map((entry) => entry.directory).sort()).toEqual([path.resolve(other), path.resolve(process.cwd())].sort());
+      // Back in the first folder, its own task resumes — not the other one.
+      const resumed = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
+      expect(resumed.snapshot().task?.objective).toBe("bounded retries");
+    } finally {
+      if (previous === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
   it("explains the selected node inside an active change task", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");
@@ -1197,9 +1222,10 @@ describe("adaptive TUI layout", () => {
     const layout = adaptiveLayout(100, 40, "idle");
     expect(layout.mode).toBe("medium");
     expect(layout.split).toBe(true);
-    expect(layout.treeColumns).toBe(50);
-    expect(layout.diffColumns).toBe(50);
-    expect(layout.descriptionColumns).toBe(50);
+    // The same narrow fixed tree as wide frames — never half the terminal.
+    expect(layout.treeColumns).toBe(40);
+    expect(layout.diffColumns).toBe(60);
+    expect(layout.descriptionColumns).toBe(60);
     expect(layout.treeRows).toBe(29);
     // The stack pays the second pane borders, then halves exactly; the
     // split is a pure function of terminal size, never of pane content.
