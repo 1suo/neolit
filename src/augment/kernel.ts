@@ -5,6 +5,7 @@ import {
   PatchProposalSchema,
   RefinementProposalSchema,
   BatchPatchProposalSchema,
+  RouteMessageSchema,
   type PatchProposal,
 } from "./schemas.js";
 import { parseRawDraftReply } from "./raw-diff.js";
@@ -30,6 +31,7 @@ import type {
   PlanNode,
   PlanRevision,
   PlanTask,
+  RoutedMessage,
   Temperature,
 } from "./types.js";
 
@@ -79,6 +81,13 @@ export interface RepairPatchWithModelInput {
 export interface ExplainProjectWithModelInput {
   taskId: string;
   nodeId?: string;
+  temperature: Temperature;
+}
+
+export interface RouteMessageInput {
+  taskId: string;
+  nodeId?: string;
+  message: string;
   temperature: Temperature;
 }
 
@@ -357,6 +366,17 @@ export async function explainProjectWithModel(runtime: ModelRuntime, task: PlanT
     topic: proposal.topic,
     entries: proposal.entries,
   });
+}
+
+/**
+ * One bounded classification of a node-linked user message: a single
+ * `route-message` model call whose reply is schema-validated. Pure — the
+ * task is never mutated, so the host stays the sole decider of what happens
+ * with the verdict.
+ */
+export async function routeMessageWithModel(runtime: ModelRuntime, task: PlanTask, input: RouteMessageInput): Promise<RoutedMessage> {
+  const node = requireNode(task, input.nodeId ?? task.rootNodeId);
+  return call(runtime, task, node, "route-message", input.temperature, "architecture", parseWith(RouteMessageSchema), { message: input.message });
 }
 
 export async function repairPatchWithModel(runtime: ModelRuntime, task: PlanTask, input: RepairPatchWithModelInput): Promise<PlanTask> {

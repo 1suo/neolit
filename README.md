@@ -98,6 +98,7 @@ draft-patch
 draft-patches
 repair-patch
 explain-project
+route-message
 ```
 
 The kernel builds a bounded context packet, parses output with Zod, validates
@@ -125,9 +126,9 @@ operations work without provider credentials. A host that needs
 its own OpenCode, Codex, or direct-provider adapter.
 
 Operations cover task and tree lifecycle (including `task/restore` and
-`explain`), node selection and constraints, staleness and refresh, the
-deterministic domain seams, and patch attach/draft/repair/set; the canonical
-method list lives in
+`explain`), node selection and constraints, message routing
+(`message/route`), staleness and refresh, the deterministic domain seams, and
+patch attach/draft/repair/set; the canonical method list lives in
 [`src/augmentd/README.md`](./src/augmentd/README.md).
 
 Mutating requests carry `expectedRevision`; stale requests are rejected before
@@ -162,7 +163,10 @@ AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 After a change task is entered, the TUI automatically generates approaches for
 the root node; a single viable approach is adopted automatically, multiple
 approaches ask for `1-7`, and lower nodes receive candidates only when
-explicitly opened. `D` develops a selected path and its whole subtree —
+explicitly opened. `Enter` is the single message entry point: one bounded
+`message/route` classification sends the message into the selected node's
+develop flow, an explanation, or an offered set of interpretations. `D`
+develops a selected path and its whole subtree —
 expand, crystallize, refine, draft every undrafted file — stopping only where
 an approach choice needs a human. Drafted patches touch the working tree only
 on request: `A` preflights each selected patch with `git apply --check`

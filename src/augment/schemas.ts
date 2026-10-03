@@ -65,6 +65,32 @@ export const ExplanationProposalSchema = z.object({
   entries: z.array(PathExplanationSchema).min(1).max(64),
 });
 
+const RouteOptionSchema = z.object({
+  label: z.string().min(1).max(240),
+  description: z.string().min(1).max(2000),
+});
+
+/**
+ * Reply contract for one routed user message: `develop` sends it into the
+ * node's work flow, `explain` answers how things work, and `offer-options`
+ * defers the choice back to the human — which only means something with a
+ * real choice, so fewer than two options (or options on the other intents)
+ * is invalid output, not a degenerate route.
+ */
+export const RouteMessageSchema = z.object({
+  intent: z.enum(["develop", "explain", "offer-options"]),
+  topic: z.string().min(1).max(300),
+  options: z.array(RouteOptionSchema).max(7).default([]),
+  focusPath: pathPattern.optional(),
+}).superRefine((value, ctx) => {
+  if (value.intent === "offer-options" && value.options.length < 2) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `intent offer-options must offer at least two options, got ${value.options.length}` });
+  }
+  if (value.intent !== "offer-options" && value.options.length > 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `options are only valid with intent offer-options, not ${value.intent}` });
+  }
+});
+
 const PlanEventSchema = z.object({ type: z.string().min(1), revision: z.number().int().min(1) }).passthrough();
 
 const PlanNodeSchema = z.object({
@@ -175,3 +201,4 @@ export type RefinementProposal = z.infer<typeof RefinementProposalSchema>;
 export type PatchProposal = z.infer<typeof PatchProposalSchema>;
 export type BatchPatchProposal = z.infer<typeof BatchPatchProposalSchema>;
 export type ExplanationProposal = z.infer<typeof ExplanationProposalSchema>;
+export type RouteMessageProposal = z.infer<typeof RouteMessageSchema>;

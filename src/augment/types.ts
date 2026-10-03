@@ -161,7 +161,24 @@ export type ModelOperation =
   | "draft-patch"
   | "repair-patch"
   | "draft-patches"
-  | "explain-project";
+  | "explain-project"
+  | "route-message";
+
+/** One interpretation of an ambiguous routed message. */
+export interface RoutedOption {
+  label: string;
+  description: string;
+}
+
+export type RoutedMessageIntent = "develop" | "explain" | "offer-options";
+
+/** One bounded classification of a node-linked message; carries no state. */
+export interface RoutedMessage {
+  intent: RoutedMessageIntent;
+  topic: string;
+  options: RoutedOption[];
+  focusPath?: string;
+}
 
 export interface ModelContextPacket {
   taskId: string;
@@ -181,6 +198,8 @@ export interface ModelContextPacket {
   rejectedCandidates: Array<{ label: string; reason: string }>;
   /** File targets a `draft-patches` batch must cover, in deterministic order. */
   draftTargets?: Array<{ path: string }>;
+  /** The user message a `route-message` call classifies. */
+  message?: string;
 }
 
 export interface ModelCallRequest {

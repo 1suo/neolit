@@ -1,5 +1,5 @@
 import { assertTaskIntegrity, createPlanTask, addConstraint, attachPatch, markPathStale, planTree, PlanStateError, refineNode, refreshNode, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
-import { applyChallenge, applyDomainProposal, AugmentModelError, crystallizeNode, draftPatchesWithModel, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, selectCandidate } from "../augment/kernel.js";
+import { applyChallenge, applyDomainProposal, AugmentModelError, crystallizeNode, draftPatchesWithModel, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, routeMessageWithModel, selectCandidate } from "../augment/kernel.js";
 import { ChallengeDomainSchema, DomainProposalSchema, PatchProposalSchema, PlanTaskSchema, RefinementProposalSchema } from "../augment/schemas.js";
 import type { LOD, ModelRuntime, PlanRevision, PlanTask, Temperature } from "../augment/types.js";
 
@@ -331,6 +331,18 @@ export class AugmentServer {
         });
         this.store(updated);
         return updated;
+      }
+      case "message/route": {
+        const base = taskMutation(params);
+        const input = object(params);
+        // Classification only: the verdict is returned, never stored — the
+        // host decides which flow continues, and the task keeps its turn.
+        return await routeMessageWithModel(this.runtime, this.requireTask(base.taskId), {
+          taskId: base.taskId,
+          nodeId: typeof input.nodeId === "string" ? input.nodeId : undefined,
+          message: string(input.message, "message"),
+          temperature: temperature(input.temperature),
+        });
       }
       case "crystallize": {
         const base = taskMutation(params);

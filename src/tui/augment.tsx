@@ -3,7 +3,7 @@ import { Box, Text, render, useApp, useInput, useWindowSize, type RenderOptions 
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
 import type { SessionStreamLine } from "./tool-session.js";
 import { AugmentTuiController, candidatesForEntry, type PlannedTreeRow, type TuiActionState } from "./controller.js";
-import { adaptiveLayout, detailSections, entryName, entryState, entryTouchesNode, theme, wrappedRows, type DetailLine, type InputMode, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
+import { adaptiveLayout, detailSections, entryName, entryState, entryTouchesNode, sharedContentRows, theme, wrappedRows, type DetailLine, type InputMode, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
 import { Picker, availableModels, toPickerItems, type PickerItem } from "./setup.js";
 
 
@@ -433,7 +433,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <SessionPane lines={state.sessionLines} limit={Math.max(layout.diffRows, layout.descriptionRows)} width={Math.max(20, windowSize.columns - 2)} />
         ) : layout.diffRows > 0 ? (
           <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
-            <SectionView lines={paneLines} offset={detailOffset} limit={Math.max(layout.diffRows, layout.descriptionRows)} />
+            <SectionView lines={paneLines} offset={detailOffset} limit={sharedContentRows(layout)} />
           </Box>
         ) : null}
       </Box>

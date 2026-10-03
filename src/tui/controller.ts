@@ -8,7 +8,7 @@ import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js"
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
 import type { SessionStreamLine, ToolSessionDriver } from "./tool-session.js";
-import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, Temperature } from "../augment/types.js";
+import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, RoutedMessage, RoutedOption, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
   kind: "entry";
@@ -51,6 +51,8 @@ export interface TuiActionState {
   sessionLines: SessionStreamLine[];
   /** Whether the session stream pane is shown under the files tree. */
   sessionView: boolean;
+  /** Offered interpretations of the last ambiguous message, keyed 1-N; cleared once one is chosen or a new message arrives. */
+  routedOptions?: RoutedOption[];
 }
 
 export interface AugmentTuiControllerOptions {
@@ -281,6 +283,7 @@ export class AugmentTuiController {
   private toolFlow = false;
   private sessionLines: SessionStreamLine[] = [];
   private sessionView = true;
+  private routedOptions?: RoutedOption[];
 
   constructor(options: AugmentTuiControllerOptions) {
     this.directory = options.directory;
@@ -478,6 +481,7 @@ export class AugmentTuiController {
       toolSession: this.toolDriver !== undefined,
       sessionLines: [...this.sessionLines],
       sessionView: this.sessionView,
+      routedOptions: this.routedOptions ? [...this.routedOptions] : undefined,
     };
   }
 
@@ -564,6 +568,7 @@ export class AugmentTuiController {
     }
     await this.dispatch("Starting plan", async () => {
       this.sessionLines = [];
+      this.routedOptions = undefined;
       const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision, mode: "change" } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       if (this.pendingMode !== "lock" || this.pendingMarks.length) {
@@ -652,6 +657,62 @@ export class AugmentTuiController {
     });
   }
 
+  /**
+   * The single message entry point. A first message starts a task; with an
+   * active task one bounded `message/route` classification decides what the
+   * message is for: a task message continues the develop flow on the
+   * selected subtree, an explanation explains from the cursor, and an
+   * ambiguous one offers options the number keys choose. An empty message
+   * rethinks the selected path, exactly like Enter before routing existed.
+   */
+  async route(message: string, basisRevision = currentRevision(this.directory)): Promise<void> {
+    const text = message.trim();
+    if (!this.task) {
+      if (!text) {
+        this.error = "Describe the change first.";
+        return;
+      }
+      return this.start(text, basisRevision);
+    }
+    this.routedOptions = undefined;
+    if (!text) return this.rethink();
+    const task = this.task;
+    const nodeId = this.selectedNodeId() ?? task.rootNodeId;
+    let followUp: { intent: "develop" | "explain"; topic: string } | undefined;
+    await this.dispatch("Routing message", async () => {
+      const response = await this.server.handle({
+        jsonrpc: "2.0",
+        id: 33,
+        method: "message/route",
+        params: { taskId: task.id, expectedRevision: task.revision, nodeId, message: text, temperature: "normal" },
+      });
+      const routed = expectResult(response, RoutedMessageLike.is) as RoutedMessage;
+      if (routed.intent === "offer-options") {
+        this.routedOptions = routed.options;
+        this.message = "Pick one of the offered options with keys 1-7, or send another message.";
+        return;
+      }
+      followUp = { intent: routed.intent, topic: routed.topic };
+    }, nodeId);
+    if (this.error || !followUp) return;
+    // The follow-up runs as its own dispatch: routing was pure, so the task
+    // cannot have changed in between, and each flow keeps its own operation
+    // label and failure reporting.
+    if (followUp.intent === "explain") await this.explain(followUp.topic);
+    else await this.constrain(text);
+  }
+
+  /** Continues an offered route: the chosen label becomes the message. */
+  async chooseRoutedOption(label: string): Promise<void> {
+    if (!this.routedOptions?.some((option) => option.label === label)) {
+      this.error = `Unknown option: ${label}`;
+      return;
+    }
+    this.routedOptions = undefined;
+    this.refresh();
+    await this.constrain(label);
+  }
+
   private async performCrystallize(nodeId: string, temperature: Temperature, lod: LOD): Promise<void> {
     const task = this.task!;
     if (this.toolDriver) {
@@ -677,6 +738,9 @@ export class AugmentTuiController {
       this.message = "Approaches ready. Choose one with keys 1-7.";
     }
     this.selectNodeEntry(nodeId);
+    // Rows must reflect the generated domain even when no singleton adoption
+    // refreshes on its own — the choice candidates live on the tree row.
+    this.refresh();
   }
 
   async crystallize(temperature: Temperature = "normal", lod: LOD = this.defaultLod): Promise<void> {
@@ -1345,6 +1409,16 @@ export class AugmentTuiController {
 const PlanTaskLike = {
   is(value: unknown): value is PlanTask {
     return Boolean(value && typeof value === "object" && (value as { version?: unknown }).version === 1 && typeof (value as { revision?: unknown }).revision === "number");
+  },
+};
+
+const RoutedMessageLike = {
+  is(value: unknown): value is RoutedMessage {
+    if (!value || typeof value !== "object") return false;
+    const record = value as { intent?: unknown; topic?: unknown; options?: unknown };
+    return (record.intent === "develop" || record.intent === "explain" || record.intent === "offer-options")
+      && typeof record.topic === "string" && record.topic.trim().length > 0
+      && (Array.isArray(record.options) && record.options.every((option) => option && typeof (option as { label?: unknown }).label === "string" && typeof (option as { description?: unknown }).description === "string"));
   },
 };
 

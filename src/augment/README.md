@@ -25,7 +25,7 @@ host operation
   -> updated task snapshot
 ```
 
-Model runtimes execute outside this module. `crystallize` and `refine` in `kernel.ts` call the injected `ModelRuntime` port, validate typed proposals with Zod, challenge the candidate domain, and then merge only legal deltas. Patch operations record model-reported assumptions as model-source constraints so they stay inspectable. Draft and repair replies may be raw unified-diff text — `raw-diff.ts` extracts the self-delimiting diff and trailing `Assumption:` lines — or the JSON envelope; both shapes pass the same schema validation. The deterministic domain and challenge merges (`applyDomainProposal`, `applyChallenge`) are shared with `augmentd`'s tool-driven protocol seams, so model-driven and tool-driven proposals enforce identical controller authority. The standalone OpenCode CLI adapter lives with the TUI host in `src/tui/opencode-runtime.ts`; it is not part of the pure core.
+Model runtimes execute outside this module. `crystallize` and `refine` in `kernel.ts` call the injected `ModelRuntime` port, validate typed proposals with Zod, challenge the candidate domain, and then merge only legal deltas. `routeMessageWithModel` classifies one node-linked user message with a single bounded call and returns the validated verdict (`develop`, `explain`, or `offer-options`) without touching state — the host stays the sole decider of the follow-up. Patch operations record model-reported assumptions as model-source constraints so they stay inspectable. Draft and repair replies may be raw unified-diff text — `raw-diff.ts` extracts the self-delimiting diff and trailing `Assumption:` lines — or the JSON envelope; both shapes pass the same schema validation. The deterministic domain and challenge merges (`applyDomainProposal`, `applyChallenge`) are shared with `augmentd`'s tool-driven protocol seams, so model-driven and tool-driven proposals enforce identical controller authority. The standalone OpenCode CLI adapter lives with the TUI host in `src/tui/opencode-runtime.ts`; it is not part of the pure core.
 
 ## Public surface
 
@@ -33,7 +33,7 @@ Model runtimes execute outside this module. `crystallize` and `refine` in `kerne
 - `state.ts`: pure task operations and the filesystem-shaped `planTree` projection.
 - `schemas.ts`: Zod contracts for model proposals.
 - `raw-diff.ts`: raw unified-diff reply parsing for draft and repair operations.
-- `kernel.ts`: bounded model-driven `crystallize` and `refine` operations plus the shared domain/challenge proposal merges.
+- `kernel.ts`: bounded model-driven `crystallize` and `refine` operations, the pure `routeMessageWithModel` message classifier, and the shared domain/challenge proposal merges.
 
 ## Invariants
 

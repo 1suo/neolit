@@ -10,7 +10,7 @@ import { preflightPatches } from "../src/tui/apply.js";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
-import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, wrappedRows } from "../src/tui/detail.js";
+import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, sharedContentRows, subtreeProgress, theme, wrappedRows } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
@@ -771,6 +771,53 @@ describe("augment TUI controller", () => {
     expect(entryState(controller.snapshot().task, srcRow).suffix).toBe("+2 −1");
   });
 
+  it("aggregates crystallize and develop progress on directory and root rows", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    const rootRow = () => controller.snapshot().rows.find((row) => row.id === "entry:.")!;
+
+    // Fresh task: no approach stage has generated anything under the root.
+    expect(subtreeProgress(controller.snapshot().task, rootRow().entry)).toMatchObject({ crystallized: false, developed: false, landed: false, drafted: 0, total: 0 });
+    expect(entryState(controller.snapshot().task, rootRow())).toMatchObject({ indicator: "○", suffix: "" });
+
+    await controller.crystallize();
+    // Approaches landed (the singleton was adopted) but nothing is drafted.
+    expect(entryState(controller.snapshot().task, rootRow())).toMatchObject({ indicator: "◐", suffix: "" });
+
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+    // One of the two file targets is drafted: the suffix shows 1/2.
+    expect(subtreeProgress(controller.snapshot().task, rootRow().entry)).toMatchObject({ crystallized: true, developed: false, drafted: 1, total: 2 });
+    expect(entryState(controller.snapshot().task, rootRow())).toMatchObject({ indicator: "◐", suffix: "1/2" });
+
+    controller.select("entry:test/auth/retry.test.ts");
+    await controller.draftPatch();
+    // Every file drafted: the reducers' ready propagation makes the whole
+    // subtree developed, and the row answers "done" in success color.
+    const done = entryState(controller.snapshot().task, rootRow());
+    expect(done).toMatchObject({ indicator: "●" });
+    expect(done.color).toBe(theme.success);
+
+    // A directory with an open approach choice stays actionable over progress.
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "generate-domain") {
+          return { value: { candidates: [
+            { label: "Fixed retry count", rationale: "smallest change", confidence: 78, touchedPaths: ["src/auth/session.ts"] },
+            { label: "Deadline cutoff", rationale: "honor deadlines", confidence: 64, touchedPaths: ["src/auth/session.ts"] },
+          ] } };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const choosing = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await choosing.start("bounded retries", "commit:1");
+    await choosing.crystallize();
+    const choosingRoot = choosing.snapshot().rows.find((row) => row.id === "entry:.")!;
+    expect(entryState(choosing.snapshot().task, choosingRoot)).toMatchObject({ indicator: "◇", suffix: "2·78%" });
+  });
+
   it("projects candidates and patches under their filesystem entries", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");
@@ -1146,6 +1193,17 @@ describe("adaptive TUI layout", () => {
     // medium frame too short to stack collapses to the same shared pane.
     expect(adaptiveLayout(60, 12, "idle")).toMatchObject({ treeRows: 1, diffRows: 0, descriptionRows: 0, sessionRows: 0 });
     expect(adaptiveLayout(100, 14, "idle")).toMatchObject({ split: false, treeRows: 3, diffRows: 3, descriptionRows: 3 });
+  });
+
+  it("gives the shared content pane the whole stacked column when no diff exists", () => {
+    const medium = adaptiveLayout(100, 40, "idle");
+    expect(medium.split).toBe(true);
+    expect(sharedContentRows(medium)).toBe(medium.diffRows + medium.descriptionRows);
+    const collapsed = adaptiveLayout(100, 14, "idle");
+    expect(collapsed.split).toBe(false);
+    expect(sharedContentRows(collapsed)).toBe(collapsed.diffRows);
+    const narrow = adaptiveLayout(60, 40, "idle");
+    expect(sharedContentRows(narrow)).toBe(narrow.descriptionRows);
   });
 
   it("splits the detail content into description and diff sections", async () => {

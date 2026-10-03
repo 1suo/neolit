@@ -548,6 +548,8 @@ function operationContract(request: ModelCallRequest): string {
       return `{"patches":[{"path":"exact target path","patch":"unified diff text"}]} (one entry for EVERY target listed in this prompt, in that order — never omit one, never invent an extra; each patch is a single-file unified diff for exactly its own path with the same rules as a single draft: only the hunks its node reason requires, at most 3 context lines around each change, never echo file content, no prose; keep the ENTIRE reply short and close the JSON object; answer in one shot without reading files or running tools)`;
     case "explain-project":
       return `{"topic":"short topic","entries":[{"path":"src/example.ts","role":"primary|supporting|context","summary":"one sentence","detail":"what it is and what it does","confidence":75}]} (1-64 concrete repository paths)`;
+    case "route-message":
+      return `{"intent":"develop|explain|offer-options","topic":"short restatement of the message","options":[{"label":"short interpretation","description":"one sentence of what it would mean"}],"focusPath":"src/example.ts"} (develop: the message asks for work — a task or change on the selected path; explain: it asks how something works or why it is like it is; offer-options: it is ambiguous or names several directions — offer 2-4 materially distinct interpretations; options MUST be empty unless intent is offer-options; focusPath is optional, only when the message clearly binds to one path)`;
   }
 }
 

@@ -30,9 +30,18 @@ Indicators (tree rows carry the indicator and color only; extra glyphs are count
 ⠋ working (animated)   × failed            # marked restriction
 ? explained (count)     ! needs refresh     ✓ applied (n/m)
 + ~ - drafted new/modified/deleted  Δ several drafts  +n −n line changes (folders sum)
-~ planned               ● ready             ◇ choice (n·best%)   ◆ chosen (conf%)
+◇ choice (n·best%)      ◆ chosen (conf%)    ● ready / subtree developed
+○ subtree untouched     ◐ subtree underway (drafted/total)
 ```
-text
+
+Directory and root rows answer "is everything below crystallized and
+developed?" with one aggregate glyph: `○` nothing has approaches or drafts
+yet, `◐` work has landed but files remain (the suffix counts drafted file
+targets), `●` every stage below is done (the reducers' own readiness
+propagation, with the change summary as suffix). An open approach choice
+(`◇`) stays above the aggregate — it is the actionable state.
+
+```text
 ⠋ working     an operation is running on this path (animated while busy)
 × failed      the last operation on this path failed; the preview shows why
 ◇ possible   path appears in a possible approach
@@ -43,15 +52,14 @@ text
 - delete     drafted deletion
 ✓ applied    drafted patch was applied to the working tree; nothing is committed
 ! stale      repository basis changed
-# locked     path cannot change in this run
-○ allowed    allowlist entry; while any exist, only allowed paths may change
+# locked     path cannot change in this run (allow-polarity marks use the same glyph, accented)
 ● ready      path has its drafted patch complete
 ? explained  path is relevant to the current explanation topic
 ```
 
-The content panes carry exactly two sections, and one rule holds everywhere: the diff window shows **CHANGES** where a drafted patch exists, and that space shows **DESCRIPTION** otherwise — side by side on wide terminals, stacked at a fixed 50/50 on medium ones, one shared pane on the narrowest. **DESCRIPTION** holds why the selected path changes: node reasons, a folder's planned children with their per-path reasons (unchanged entries omitted), open approach choices, explanations, and messages. **CHANGES** holds the actual drafted patches — the aggregated change summary plus the exact diffs (complete for files, previews for folders) with `applied` marks. When neither section has anything to show, the pane shows contextual **KEYS** suggestions instead (`[N]`, `1-7`, `[D]`/`[A]`). Approaches appear only while a choice is still open on the node; once an approach is chosen they are history and never rendered. The pane scrolls with `j`/`k` while it is focused (`Tab`), and long lines wrap natively through Ink. Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
+The content panes carry exactly two sections, and one rule holds everywhere: the diff window shows **CHANGES** where a drafted patch exists, and that space shows **DESCRIPTION** otherwise — side by side on wide terminals, stacked at a fixed 50/50 on medium ones, one shared pane on the narrowest. When no diff exists the shared pane owns the whole content column (both stacked halves), so a lone description is never squeezed into one half. **DESCRIPTION** holds why the selected path changes: node reasons, a folder's planned children with their per-path reasons (unchanged entries omitted), open approach choices, explanations, and messages. **CHANGES** holds the actual drafted patches — the aggregated change summary plus the exact diffs (complete for files, previews for folders) with `applied` marks. When neither section has anything to show, the pane shows contextual **KEYS** suggestions instead (`[N]`, `1-7`, `[D]`/`[A]`). Approaches appear only while a choice is still open on the node; once an approach is chosen they are history and never rendered. The pane scrolls with `j`/`k` while it is focused (`Tab`), and long lines wrap natively through Ink. Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
 
-Press `E` to start an explanation task. Explanation tasks highlight related files and folders with `?` marks and show their role, summary, and confidence in the selected-path pane. Explanation tasks do not create approaches or patches.
+Explanation tasks highlight related files and folders with `?` marks and show their role, summary, and confidence in the selected-path pane; they create no approaches or patches. An explanation request arrives the same way everything else does — as a routed message: there is no separate explain mode, and asking "how does X work?" on any path explains around that path.
 
 While an operation runs, its target path animates in the tree (`⠋` with the lowercased operation name) and the preview leads with the live operation and its target path. A failed operation marks its path with `× failed`; the preview shows the failed operation and the first line of its error, and the mark clears when the same path succeeds on retry.
 
@@ -69,7 +77,8 @@ After a task is entered and a model is configured, the TUI automatically generat
    draft every undrafted file under the selected path, stopping only where an
    approach choice (1-7) needs a human
 5. press D on any single file to draft just its patch
-6. press Enter on any path to attach a message/constraint
+6. press Enter on any path to send it a message — one bounded routing call
+   classifies the message and continues the right flow
 ```
 
 File, hunk, and virtual targets always draft — their lifecycle state never reroutes them into refinement or an approach chooser.
@@ -78,9 +87,8 @@ File, hunk, and virtual targets always draft — their lifecycle state never rer
 
 ```text
 N  start a new change plan
-E  explain — with an active task it explains the selected path; without one it starts a repository-wide explanation task
-Enter  the universal prompt for the selected path — on a file it saves the message and regenerates that file's patch directly (drafted or repaired, never approach options); on the root or a folder it regenerates approaches for that subtree; submitting empty rethinks the same way; folders holding drafted files refuse the auto-rethink and point at [O] instead
-1-7  choose the numbered approach
+Enter  the single message entry point for the selected path. Without an active task the first message becomes the objective of a new change plan. With one, a bounded message/route call classifies it: a task message runs the develop flow for the subtree (on a file it saves the message and regenerates that file's patch directly — drafted or repaired, never approach options; on the root or a folder it regenerates approaches); an explanation message explains around the selected path; an ambiguous one offers 2-4 interpretations, rendered under the legend and picked with the number keys (the chosen label continues exactly as if it were the message). Submitting empty rethinks the selected path; folders holding drafted files refuse the auto-rethink and point at [O] instead
+1-7  choose the numbered approach, or the numbered interpretation of an offered route
 D  develop the selected path and everything under it — a chosen approach expands into files, then every undrafted file below is drafted in ONE batched model call (all files of the subtree in a single prompt; the whole batch is validated all-or-nothing before anything lands); when the batch or a single file fails, files fall back to individual drafts — one file's failure never stops the rest, failures are marked × and summarized ("Drafted 6/9 — press D to retry"). A file, hunk, or virtual target always drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree
 C  commit exactly the paths this session applied (pathspec commit; unrelated dirty or staged files stay untouched)

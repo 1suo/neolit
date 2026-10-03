@@ -1,6 +1,9 @@
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
 import { candidatesForEntry, entryHasPlan, type PlannedTreeRow } from "./controller.js";
 
+/** Node kinds that develop by drafting their own patch. */
+const FILE_TARGET_KINDS = ["file", "hunk", "virtual"];
+
 /**
  * Pure view model for the TUI: theme, per-entry state derivation, the
  * two-section detail content, and the frame layout budget. No Ink, no
@@ -109,6 +112,39 @@ export function diffChangeCounts(diffs: PlannedDiff[]): { added: number; removed
   return { added, removed };
 }
 
+export interface SubtreeProgress {
+  /** Every approach stage under the entry has generated its candidates. */
+  crystallized: boolean;
+  /** Everything under the entry is drafted — the reducers' own `ready` propagation. */
+  developed: boolean;
+  /** Some approaches or drafts exist under the entry. */
+  landed: boolean;
+  drafted: number;
+  total: number;
+}
+
+/**
+ * Aggregated lifecycle of a directory or root row: `crystallized` reads the
+ * approach nodes' statuses, `developed` trusts the state machine's upward
+ * `ready` propagation (a node is ready only when everything below it is
+ * drafted), and `drafted`/`total` count the file-target nodes the suffix
+ * shows. Entries carry descendant node ids (controller aggregation), so this
+ * stays a pure read over the task.
+ */
+export function subtreeProgress(task: PlanTask | undefined, entry: PlannedTreeRow["entry"]): SubtreeProgress | undefined {
+  const nodes = entry.nodeIds.map((id) => task?.nodes[id]).filter(Boolean) as PlanNode[];
+  if (!nodes.length) return undefined;
+  const approachNodes = nodes.filter((node) => node.kind === "root" || node.kind === "dir");
+  const fileTargets = nodes.filter((node) => FILE_TARGET_KINDS.includes(node.kind));
+  return {
+    crystallized: approachNodes.every((node) => node.status !== "unresolved"),
+    developed: nodes.every((node) => node.status === "ready"),
+    landed: nodes.some((node) => node.candidateIds.length > 0 || node.diffIds.length > 0),
+    drafted: fileTargets.filter((node) => node.diffIds.length > 0).length,
+    total: fileTargets.length,
+  };
+}
+
 export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view: RowView = {}): { indicator: string; suffix: string; color: string } {
   const { pendingMarks = [], pendingMode = "lock", appliedDiffIds = [], live } = view;
   const entry = row.entry;
@@ -136,6 +172,23 @@ export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view
   }
   if (blocked) return { indicator: "!", suffix: "", color: theme.error };
   if (applied.length) return { indicator: "✓", suffix: applied.length < diffs.length ? `${applied.length}/${diffs.length}` : changeSuffix, color: theme.success };
+  // Directory and root rows answer "is everything here crystallized and
+  // developed?" with one aggregate glyph: an open approach choice stays the
+  // most actionable state, then ○ nothing generated · ◐ underway · ● done.
+  // A complete subtree keeps the diff summary as its suffix; an underway one
+  // shows its drafted-file count instead.
+  if ((entry.kind === "dir" || entry.kind === "root") && entry.nodeIds.length) {
+    if (possible.length) {
+      const best = Math.max(...possible.map((candidate) => candidate.confidence));
+      return { indicator: "◇", suffix: `${possible.length}·${best}%`, color: theme.warning };
+    }
+    const progress = subtreeProgress(task, entry);
+    if (progress) {
+      if (progress.developed) return { indicator: "●", suffix: changeSuffix || (diffs.length > 1 ? `${diffs.length}` : ""), color: theme.success };
+      if (progress.landed) return { indicator: "◐", suffix: progress.total ? `${progress.drafted}/${progress.total}` : "", color: theme.secondary };
+      return { indicator: "○", suffix: "", color: theme.warning };
+    }
+  }
   if (diffs.length) {
     const single = diffs.length === 1;
     return { indicator: single ? diffIndicator(diffs[0]!.kind) : "Δ", suffix: changeSuffix || (single ? "" : `${diffs.length}`), color: diffs.some((diff) => diff.kind === "delete") ? theme.error : theme.success };
@@ -450,6 +503,17 @@ export interface AdaptiveLayout {
    * is too short to split.
    */
   split: boolean;
+}
+
+/**
+ * Inner rows of the one shared content pane — the pane the diff-or-description
+ * rule uses when no diff exists to split around. In a split medium frame it
+ * owns the whole stacked column (both halves); in narrow it owns only the
+ * bottom half under the tree.
+ */
+export function sharedContentRows(layout: AdaptiveLayout): number {
+  if (layout.mode === "narrow") return layout.descriptionRows;
+  return layout.split ? layout.diffRows + layout.descriptionRows : layout.diffRows;
 }
 
 /**
