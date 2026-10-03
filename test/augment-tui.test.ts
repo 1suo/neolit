@@ -13,6 +13,7 @@ import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
 import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, sharedContentRows, subtreeProgress, theme, wrappedRows, wrapLegend, type LegendSegment } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
+import type { SessionStreamLine, ToolSessionDriver } from "../src/tui/tool-session.js";
 
 const temporaryFiles: string[] = [];
 const temporaryDirectories: string[] = [];
@@ -278,11 +279,17 @@ describe("augment TUI controller", () => {
       const first = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
       await first.start("bounded retries", "commit:1");
       await first.crystallize();
+      // Stream a session line through the tool-session seam; it must travel
+      // with the persisted task and come back on resume.
+      const driver: { onLine?: (line: SessionStreamLine) => void } = {};
+      first.useToolSession(driver as ToolSessionDriver);
+      driver.onLine!({ kind: "step", text: "agent stepped here" });
       const second = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
       const snapshot = second.snapshot();
       expect(snapshot.message).toContain("Resumed task: bounded retries");
       expect(snapshot.task?.objective).toBe("bounded retries");
       expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
+      expect(snapshot.sessionLines.map((line) => line.text)).toEqual(["agent stepped here"]);
       expect(JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-tasks.json"), "utf8"))).toHaveLength(1);
       await second.develop();
       expect(second.snapshot().error).toBeUndefined();

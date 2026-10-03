@@ -82,6 +82,8 @@ export interface StoredTask {
   directory?: string;
   task: PlanTask;
   appliedDiffIds: string[];
+  /** Bounded tail of the agent session stream, restored on resume. */
+  sessionLines?: SessionStreamLine[];
   savedAt: number;
 }
 
@@ -311,6 +313,9 @@ export class AugmentTuiController {
       if (stored) {
         this.task = stored.task;
         this.appliedDiffIds = new Set(stored.appliedDiffIds);
+        // The session stream tail travels with the task, so a restart (or a
+        // host respawn) shows what the agent was doing instead of an empty pane.
+        this.sessionLines = [...(stored.sessionLines ?? [])].slice(-MAX_SESSION_LINES);
         void this.server.handle({ jsonrpc: "2.0", id: 0, method: "task/restore", params: { task: stored.task } }).catch(() => {
           // If the payload is somehow rejected the first operation will surface
           // the server's own error; the local copy keeps the tree visible.
@@ -1388,7 +1393,7 @@ export class AugmentTuiController {
         .filter((entry) => entry.directory !== undefined && path.resolve(entry.directory) === directoryKey && entry.task.id !== this.task!.id)
         .sort((left, right) => right.savedAt - left.savedAt)
         .slice(0, MAX_STORED_TASKS - 1);
-      saveStoredTasks([...others, ...mine, { directory: this.directory, task: this.task, appliedDiffIds: [...this.appliedDiffIds], savedAt: Date.now() }]);
+      saveStoredTasks([...others, ...mine, { directory: this.directory, task: this.task, appliedDiffIds: [...this.appliedDiffIds], sessionLines: [...this.sessionLines].slice(-MAX_SESSION_LINES), savedAt: Date.now() }]);
     }
     this.notify();
   }
