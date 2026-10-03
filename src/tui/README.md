@@ -4,7 +4,9 @@
 
 ## Layout
 
-The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place. `F` folds a directory shut (`▸`, subtree hidden) and `H` filters the tree down to related paths — planned entries, restriction-plain marks, and the ancestors that connect them (a `[RELATED]` chip in the header marks the active filter; the full tree is one keypress away). While a tool session runs, a bounded **SESSION** pane under the tree streams the agent's live work — steps, tool calls, and retries — as it happens; tool-call lines carry the call's naming argument (`✓ execute · git status --short`, `✓ read · src/tui/controller.ts`). The pane is view-only and `V` toggles it (cramped frames drop it automatically).
+The frame adapts its arrangement to the terminal width — never to content. Wide terminals (132 columns and up) get three columns: tree, diff/session window, description. Medium ones (80–131) get two 50/50 columns with the description stacked under the diff window at a fixed half. The smallest (under 80 columns) get a single column with the tree over one content pane, both halves fixed at 50/50. Every pane size derives from the terminal size alone, so a repaint after a content change never moves a split.
+
+The left pane is the complete repository file tree with plan state integrated into it. Repository-only paths remain visible but muted and unlabeled; planned and drafted paths are marked in place. `F` folds a directory shut (`▸`, subtree hidden) and `H` filters the tree down to related paths — planned entries, restriction-plain marks, and the ancestors that connect them (a `[RELATED]` chip in the header marks the active filter; the full tree is one keypress away). While a tool session runs, a bounded **SESSION** pane (under the tree on two columns, under the diff window on three) streams the agent's live work — steps, tool calls, and retries — as it happens; tool-call lines carry the call's naming argument (`✓ execute · git status --short`, `✓ read · src/tui/controller.ts`). The pane is view-only and `V` toggles it (cramped or single-column frames drop it automatically).
 
 ```text
 FILES
@@ -47,13 +49,13 @@ text
 ? explained  path is relevant to the current explanation topic
 ```
 
-The right pane carries exactly two content sections. **DESCRIPTION** holds why the selected path changes: node reasons, a folder's planned children with their per-path reasons (unchanged entries omitted), open approach choices, explanations, and messages. **CHANGES** holds the actual drafted patches — the aggregated change summary plus the exact diffs (complete for files, previews for folders) with `applied` marks. When neither section has anything to show, the pane shows contextual **KEYS** suggestions instead (`[N]`, `1-7`, `[D]`/`[A]`). Approaches appear only while a choice is still open on the node; once an approach is chosen they are history and never rendered. The pane scrolls with `j`/`k` while it is focused (`Tab`), and long lines wrap natively through Ink. Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
+The content panes carry exactly two sections, and one rule holds everywhere: the diff window shows **CHANGES** where a drafted patch exists, and that space shows **DESCRIPTION** otherwise — side by side on wide terminals, stacked at a fixed 50/50 on medium ones, one shared pane on the narrowest. **DESCRIPTION** holds why the selected path changes: node reasons, a folder's planned children with their per-path reasons (unchanged entries omitted), open approach choices, explanations, and messages. **CHANGES** holds the actual drafted patches — the aggregated change summary plus the exact diffs (complete for files, previews for folders) with `applied` marks. When neither section has anything to show, the pane shows contextual **KEYS** suggestions instead (`[N]`, `1-7`, `[D]`/`[A]`). Approaches appear only while a choice is still open on the node; once an approach is chosen they are history and never rendered. The pane scrolls with `j`/`k` while it is focused (`Tab`), and long lines wrap natively through Ink. Candidate confidence is a model estimate for presentation only; the controller never selects an approach from it.
 
 Press `E` to start an explanation task. Explanation tasks highlight related files and folders with `?` marks and show their role, summary, and confidence in the selected-path pane. Explanation tasks do not create approaches or patches.
 
 While an operation runs, its target path animates in the tree (`⠋` with the lowercased operation name) and the preview leads with the live operation and its target path. A failed operation marks its path with `× failed`; the preview shows the failed operation and the first line of its error, and the mark clears when the same path succeeds on retry.
 
-Every frame derives its vertical budget from the exported `frameLayout()`: fixed chrome (root padding, header, legend, the permanent three-row message panel, pane borders and titles) is subtracted from the terminal height first, so a frame never exceeds the viewport and repaints never clear and scroll the terminal; below the panel's own chrome the panes degrade to one row. The message panel is always present — it shows the live operation with its spinner while busy, the first line of the last error in red, the standing message otherwise, and the input line while typing — so the frame's chrome height never changes between modes. Preview lines wrap natively through Ink; the scroll window counts logical lines.
+Every frame derives its arrangement and pane budgets from the exported `adaptiveLayout()`: fixed chrome (root padding, header, legend, the permanent three-row message panel, pane borders and titles) is subtracted from the terminal height first, so a frame never exceeds the viewport and repaints never clear and scroll the terminal; below the panel's own chrome the panes degrade to one row and the narrowest frames keep only the tree. The message panel is always present — it shows the live operation with its spinner while busy, the first line of the last error in red, the standing message otherwise, and the input line while typing — so the frame's chrome height never changes between modes. Preview lines wrap natively through Ink; the scroll window counts logical lines.
 
 ## Flow
 
@@ -166,15 +168,15 @@ AUGMENT_TUI_NO_MODEL=1
 
 ## Architecture
 
-`controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `apply.ts` owns the host-side apply and commit transactions (sequential worktree preflight, pathspec commit). `detail.ts` is the pure view model — theme, per-entry state, the two-section pane content, and the frame budget — with no Ink or React. `augment.tsx` renders the controller snapshot through it. The develop policy itself is not the TUI's: `nextDevelopmentStep` in `src/augment/kernel.ts` decides it and the controller dispatches the result. This keeps interaction testable separately from rendering, and rendering from lifecycle.
+`controller.ts` is UI-independent: it drives `AugmentServer`, computes selectable rows, and exposes a snapshot. `opencode-runtime.ts` is the standalone host adapter. `apply.ts` owns the host-side apply and commit transactions (sequential worktree preflight, pathspec commit). `detail.ts` is the pure view model — theme, per-entry state, the two content sections (`detailSections()`), and the width-aware arrangement (`adaptiveLayout()` over the vertical `frameLayout()` budget) — with no Ink or React. `augment.tsx` renders the controller snapshot through it. The develop policy itself is not the TUI's: `nextDevelopmentStep` in `src/augment/kernel.ts` decides it and the controller dispatches the result. This keeps interaction testable separately from rendering, and rendering from lifecycle.
 
 Frames paint incrementally: `tuiRenderOptions()` in `augment.tsx` enables Ink's
 `incrementalRendering`, so a repaint rewrites only the lines whose content changed
 instead of erasing the previous frame and rewriting it whole, and `alternateScreen`
-keeps the plan in a dedicated terminal buffer. `frameLayout` keeps every frame inside
+keeps the plan in a dedicated terminal buffer. `adaptiveLayout` keeps every frame inside
 the viewport: the root box is pinned to the window height, and the fixed chrome (root
 padding 2, header 1, legend 2, status line 1 or the bordered input box 3) plus each
-pane's borders and labels (3) is subtracted before the file tree and detail pane get
+pane's borders and labels (3) is subtracted before the tree, diff, and description panes get
 their row limits. A frame taller than the viewport would still make Ink clear and scroll the terminal.
 
 ## Validation

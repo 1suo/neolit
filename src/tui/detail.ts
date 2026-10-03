@@ -336,6 +336,26 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
 }
 
 
+/**
+ * The detail content split into its two panes: every line up to the CHANGES
+ * label is `description`; the CHANGES label and every line after it is
+ * `diff`. A selection without a drafted patch yields an empty `diff`, so
+ * where no diff exists the same space falls back to the description —
+ * diff where it exists, description everywhere else.
+ */
+export interface DetailSections {
+  description: DetailLine[];
+  diff: DetailLine[];
+}
+
+export function detailSections(task: PlanTask | undefined, row: PlannedTreeRow | undefined, view: PaneView = {}): DetailSections {
+  const lines = detailLines(task, row, view);
+  const changes = lines.findIndex((line) => line.text === "CHANGES");
+  if (changes === -1) return { description: lines, diff: [] };
+  return { description: lines.slice(0, changes), diff: lines.slice(changes) };
+}
+
+
 const FRAME_PADDING_ROWS = 2;
 const HEADER_ROWS = 1;
 const LEGEND_ROWS = 2;
@@ -380,6 +400,93 @@ export function wrappedRows(text: string, width: number): number {
     column = remaining % width === 0 ? width : remaining % width;
   }
   return rows;
+}
+
+export type LayoutMode = "wide" | "medium" | "narrow";
+
+/** Smallest terminal width that still fits all three columns. */
+export const WIDE_MIN_COLUMNS = 132;
+/** Smallest terminal width that fits the tree beside the stacked content column. */
+export const MEDIUM_MIN_COLUMNS = 80;
+const UNKNOWN_WINDOW_COLUMNS = MEDIUM_MIN_COLUMNS;
+
+function normalizedColumns(columns: number | undefined): number {
+  return typeof columns === "number" && Number.isFinite(columns) && columns > 0 ? Math.floor(columns) : UNKNOWN_WINDOW_COLUMNS;
+}
+
+/**
+ * The pane arrangement, derived from the terminal width alone — never from
+ * pane content. Wide terminals get three columns (tree, diff/session,
+ * description); smaller ones two columns with the description stacked under
+ * the diff window; the smallest a single column with the content pane under
+ * the tree.
+ */
+export function layoutMode(columns: number | undefined): LayoutMode {
+  const width = normalizedColumns(columns);
+  if (width >= WIDE_MIN_COLUMNS) return "wide";
+  if (width >= MEDIUM_MIN_COLUMNS) return "medium";
+  return "narrow";
+}
+
+export interface AdaptiveLayout {
+  /** Active arrangement. */
+  mode: LayoutMode;
+  frameRows: number;
+  /** Tree pane: the left column in every arrangement. */
+  treeColumns: number;
+  treeRows: number;
+  /** Diff pane: middle column when wide, top of the content stack otherwise. */
+  diffColumns: number;
+  diffRows: number;
+  /** Description pane: right column when wide, bottom of the content stack otherwise. */
+  descriptionColumns: number;
+  descriptionRows: number;
+  /** Bounded session slice under the tree (medium) or the diff (wide); 0 when hidden or cramped. */
+  sessionRows: number;
+  /**
+   * Whether diff and description are separate panes. When false both budgets
+   * describe one shared pane that shows the diff when one exists and the
+   * description otherwise — always in narrow, and in medium when the stack
+   * is too short to split.
+   */
+  split: boolean;
+}
+
+/**
+ * Arrangement and pane budgets for one frame. Everything derives from the
+ * terminal size alone, so a repaint after a content change never moves a
+ * split: the 50/50 halves stay 50/50 no matter what the panes hold.
+ * `frameLayout` keeps owning the vertical chrome math; this spreads its
+ * budget across the panes of the active arrangement.
+ */
+export function adaptiveLayout(columns: number | undefined, rows: number | undefined, mode: InputMode, sessionVisible = false): AdaptiveLayout {
+  const arrangement = layoutMode(columns);
+  const width = normalizedColumns(columns);
+  const base = frameLayout(rows, mode, false);
+  const paneRows = base.treeRows;
+  const sessionRows = sessionVisible && paneRows >= 10 ? Math.min(8, Math.max(2, Math.floor(paneRows * 0.3))) : 0;
+  const underSession = (contentRows: number) => Math.max(MIN_PANE_ROWS, contentRows - sessionRows - (sessionRows ? PANE_FRAME_ROWS : 0));
+  // Rows two stacked panes can share once their borders are paid for.
+  const stackRows = Math.max(0, paneRows - PANE_FRAME_ROWS);
+  const halves = { top: Math.floor(stackRows / 2), bottom: stackRows - Math.floor(stackRows / 2) };
+
+  if (arrangement === "wide") {
+    // Three equal columns; the session stream shares the middle one.
+    const third = Math.floor(width / 3);
+    return { mode: arrangement, frameRows: base.frameRows, treeColumns: third, treeRows: paneRows, diffColumns: third, diffRows: underSession(paneRows), descriptionColumns: width - 2 * third, descriptionRows: paneRows, sessionRows, split: true };
+  }
+  if (arrangement === "medium") {
+    // Two 50/50 columns with the description stacked under the diff window;
+    // the session stream stays under the tree. Too short to stack, the
+    // right column becomes one pane following the diff-where-it-exists rule.
+    const half = Math.floor(width / 2);
+    if (stackRows < 2) return { mode: arrangement, frameRows: base.frameRows, treeColumns: half, treeRows: paneRows, diffColumns: width - half, diffRows: paneRows, descriptionColumns: 0, descriptionRows: paneRows, sessionRows, split: false };
+    return { mode: arrangement, frameRows: base.frameRows, treeColumns: half, treeRows: underSession(paneRows), diffColumns: width - half, diffRows: halves.top, descriptionColumns: width - half, descriptionRows: halves.bottom, sessionRows, split: true };
+  }
+  // Narrow: one column, tree over a single content pane, both halves fixed
+  // at 50/50; below the stacking minimum the tree keeps the whole column.
+  if (stackRows < 2) return { mode: "narrow", frameRows: base.frameRows, treeColumns: width, treeRows: paneRows, diffColumns: 0, diffRows: 0, descriptionColumns: 0, descriptionRows: 0, sessionRows: 0, split: false };
+  return { mode: "narrow", frameRows: base.frameRows, treeColumns: width, treeRows: halves.top, diffColumns: width, diffRows: halves.bottom, descriptionColumns: 0, descriptionRows: halves.bottom, sessionRows: 0, split: false };
 }
 
 /**

@@ -10,7 +10,7 @@ import { preflightPatches } from "../src/tui/apply.js";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
-import { detailLines, entryState, frameLayout, wrappedRows } from "../src/tui/detail.js";
+import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, wrappedRows } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
@@ -1096,6 +1096,77 @@ describe("augment TUI rendering", () => {
       expect(snapshot.rows.length).toBeGreaterThan(idle.treeRows);
       expect(IDLE_PANE_CHROME_ROWS + idle.detailRows).toBeLessThanOrEqual(windowRows);
     }
+  });
+});
+
+describe("adaptive TUI layout", () => {
+  it("selects the arrangement from the terminal width alone", () => {
+    expect(layoutMode(200)).toBe("wide");
+    expect(layoutMode(132)).toBe("wide");
+    expect(layoutMode(131)).toBe("medium");
+    expect(layoutMode(80)).toBe("medium");
+    expect(layoutMode(79)).toBe("narrow");
+    expect(layoutMode(undefined)).toBe("medium");
+  });
+
+  it("gives wide frames three equal full-height columns", () => {
+    const layout = adaptiveLayout(180, 40, "idle");
+    expect(layout).toMatchObject({ mode: "wide", split: true, treeColumns: 60, diffColumns: 60, descriptionColumns: 60, treeRows: 29, diffRows: 29, descriptionRows: 29, sessionRows: 0 });
+  });
+
+  it("stacks description under the diff window at a fixed 50/50 on medium frames", () => {
+    const layout = adaptiveLayout(100, 40, "idle");
+    expect(layout.mode).toBe("medium");
+    expect(layout.split).toBe(true);
+    expect(layout.treeColumns).toBe(50);
+    expect(layout.diffColumns).toBe(50);
+    expect(layout.descriptionColumns).toBe(50);
+    expect(layout.treeRows).toBe(29);
+    // The stack pays the second pane borders, then halves exactly; the
+    // split is a pure function of terminal size, never of pane content.
+    expect(layout.diffRows + layout.descriptionRows).toBe(26);
+    expect(Math.abs(layout.diffRows - layout.descriptionRows)).toBeLessThanOrEqual(1);
+    expect(adaptiveLayout(100, 40, "objective")).toEqual(layout);
+    expect(adaptiveLayout(100, 41, "idle")).not.toEqual(layout);
+  });
+
+  it("keeps the session stream a bounded slice that never starves its column", () => {
+    const shared = adaptiveLayout(100, 40, "idle", true);
+    expect(shared.sessionRows).toBeGreaterThanOrEqual(2);
+    expect(shared.sessionRows).toBeLessThanOrEqual(8);
+    expect(shared.treeRows + shared.sessionRows + 3).toBe(29);
+    expect(adaptiveLayout(100, 14, "idle", true).sessionRows).toBe(0);
+    expect(adaptiveLayout(180, 40, "idle", true).sessionRows).toBe(8);
+  });
+
+  it("gives narrow frames one column of two 50/50 rows over one shared pane", () => {
+    const layout = adaptiveLayout(60, 40, "idle");
+    expect(layout).toMatchObject({ mode: "narrow", split: false, treeColumns: 60, diffColumns: 60, descriptionColumns: 0, treeRows: 13, diffRows: 13, descriptionRows: 13, sessionRows: 0 });
+    // Below the stacking minimum the tree keeps the whole column, and a
+    // medium frame too short to stack collapses to the same shared pane.
+    expect(adaptiveLayout(60, 12, "idle")).toMatchObject({ treeRows: 1, diffRows: 0, descriptionRows: 0, sessionRows: 0 });
+    expect(adaptiveLayout(100, 14, "idle")).toMatchObject({ split: false, treeRows: 3, diffRows: 3, descriptionRows: 3 });
+  });
+
+  it("splits the detail content into description and diff sections", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    await controller.refine();
+    controller.select("entry:src/auth/session.ts");
+    await controller.draftPatch();
+
+    const snapshot = controller.snapshot();
+    const draftedRow = snapshot.rows.find((item) => item.id === "entry:src/auth/session.ts");
+    const drafted = detailSections(snapshot.task, draftedRow);
+    expect(drafted.diff.map((line) => line.text)).toContain("CHANGES");
+    expect(drafted.diff.some((line) => line.text.includes("--- a/src/auth/session.ts"))).toBe(true);
+    expect(drafted.description.map((line) => line.text)).toContain("DESCRIPTION");
+    expect(drafted.description.some((line) => line.text.includes("--- a/"))).toBe(false);
+
+    const undrafted = detailSections(snapshot.task, snapshot.rows.find((item) => item.id === "entry:test/auth/retry.test.ts"));
+    expect(undrafted.diff).toEqual([]);
+    expect(undrafted.description.length).toBeGreaterThan(0);
   });
 });
 
