@@ -215,4 +215,22 @@ describe("augmentd protocol", () => {
     const crystallize = await server.handle(request(3, "crystallize", { taskId: task.id, expectedRevision: task.revision, nodeId: task.rootNodeId }));
     expect(crystallize).toMatchObject({ id: 3, error: { code: -32020 } });
   });
+
+  it("routes a node-linked message without mutating task state", async () => {
+    const runtime: ModelRuntime = {
+      call: async (call) => {
+        if (call.operation === "route-message") {
+          return { value: { intent: "explain", topic: "how routing classifies messages", options: [], focusPath: "src/augment" } };
+        }
+        return model().call(call);
+      },
+    };
+    const server = new AugmentServer({ runtime });
+    const started = await server.handle(request(1, "task/start", { taskId: "task:route", objective: "make retries bounded", basisRevision: "commit:1" }));
+    const task = (started as { result: { id: string; revision: number } }).result;
+    const routed = await server.handle(request(2, "message/route", { taskId: task.id, expectedRevision: task.revision, message: "how does routing work?", temperature: "normal" }));
+    expect(routed).toMatchObject({ id: 2, result: { intent: "explain", topic: "how routing classifies messages", options: [], focusPath: "src/augment" } });
+    const unchanged = await server.handle(request(3, "task/get", { taskId: task.id }));
+    expect((unchanged as { result: { revision: number } }).result.revision).toBe(task.revision);
+  });
 });

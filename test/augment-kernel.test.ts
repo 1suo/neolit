@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { crystallizeNode, draftPatchWithModel, nextDevelopmentStep, refineWithModel, selectCandidate } from "../src/augment/kernel.js";
+import { crystallizeNode, draftPatchWithModel, nextDevelopmentStep, refineWithModel, routeMessageWithModel, selectCandidate } from "../src/augment/kernel.js";
 import { acceptDomain, collapseNode, createPlanTask, generateDomain, refineNode, setPathRestriction } from "../src/augment/state.js";
 import type { ModelCallRequest, ModelRuntime, PlanTask } from "../src/augment/types.js";
 
@@ -317,5 +317,38 @@ describe("augment kernel", () => {
     ]);
     await expect(crystallizeNode(model, generated, { taskId: generated.id, nodeId: generated.rootNodeId, temperature: "normal", lod: "file", replace: true }))
       .rejects.toThrow(/touches locked path: src\/b\.ts/u);
+  });
+
+  it("routes a node-linked message through one bounded model call without mutating state", async () => {
+    const initial = task();
+    const requests: Array<ModelCallRequest> = [];
+    const model: ModelRuntime = {
+      async call(request) {
+        requests.push(request);
+        return { value: { intent: "explain", topic: "how routing classifies messages", options: [], focusPath: "src/augment" } };
+      },
+    };
+    const result = await routeMessageWithModel(model, initial, { taskId: initial.id, nodeId: initial.rootNodeId, message: "how does routing work?", temperature: "normal" });
+    expect(result).toEqual({ intent: "explain", topic: "how routing classifies messages", options: [], focusPath: "src/augment" });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ operation: "route-message", temperature: "normal" });
+    expect((requests[0]!.context as { message?: string }).message).toBe("how does routing work?");
+    expect(initial.revision).toBe(1);
+  });
+
+  it("rejects an offer-options route offering fewer than two options", async () => {
+    const model = runtime([
+      () => ({ intent: "offer-options", topic: "rework retries", options: [{ label: "Deadline", description: "honor a wall-clock cutoff" }] }),
+    ]);
+    await expect(routeMessageWithModel(model, task(), { taskId: "task:kernel", message: "make retries safer", temperature: "normal" }))
+      .rejects.toThrow(/at least two options/u);
+  });
+
+  it("leaves state unchanged when route-message output violates its schema", async () => {
+    const initial = task();
+    const model: ModelRuntime = { call: async () => ({ value: { intent: "teleport" } }) };
+    await expect(routeMessageWithModel(model, initial, { taskId: initial.id, message: "just saying hi", temperature: "normal" }))
+      .rejects.toThrow(/Model route-message output is invalid/u);
+    expect(initial.revision).toBe(1);
   });
 });

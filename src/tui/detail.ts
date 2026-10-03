@@ -22,7 +22,7 @@ export const theme = {
 };
 
 
-export type InputMode = "idle" | "objective" | "explanation" | "message" | "reopen" | "stale";
+export type InputMode = "idle" | "objective" | "message" | "reopen" | "stale";
 
 
 export interface LiveStatus {
@@ -226,7 +226,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     if (live.failed.error) add(`  ${live.failed.error.split(/\r?\n/)[0] ?? ""}`, theme.error);
   }
   if (!row) {
-    add("  [N] describe a change · [E] explain the repository", theme.muted);
+    add("  [N] describe a change or ask about the repository", theme.muted);
     return lines;
   }
   const entry = row.entry;
@@ -321,7 +321,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     }
   }
   else {
-    if (!task) add("  [N] describe a change · [E] explain the repository", theme.muted);
+    if (!task) add("  [N] describe a change or ask about the repository", theme.muted);
     else if (possible.length) add(`  1-${possible.length} choose approach · [Enter] rethink (empty submit)`, theme.muted);
     else if (nodes.some((node) => (node.kind === "root" || node.kind === "dir") && node.status === "unresolved" && !node.candidateIds.length)) add("  [D] generate approaches for this path · [Enter] add a guiding message first", theme.muted);
     else if (!isDirectory && nodes.length) add("  [D] develop — drafts this file's exact patch · [A] apply after", theme.muted);

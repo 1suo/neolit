@@ -87,8 +87,7 @@ function DetailView(props: { state: TuiActionState; row?: PlannedTreeRow; offset
 
 function inputTitle(mode: InputMode, target = "repo"): string {
   if (mode === "objective") return "What should change?";
-  if (mode === "explanation") return "Explain what repository topic?";
-  if (mode === "message") return `${target} · message (empty = rethink)`;
+  if (mode === "message") return `${target} · message (task, question, or note; empty = rethink)`;
   if (mode === "reopen") return "Reason for reopening selected node";
   if (mode === "stale") return "Changed repository path";
   return "Message";
@@ -185,8 +184,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     const activeMode = mode;
     cancelInput();
     if (activeMode === "objective") run(props.controller.start(value));
-    else if (activeMode === "explanation") run(props.controller.explain(value));
-    else if (activeMode === "message") run(props.controller.rethink(value));
+    else if (activeMode === "message") run(props.controller.route(value));
     else if (activeMode === "reopen") run(props.controller.reopen(value));
     else if (activeMode === "stale") run(props.controller.markStale(value));
   };
@@ -240,7 +238,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
     if (key.return || input === "\r" || input === "\n") {
       if (!state.task) {
-        props.controller.report("No task is active. Press [N] for a change or [E] for an explanation.");
+        props.controller.report("No task is active. Press [N] to send the first message.");
         return;
       }
       beginInput("message");
@@ -251,6 +249,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     const selectedEntry = props.controller.selectedRow()?.entry;
     const choices = candidatesForEntry(props.controller.snapshot().task, selectedEntry).filter((candidate) => candidate.status === "possible");
     const numericChoice = Number(command);
+    if (state.routedOptions?.length && Number.isInteger(numericChoice) && numericChoice >= 1 && numericChoice <= state.routedOptions.length) {
+      run(props.controller.chooseRoutedOption(state.routedOptions[numericChoice - 1]!.label));
+      return;
+    }
     if (Number.isInteger(numericChoice) && numericChoice >= 1 && numericChoice <= choices.length) {
       run(props.controller.selectCandidate(choices[numericChoice - 1]!.id));
       return;
@@ -261,7 +263,6 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       exit();
     }
     else if (command === "n") beginInput("objective");
-    else if (command === "e") beginInput("explanation");
     else if (command === "d") run(props.controller.develop());
     else if (command === "a") run(props.controller.applySelected());
     else if (command === "c") run(props.controller.commitApplied());
@@ -420,8 +421,6 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.primary}> allow · </Text>
           <Text color={theme.primary} bold>[M]</Text>
           <Text color={theme.primary}> models · </Text>
-          <Text color={theme.primary} bold>[E]</Text>
-          <Text color={theme.primary}> explain · </Text>
           <Text color={theme.primary} bold>[N]</Text>
           <Text color={theme.primary}> new · </Text>
           <Text color={theme.muted} bold>[F]</Text>
@@ -436,6 +435,16 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
           <Text color={theme.muted}> quit</Text>
         </Text>
       </Box>
+
+      {state.routedOptions?.length ? (
+        <Box flexDirection="column" flexShrink={0} paddingX={1}>
+          {state.routedOptions.map((option, index) => (
+            <Text key={option.label} wrap="wrap">
+              <Text color={theme.primary} bold>[{index + 1}]</Text> {option.label} — {option.description}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
 
       {mode === "idle" ? (
         <Box borderStyle="round" borderColor={state.error ? theme.error : state.busy ? theme.warning : theme.border} flexShrink={0} paddingX={1}>

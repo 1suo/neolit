@@ -793,6 +793,68 @@ describe("augment TUI controller", () => {
     expect(Object.keys(controller.snapshot().task?.diffs ?? {})).toHaveLength(1);
     void crystallized;
   });
+
+  it("routes an ambiguous message to offered options and continues the choice", async () => {
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "route-message") {
+          return { value: { intent: "offer-options", topic: "rework retries", options: [
+            { label: "Deadline cutoff", description: "honor a wall-clock deadline" },
+            { label: "Fixed count", description: "keep counting attempts" },
+          ] } };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    await controller.route("make retries safer");
+    const offered = controller.snapshot();
+    expect(offered.error).toBeUndefined();
+    expect(offered.routedOptions?.map((option) => option.label)).toEqual(["Deadline cutoff", "Fixed count"]);
+    expect(offered.message).toContain("Pick one of the offered options");
+    const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
+    expect(output).toContain("[1] Deadline cutoff");
+
+    await controller.chooseRoutedOption("Deadline cutoff");
+    const chosen = controller.snapshot();
+    expect(chosen.routedOptions).toBeUndefined();
+    expect(chosen.task?.nodes[chosen.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
+  });
+
+  it("routes an explanation request through the explanation flow bound to the selected node", async () => {
+    const routedNodes: string[] = [];
+    const runtime: ModelRuntime = {
+      call: async (request) => {
+        if (request.operation === "route-message") {
+          routedNodes.push(request.context.node.id);
+          return { value: { intent: "explain", topic: "retry policy", options: [] } };
+        }
+        return modelRuntime().call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime });
+    await controller.start("bounded retries", "commit:1");
+    await controller.crystallize();
+    await controller.develop();
+    controller.select("entry:src/auth/session.ts");
+    const fileNode = Object.values(controller.snapshot().task?.nodes ?? {}).find((node) => node.path === "src/auth/session.ts")!;
+    await controller.route("how do the retry rules work?");
+    const snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    expect(routedNodes).toEqual([fileNode.id]);
+    expect(Object.keys(snapshot.task?.explanations ?? {})).toHaveLength(2);
+    expect(snapshot.message).toContain("Explained 2 paths around src/auth/session.ts");
+  });
+
+  it("routes a first message without an active task into a new change task", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.route("make retries bounded");
+    const snapshot = controller.snapshot();
+    expect(snapshot.error).toBeUndefined();
+    expect(snapshot.task?.objective).toBe("make retries bounded");
+  });
 });
 
 describe("augment TUI apply", () => {
