@@ -76,6 +76,8 @@ const MAX_DEVELOP_STEPS = 256;
 const MAX_SESSION_LINES = 200;
 
 export interface StoredTask {
+  /** Repository root the task belongs to; tasks never resume across folders. */
+  directory: string;
   task: PlanTask;
   appliedDiffIds: string[];
   savedAt: number;
@@ -94,7 +96,8 @@ function loadStoredTasks(): StoredTask[] {
   try {
     const raw = JSON.parse(fs.readFileSync(tasksStorePath(), "utf8")) as StoredTask[];
     if (!Array.isArray(raw)) return [];
-    return raw.filter((entry) => entry && typeof entry === "object" && entry.task?.version === 1 && typeof entry.task.revision === "number");
+    return raw.filter((entry) => entry && typeof entry === "object" && typeof entry.directory === "string"
+      && entry.task?.version === 1 && typeof entry.task.revision === "number");
   } catch {
     return [];
   }
@@ -295,7 +298,12 @@ export class AugmentTuiController {
     this.persistTasks = options.persistTasks === true;
     this.repository = repositoryTree(options.directory);
     if (this.persistTasks) {
-      const stored = loadStoredTasks().sort((left, right) => right.savedAt - left.savedAt)[0];
+      // Tasks are scoped to their repository directory: opening the panel in
+      // another folder never resumes a foreign task.
+      const directoryKey = path.resolve(options.directory);
+      const stored = loadStoredTasks()
+        .filter((entry) => path.resolve(entry.directory) === directoryKey)
+        .sort((left, right) => right.savedAt - left.savedAt)[0];
       if (stored) {
         this.task = stored.task;
         this.appliedDiffIds = new Set(stored.appliedDiffIds);
@@ -1362,11 +1370,17 @@ export class AugmentTuiController {
     this.rows = this.task ? plannedTreeRows(this.task, this.repository, view) : plannedTreeRowsFromRepository(this.repository, view);
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
     if (this.persistTasks && this.task) {
-      const others = loadStoredTasks().filter((entry) => entry.task.id !== this.task!.id);
-      const entries = [...others, { task: this.task, appliedDiffIds: [...this.appliedDiffIds], savedAt: Date.now() }]
+      // Tasks are scoped per repository directory: other projects' entries
+      // stay untouched, and this project keeps at most MAX_STORED_TASKS of
+      // its own (the active task plus its newest predecessors).
+      const directoryKey = path.resolve(this.directory);
+      const all = loadStoredTasks();
+      const others = all.filter((entry) => path.resolve(entry.directory) !== directoryKey);
+      const mine = all
+        .filter((entry) => path.resolve(entry.directory) === directoryKey && entry.task.id !== this.task!.id)
         .sort((left, right) => right.savedAt - left.savedAt)
-        .slice(0, MAX_STORED_TASKS);
-      saveStoredTasks(entries);
+        .slice(0, MAX_STORED_TASKS - 1);
+      saveStoredTasks([...others, ...mine, { directory: this.directory, task: this.task, appliedDiffIds: [...this.appliedDiffIds], savedAt: Date.now() }]);
     }
     this.notify();
   }
