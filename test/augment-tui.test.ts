@@ -318,6 +318,33 @@ describe("augment TUI controller", () => {
     }
   });
 
+  it("resumes a legacy unscoped task once and rewrites it with its directory", async () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = state;
+    try {
+      // Seed the store the pre-scoping way: a saved entry without a directory.
+      const seeder = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
+      await seeder.start("legacy task", "commit:1");
+      const storePath = path.join(state, "neolit", "augment-tasks.json");
+      const seeded = JSON.parse(fs.readFileSync(storePath, "utf8"));
+      for (const entry of seeded) delete entry.directory;
+      fs.writeFileSync(storePath, JSON.stringify(seeded));
+
+      // The legacy entry still resumes — the task and its agent session
+      // survive the upgrade — and the next save adopts it with a directory.
+      const resumed = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
+      expect(resumed.snapshot().task?.objective).toBe("legacy task");
+      resumed.toggleRelatedOnly();
+      const adopted = JSON.parse(fs.readFileSync(storePath, "utf8")) as Array<{ directory?: string }>;
+      expect(adopted).toHaveLength(1);
+      expect(adopted[0]!.directory).toBe(process.cwd());
+    } finally {
+      if (previous === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
   it("explains the selected node inside an active change task", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");
@@ -806,22 +833,25 @@ describe("augment TUI controller", () => {
     expect(entryState(controller.snapshot().task, rootRow())).toMatchObject({ indicator: "○", suffix: "" });
 
     await controller.crystallize();
-    // Approaches landed (the singleton was adopted) but nothing is drafted.
-    expect(entryState(controller.snapshot().task, rootRow())).toMatchObject({ indicator: "◐", suffix: "" });
+    // The singleton adoption keeps the rich chosen marker with confidence.
+    expect(entryState(controller.snapshot().task, rootRow())).toMatchObject({ indicator: "◆", suffix: "78%" });
 
     await controller.refine();
     controller.select("entry:src/auth/session.ts");
     await controller.draftPatch();
-    // One of the two file targets is drafted: the suffix shows 1/2.
+    // Rich counts first: the patch-kind indicator, with the subtree's
+    // drafted-file progress riding along in the suffix.
     expect(subtreeProgress(controller.snapshot().task, rootRow().entry)).toMatchObject({ crystallized: true, developed: false, drafted: 1, total: 2 });
-    expect(entryState(controller.snapshot().task, rootRow())).toMatchObject({ indicator: "◐", suffix: "1/2" });
+    const partial = entryState(controller.snapshot().task, rootRow());
+    expect(partial).toMatchObject({ indicator: "~", suffix: "1/2" });
+    expect(partial.color).toBe(theme.success);
 
     controller.select("entry:test/auth/retry.test.ts");
     await controller.draftPatch();
-    // Every file drafted: the reducers' ready propagation makes the whole
-    // subtree developed, and the row answers "done" in success color.
+    // Fully drafted: the diff indicator again; completion reads as the
+    // absence of the drafted/total suffix.
     const done = entryState(controller.snapshot().task, rootRow());
-    expect(done).toMatchObject({ indicator: "●" });
+    expect(done).toMatchObject({ indicator: "Δ", suffix: "" });
     expect(done.color).toBe(theme.success);
 
     // A directory with an open approach choice stays actionable over progress.

@@ -76,8 +76,10 @@ const MAX_DEVELOP_STEPS = 256;
 const MAX_SESSION_LINES = 200;
 
 export interface StoredTask {
-  /** Repository root the task belongs to; tasks never resume across folders. */
-  directory: string;
+  /** Repository root the task belongs to; tasks never resume across folders.
+   *  Absent on entries written before per-directory scoping — they resume
+   *  once (in whatever folder opens next) and are rewritten with a directory. */
+  directory?: string;
   task: PlanTask;
   appliedDiffIds: string[];
   savedAt: number;
@@ -96,8 +98,7 @@ function loadStoredTasks(): StoredTask[] {
   try {
     const raw = JSON.parse(fs.readFileSync(tasksStorePath(), "utf8")) as StoredTask[];
     if (!Array.isArray(raw)) return [];
-    return raw.filter((entry) => entry && typeof entry === "object" && typeof entry.directory === "string"
-      && entry.task?.version === 1 && typeof entry.task.revision === "number");
+    return raw.filter((entry) => entry && typeof entry === "object" && entry.task?.version === 1 && typeof entry.task.revision === "number");
   } catch {
     return [];
   }
@@ -299,11 +300,14 @@ export class AugmentTuiController {
     this.repository = repositoryTree(options.directory);
     if (this.persistTasks) {
       // Tasks are scoped to their repository directory: opening the panel in
-      // another folder never resumes a foreign task.
+      // another folder never resumes a foreign task. Entries written before
+      // scoping (no directory field) are legacy: exactly one of them resumes
+      // when nothing matches this directory, so an existing task and its
+      // agent session survive the upgrade, and it is rewritten scoped.
       const directoryKey = path.resolve(options.directory);
-      const stored = loadStoredTasks()
-        .filter((entry) => path.resolve(entry.directory) === directoryKey)
-        .sort((left, right) => right.savedAt - left.savedAt)[0];
+      const ranked = loadStoredTasks().sort((left, right) => right.savedAt - left.savedAt);
+      const stored = ranked.find((entry) => entry.directory !== undefined && path.resolve(entry.directory) === directoryKey)
+        ?? ranked.find((entry) => entry.directory === undefined);
       if (stored) {
         this.task = stored.task;
         this.appliedDiffIds = new Set(stored.appliedDiffIds);
@@ -1372,12 +1376,16 @@ export class AugmentTuiController {
     if (this.persistTasks && this.task) {
       // Tasks are scoped per repository directory: other projects' entries
       // stay untouched, and this project keeps at most MAX_STORED_TASKS of
-      // its own (the active task plus its newest predecessors).
+      // its own (the active task plus its newest predecessors). Legacy
+      // entries (no directory) other than the current task stay unclaimed
+      // for whichever folder actually owns them.
       const directoryKey = path.resolve(this.directory);
       const all = loadStoredTasks();
-      const others = all.filter((entry) => path.resolve(entry.directory) !== directoryKey);
+      const others = all.filter((entry) => entry.directory === undefined
+        ? entry.task.id !== this.task!.id
+        : path.resolve(entry.directory) !== directoryKey);
       const mine = all
-        .filter((entry) => path.resolve(entry.directory) === directoryKey && entry.task.id !== this.task!.id)
+        .filter((entry) => entry.directory !== undefined && path.resolve(entry.directory) === directoryKey && entry.task.id !== this.task!.id)
         .sort((left, right) => right.savedAt - left.savedAt)
         .slice(0, MAX_STORED_TASKS - 1);
       saveStoredTasks([...others, ...mine, { directory: this.directory, task: this.task, appliedDiffIds: [...this.appliedDiffIds], savedAt: Date.now() }]);

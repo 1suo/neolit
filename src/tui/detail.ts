@@ -172,19 +172,27 @@ export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view
   }
   if (blocked) return { indicator: "!", suffix: "", color: theme.error };
   if (applied.length) return { indicator: "✓", suffix: applied.length < diffs.length ? `${applied.length}/${diffs.length}` : changeSuffix, color: theme.success };
-  // Directory and root rows answer "is everything here crystallized and
-  // developed?" with one aggregate glyph: an open approach choice stays the
-  // most actionable state, then ○ nothing generated · ◐ underway · ● done.
-  // A complete subtree keeps the diff summary as its suffix; an underway one
-  // shows its drafted-file count instead.
+  // Directory and root rows answer "is everything below crystallized and
+  // developed?" — strictly additively: an open choice, drafted patches, and
+  // their line counts keep their original rich rendering, and the
+  // drafted/total progress joins the suffix instead of replacing anything.
+  // The bare aggregate glyphs (○ ◐ ●) appear only where nothing richer
+  // exists.
   if ((entry.kind === "dir" || entry.kind === "root") && entry.nodeIds.length) {
     if (possible.length) {
       const best = Math.max(...possible.map((candidate) => candidate.confidence));
       return { indicator: "◇", suffix: `${possible.length}·${best}%`, color: theme.warning };
     }
+    if (diffs.length) {
+      const progress = subtreeProgress(task, entry);
+      const partial = progress && !progress.developed && progress.total > 0 ? `${progress.drafted}/${progress.total}` : "";
+      const suffix = [changeSuffix, partial].filter(Boolean).join(" · ");
+      return { indicator: diffs.length === 1 ? diffIndicator(diffs[0]!.kind) : "Δ", suffix, color: diffs.some((diff) => diff.kind === "delete") ? theme.error : theme.success };
+    }
+    if (entry.kind === "root" && selected) return { indicator: "◆", suffix: `${selected.confidence}%`, color: theme.secondary };
     const progress = subtreeProgress(task, entry);
     if (progress) {
-      if (progress.developed) return { indicator: "●", suffix: changeSuffix || (diffs.length > 1 ? `${diffs.length}` : ""), color: theme.success };
+      if (progress.developed) return { indicator: "●", suffix: "", color: theme.success };
       if (progress.landed) return { indicator: "◐", suffix: progress.total ? `${progress.drafted}/${progress.total}` : "", color: theme.secondary };
       return { indicator: "○", suffix: "", color: theme.warning };
     }

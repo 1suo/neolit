@@ -35,11 +35,13 @@ Indicators (tree rows carry the indicator and color only; extra glyphs are count
 ```
 
 Directory and root rows answer "is everything below crystallized and
-developed?" with one aggregate glyph: `○` nothing has approaches or drafts
-yet, `◐` work has landed but files remain (the suffix counts drafted file
-targets), `●` every stage below is done (the reducers' own readiness
-propagation, with the change summary as suffix). An open approach choice
-(`◇`) stays above the aggregate — it is the actionable state.
+developed?" strictly additively: an open choice (`◇ n·best%`), drafted
+patches (`+ ~ - Δ` with their `+n −n` line counts), and the chosen marker
+(`◆ conf%` on the root) keep their exact rendering, with the subtree's
+drafted-file progress (`n/m`) riding along in the suffix while work
+remains — its absence means every file below is drafted. The bare
+aggregates fill only the weak states: `○` nothing generated yet, `◐`
+approaches landed with nothing drafted, `●` every stage below ready.
 
 ```text
 ⠋ working     an operation is running on this path (animated while busy)
