@@ -41,20 +41,30 @@ export interface SessionStreamLine {
  */
 /**
  * Compact one-line detail for a tool call's input: the argument that names
- * the work (command, pattern, query, path, …) rather than the whole JSON
- * envelope, so completed calls read like "✓ execute · git status".
+ * the work (command, pattern, query, path, code, …) rather than the whole
+ * JSON envelope, so completed calls read like "✓ execute · git status".
+ * Truncation is always visible: the cap ends with an ellipsis, and hosts
+ * that wrap (the nvim pane) still get most of the argument.
  */
+const TOOL_DETAIL_CAP = 200;
+const TEXT_LINE_CAP = 400;
+
+function capped(value: string, cap: number): string {
+  const flattened = value.replace(/\s+/g, " ").trim();
+  return flattened.length > cap ? `${flattened.slice(0, cap)}…` : flattened;
+}
+
 function toolDetail(input: unknown): string {
   if (!input || typeof input !== "object") return "";
   const record = input as Record<string, unknown>;
-  for (const key of ["command", "cmd", "pattern", "query", "glob", "path", "file", "url", "script", "text"]) {
+  for (const key of ["command", "cmd", "pattern", "query", "glob", "path", "file", "url", "script", "code", "text"]) {
     const value = record[key];
     if (typeof value !== "string") continue;
     const flattened = value.replace(/\s+/g, " ").trim();
-    if (flattened) return flattened.slice(0, 90);
+    if (flattened) return capped(flattened, TOOL_DETAIL_CAP);
     return ""; // a known key that is blank carries nothing worth showing
   }
-  return JSON.stringify(input).replace(/\s+/g, " ").slice(0, 90);
+  return capped(JSON.stringify(input), TOOL_DETAIL_CAP);
 }
 
 export function formatStreamEvent(message: unknown): SessionStreamLine | undefined {
@@ -69,7 +79,7 @@ export function formatStreamEvent(message: unknown): SessionStreamLine | undefin
   const part = record.part as Record<string, unknown> | undefined;
   const partText = part && typeof part.text === "string" ? part.text : typeof record.text === "string" ? record.text : undefined;
   if ((record.type === "text" || part?.type === "text") && partText) {
-    return { kind: "text", text: partText.replace(/\s+/g, " ").slice(0, 160) };
+    return { kind: "text", text: capped(partText, TEXT_LINE_CAP) };
   }
   if (part?.type === "tool" && part.state && typeof part.state === "object") {
     const state = part.state as { status?: unknown; title?: unknown; input?: unknown };

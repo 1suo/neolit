@@ -22,11 +22,23 @@ describe("formatStreamEvent", () => {
       .toEqual({ kind: "tool", text: "✓ grep · retryPolicy" });
   });
 
-  it("falls back to compact JSON for unknown shapes and truncates at 90 characters", () => {
+  it("falls back to compact JSON for unknown shapes and marks truncation", () => {
     expect(formatStreamEvent(toolPart("completed", "edit", { weird: true, nested: { a: 1 } })))
       .toEqual({ kind: "tool", text: '✓ edit · {"weird":true,"nested":{"a":1}}' });
     const long = formatStreamEvent(toolPart("completed", "execute", { command: "x".repeat(300) }));
-    expect(long!.text.length).toBe("✓ execute · ".length + 90);
+    expect(long!.text.endsWith("…")).toBe(true);
+    expect(long!.text.length).toBe("✓ execute · ".length + 200 + 1);
+  });
+
+  it("prefers the code argument over the JSON envelope", () => {
+    const line = formatStreamEvent(toolPart("completed", "execute", { code: 'const x = await tools.neolit.plan_status({\n  taskId: "task:1",\n});' }));
+    expect(line).toEqual({ kind: "tool", text: "✓ execute · const x = await tools.neolit.plan_status({ taskId: \"task:1\", });" });
+  });
+
+  it("caps long text at 400 characters with a visible ellipsis", () => {
+    const line = formatStreamEvent({ type: "text", text: "y".repeat(500) });
+    expect(line!.text.length).toBe(401);
+    expect(line!.text.endsWith("…")).toBe(true);
   });
 
   it("keeps the running marker and survives missing input", () => {
