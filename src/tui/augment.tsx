@@ -3,7 +3,7 @@ import { Box, Text, render, useApp, useInput, useWindowSize, type RenderOptions 
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
 import type { SessionStreamLine } from "./tool-session.js";
 import { AugmentTuiController, candidatesForEntry, type PlannedTreeRow, type TuiActionState } from "./controller.js";
-import { adaptiveLayout, detailSections, entryName, entryState, entryTouchesNode, sharedContentRows, theme, wrappedRows, type DetailLine, type InputMode, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
+import { adaptiveLayout, detailSections, entryName, entryState, entryTouchesNode, sharedContentRows, theme, wrappedRows, wrapLegend, type DetailLine, type InputMode, type LegendSegment, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
 import { Picker, availableModels, toPickerItems, type PickerItem } from "./setup.js";
 
 
@@ -402,23 +402,23 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
 
         {layout.mode === "wide" ? (
           <>
-            <Box flexDirection="column" flexShrink={0} minWidth={30} width={visibleDiff.length ? layout.diffColumns : undefined} flexGrow={visibleDiff.length ? 0 : 1}>
-              {contentView === "session" && state.toolSession ? (
-                <SessionPane lines={state.sessionLines} limit={layout.descriptionRows} width={Math.max(20, layout.diffColumns - 4)} />
-              ) : (
-              <>
-                <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
-                  <SectionView lines={paneLines} offset={detailOffset} limit={layout.diffRows} />
-                </Box>
-                {sessionVisible && contentView === "diff" ? <SessionPane lines={state.sessionLines} limit={layout.sessionRows} width={Math.max(20, layout.diffColumns - 4)} /> : null}
-              </>
-              )}
-            </Box>
-            {visibleDiff.length ? (
-              <Box flexGrow={1} minWidth={30} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
-                <SectionView lines={sections.description} offset={detailOffset} limit={layout.descriptionRows} />
+            {(visibleDiff.length || (contentView === "session" && state.toolSession)) ? (
+              <Box flexDirection="column" flexShrink={0} minWidth={30} width={layout.diffColumns}>
+                {contentView === "session" && state.toolSession ? (
+                  <SessionPane lines={state.sessionLines} limit={layout.diffRows} width={Math.max(20, layout.diffColumns - 4)} />
+                ) : (
+                  <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
+                    <SectionView lines={visibleDiff} offset={detailOffset} limit={layout.diffRows} />
+                  </Box>
+                )}
               </Box>
             ) : null}
+            <Box flexDirection="column" flexGrow={1} minWidth={30}>
+              <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "detail" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingTop={0}>
+                <SectionView lines={sections.description} offset={detailOffset} limit={layout.descriptionRows} />
+              </Box>
+              {sessionVisible && contentView !== "session" ? <SessionPane lines={state.sessionLines} limit={layout.sessionRows} width={Math.max(20, layout.descriptionColumns - 4)} /> : null}
+            </Box>
           </>
         ) : layout.split && visibleDiff.length ? (
           <Box flexDirection="column" flexGrow={1} minWidth={30}>
@@ -439,43 +439,52 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       </Box>
       )}
 
-      <Box paddingTop={1} flexShrink={0}>
-        <Text wrap="truncate-end">
-          <Text color={theme.primary} bold>[Enter]</Text>
-          <Text color={theme.primary}> prompt/regenerate · </Text>
-          <Text color={theme.primary} bold>[1-7]</Text>
-          <Text color={theme.primary}> choose approach · </Text>
-          <Text color={theme.primary} bold>[D]</Text>
-          <Text color={theme.primary}> develop · </Text>
-          <Text color={theme.primary} bold>[A]</Text>
-          <Text color={theme.primary}> apply · </Text>
-          <Text color={theme.primary} bold>[C]</Text>
-          <Text color={theme.primary}> commit · </Text>
-          <Text color={theme.primary} bold>[L]</Text>
-          <Text color={theme.primary}> lock · </Text>
-          <Text color={theme.primary} bold>[W]</Text>
-          <Text color={theme.primary}> allow · </Text>
-          <Text color={theme.primary} bold>[M]</Text>
-          <Text color={theme.primary}> models · </Text>
-          <Text color={theme.primary} bold>[N]</Text>
-          <Text color={theme.primary}> new · </Text>
-          <Text color={theme.muted} bold>[F]</Text>
-          <Text color={theme.muted}> fold · </Text>
-          <Text color={theme.muted} bold>[V]</Text>
-          <Text color={theme.muted}> session · </Text>
-          <Text color={theme.muted} bold>[P]</Text>
-          <Text color={theme.muted}> view · </Text>
-          <Text color={theme.muted} bold>[H]</Text>
-          <Text color={theme.muted}> related · </Text>
-          <Text color={theme.muted} bold>[Tab]</Text>
-          <Text color={theme.muted}> pane · </Text>
-          <Text color={theme.muted} bold>[Q]</Text>
-          <Text color={theme.muted}> quit</Text>
-        </Text>
+      <Box paddingTop={1} flexShrink={0} flexDirection="column">
+        {wrapLegend(
+          [
+            { text: "[Enter]", color: theme.primary, bold: true },
+            { text: " message ·", color: theme.primary },
+            { text: "[D]", color: theme.primary, bold: true },
+            { text: " develop ·", color: theme.primary },
+            { text: "[A]", color: theme.primary, bold: true },
+            { text: " apply ·", color: theme.primary },
+            { text: "[C]", color: theme.primary, bold: true },
+            { text: " commit ·", color: theme.primary },
+            { text: "[L]", color: theme.primary, bold: true },
+            { text: " lock ·", color: theme.primary },
+            { text: "[W]", color: theme.primary, bold: true },
+            { text: " allow ·", color: theme.primary },
+            { text: "[M]", color: theme.primary, bold: true },
+            { text: " models ·", color: theme.primary },
+            { text: "[N]", color: theme.primary, bold: true },
+            { text: " new ·", color: theme.primary },
+            { text: "[F]", color: theme.muted, bold: true },
+            { text: " fold ·", color: theme.muted },
+            { text: "[V]", color: theme.muted, bold: true },
+            { text: " session ·", color: theme.muted },
+            { text: "[P]", color: theme.muted, bold: true },
+            { text: " view ·", color: theme.muted },
+            { text: "[H]", color: theme.muted, bold: true },
+            { text: " related ·", color: theme.muted },
+            { text: "[Tab]", color: theme.muted, bold: true },
+            { text: " pane ·", color: theme.muted },
+            { text: "[Q]", color: theme.muted, bold: true },
+            { text: " quit", color: theme.muted },
+          ],
+          Math.max(20, windowSize.columns - 2),
+          2,
+        ).map((row, rowIndex) => (
+          <Text key={rowIndex} wrap="truncate-end">
+            {row.map((segment, segmentIndex) => (
+              <Text key={segmentIndex} color={segment.color} bold={segment.bold}>{segment.text}</Text>
+            ))}
+          </Text>
+        ))}
       </Box>
 
       {state.routedOptions?.length ? (
         <Box flexDirection="column" flexShrink={0} paddingX={1}>
+          <Text color={theme.muted}>choose an interpretation (1-{state.routedOptions.length}):</Text>
           {state.routedOptions.map((option, index) => (
             <Text key={option.label} wrap="wrap">
               <Text color={theme.primary} bold>[{index + 1}]</Text> {option.label} — {option.description}

@@ -331,6 +331,8 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   }
 
   if (possible.length) {
+    // The choice hint travels with the options themselves, not the legend.
+    add(`  choose 1-${possible.length} · [Enter] rethink`, theme.muted);
     possible.forEach((candidate, index) => {
       add(`  ${index + 1} ◇ ${candidate.label} · ${candidate.confidence}%`, statusColor(candidate.status));
       add(`  ${candidate.rationale}`, theme.muted);
@@ -375,7 +377,9 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   }
   else {
     if (!task) add("  [N] describe a change or ask about the repository", theme.muted);
-    else if (possible.length) add(`  1-${possible.length} choose approach · [Enter] rethink (empty submit)`, theme.muted);
+    else if (possible.length) {
+      // Nothing extra here: the option list and its 1-N hint render in DESCRIPTION.
+    }
     else if (nodes.some((node) => (node.kind === "root" || node.kind === "dir") && node.status === "unresolved" && !node.candidateIds.length)) add("  [D] generate approaches for this path · [Enter] add a guiding message first", theme.muted);
     else if (!isDirectory && nodes.length) add("  [D] develop — drafts this file's exact patch · [A] apply after", theme.muted);
     else if (isDirectory) add("  [D] develop — drafts every undrafted file below · [F] fold · [H] related only", theme.muted);
@@ -461,6 +465,9 @@ export type LayoutMode = "wide" | "medium" | "narrow";
 export const WIDE_MIN_COLUMNS = 132;
 /** Smallest terminal width that fits the tree beside the stacked content column. */
 export const MEDIUM_MIN_COLUMNS = 80;
+/** Wide frames: the tree is a narrow fixed column, never an equal third. */
+export const TREE_COLUMNS_WIDE = 44;
+const TREE_COLUMNS_MIN = 36;
 const UNKNOWN_WINDOW_COLUMNS = MEDIUM_MIN_COLUMNS;
 
 function normalizedColumns(columns: number | undefined): number {
@@ -469,10 +476,10 @@ function normalizedColumns(columns: number | undefined): number {
 
 /**
  * The pane arrangement, derived from the terminal width alone — never from
- * pane content. Wide terminals get three columns (tree, diff/session,
- * description); smaller ones two columns with the description stacked under
- * the diff window; the smallest a single column with the content pane under
- * the tree.
+ * pane content. Wide terminals get three columns (narrow tree, full-height
+ * diff, description over session); smaller ones two columns with the
+ * description stacked under the diff window; the smallest a single column
+ * with the content pane under the tree.
  */
 export function layoutMode(columns: number | undefined): LayoutMode {
   const width = normalizedColumns(columns);
@@ -485,16 +492,16 @@ export interface AdaptiveLayout {
   /** Active arrangement. */
   mode: LayoutMode;
   frameRows: number;
-  /** Tree pane: the left column in every arrangement. */
+  /** Tree pane: the left column in every arrangement — narrow and fixed when wide. */
   treeColumns: number;
   treeRows: number;
-  /** Diff pane: middle column when wide, top of the content stack otherwise. */
+  /** Diff pane: full-height middle column when wide, top of the content stack otherwise. */
   diffColumns: number;
   diffRows: number;
-  /** Description pane: right column when wide, bottom of the content stack otherwise. */
+  /** Description pane: right column when wide (session stacked under it), bottom of the stack otherwise. */
   descriptionColumns: number;
   descriptionRows: number;
-  /** Bounded session slice under the tree (medium) or the diff (wide); 0 when hidden or cramped. */
+  /** Bounded session slice: under the description on wide, under the tree otherwise; 0 when hidden or cramped. */
   sessionRows: number;
   /**
    * Whether diff and description are separate panes. When false both budgets
@@ -516,12 +523,67 @@ export function sharedContentRows(layout: AdaptiveLayout): number {
   return layout.split ? layout.diffRows + layout.descriptionRows : layout.diffRows;
 }
 
+export interface LegendSegment {
+  text: string;
+  color: string;
+  bold?: boolean;
+}
+
+/**
+ * Greedy word wrap for the hotkeys legend: words keep their segment's style
+ * while flowing across rows of at most `width` cells. At most `maxRows` rows
+ * come back; when content remains, the last row ends in an ellipsis so the
+ * legend wraps instead of truncating at one line.
+ */
+export function wrapLegend(segments: LegendSegment[], width: number, maxRows = 2): LegendSegment[][] {
+  if (width < 1) return [[]];
+  const rows: LegendSegment[][] = [];
+  let row: LegendSegment[] = [];
+  let used = 0;
+  const newRow = () => {
+    rows.push(row);
+    row = [];
+    used = 0;
+  };
+  for (const segment of segments) {
+    const words = segment.text.split(" ").filter(Boolean);
+    for (const word of words) {
+      const space = used > 0 ? 1 : 0;
+      if (used > 0 && used + space + word.length > width) newRow();
+      if (used === 0 && word.length > width) {
+        // A word longer than a whole row still starts its own row.
+        row.push({ ...segment, text: word.slice(0, width) });
+        used = width;
+        continue;
+      }
+      const prefix = used > 0 ? " " : "";
+      const previous = row[row.length - 1];
+      if (previous && previous.color === segment.color && previous.bold === segment.bold) {
+        previous.text += `${prefix}${word}`;
+      } else {
+        row.push({ ...segment, text: `${prefix}${word}` });
+      }
+      used += prefix.length + word.length;
+    }
+  }
+  if (row.length || rows.length === 0) rows.push(row);
+  if (rows.length <= maxRows) return rows;
+  const kept = rows.slice(0, maxRows);
+  const last = kept[kept.length - 1]!;
+  const lastSegment = last[last.length - 1];
+  if (lastSegment) lastSegment.text = `${lastSegment.text.slice(0, Math.max(0, width - 1))}…`;
+  else last.push({ text: "…", color: theme.muted });
+  return kept;
+}
+
 /**
  * Arrangement and pane budgets for one frame. Everything derives from the
  * terminal size alone, so a repaint after a content change never moves a
  * split: the 50/50 halves stay 50/50 no matter what the panes hold.
- * `frameLayout` keeps owning the vertical chrome math; this spreads its
- * budget across the panes of the active arrangement.
+ * Wide frames: a narrow fixed tree, a FULL-height diff column, and a third
+ * column splitting description over the session stream. `frameLayout` keeps
+ * owning the vertical chrome math; this spreads its budget across the panes
+ * of the active arrangement.
  */
 export function adaptiveLayout(columns: number | undefined, rows: number | undefined, mode: InputMode, sessionVisible = false): AdaptiveLayout {
   const arrangement = layoutMode(columns);
@@ -535,9 +597,12 @@ export function adaptiveLayout(columns: number | undefined, rows: number | undef
   const halves = { top: Math.floor(stackRows / 2), bottom: stackRows - Math.floor(stackRows / 2) };
 
   if (arrangement === "wide") {
-    // Three equal columns; the session stream shares the middle one.
-    const third = Math.floor(width / 3);
-    return { mode: arrangement, frameRows: base.frameRows, treeColumns: third, treeRows: paneRows, diffColumns: third, diffRows: underSession(paneRows), descriptionColumns: width - 2 * third, descriptionRows: paneRows, sessionRows, split: true };
+    // Narrow fixed tree; the remaining width halves between the diff column
+    // (full height — the session never eats its rows) and the description
+    // column, which shares its height with the session stream below it.
+    const treeColumns = Math.max(TREE_COLUMNS_MIN, Math.min(TREE_COLUMNS_WIDE, Math.floor(width / 3)));
+    const diffColumns = Math.floor((width - treeColumns) / 2);
+    return { mode: arrangement, frameRows: base.frameRows, treeColumns, treeRows: paneRows, diffColumns, diffRows: paneRows, descriptionColumns: width - treeColumns - diffColumns, descriptionRows: underSession(paneRows), sessionRows, split: true };
   }
   if (arrangement === "medium") {
     // Two 50/50 columns with the description stacked under the diff window;

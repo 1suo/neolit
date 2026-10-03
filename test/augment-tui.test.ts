@@ -10,7 +10,7 @@ import { preflightPatches } from "../src/tui/apply.js";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
-import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, sharedContentRows, subtreeProgress, theme, wrappedRows } from "../src/tui/detail.js";
+import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, sharedContentRows, subtreeProgress, theme, wrappedRows, wrapLegend, type LegendSegment } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 
@@ -1156,9 +1156,41 @@ describe("adaptive TUI layout", () => {
     expect(layoutMode(undefined)).toBe("medium");
   });
 
-  it("gives wide frames three equal full-height columns", () => {
+  it("gives wide frames a narrow tree, a full-height diff column, and description over session", () => {
     const layout = adaptiveLayout(180, 40, "idle");
-    expect(layout).toMatchObject({ mode: "wide", split: true, treeColumns: 60, diffColumns: 60, descriptionColumns: 60, treeRows: 29, diffRows: 29, descriptionRows: 29, sessionRows: 0 });
+    expect(layout).toMatchObject({ mode: "wide", split: true, treeColumns: 44, diffColumns: 68, descriptionColumns: 68, treeRows: 29, diffRows: 29, descriptionRows: 29, sessionRows: 0 });
+    // The smallest wide frame still fits the fixed tree plus two real columns.
+    expect(adaptiveLayout(132, 40, "idle")).toMatchObject({ treeColumns: 44, diffColumns: 44, descriptionColumns: 44, diffRows: 29, descriptionRows: 29 });
+    // A visible session stream never eats the diff column's rows — it stacks
+    // under the description in the third column.
+    const shared = adaptiveLayout(180, 40, "idle", true);
+    expect(shared.diffRows).toBe(29);
+    expect(shared.descriptionRows).toBe(29 - 8 - 3);
+  });
+
+  it("wraps the hotkeys legend across at most two rows", () => {
+    const segments: LegendSegment[] = [
+      { text: "[Enter]", color: "primary", bold: true },
+      { text: " message ·", color: "primary" },
+      { text: "[D]", color: "primary", bold: true },
+      { text: " develop ·", color: "primary" },
+      { text: "[A]", color: "primary", bold: true },
+      { text: " apply ·", color: "primary" },
+      { text: "[Q]", color: "muted", bold: true },
+      { text: " quit", color: "muted" },
+    ];
+    // Fits: one row.
+    expect(wrapLegend(segments, 80)).toHaveLength(1);
+    // Overflows: two rows, styles preserved, nothing lost.
+    const wrapped = wrapLegend(segments, 44);
+    expect(wrapped).toHaveLength(2);
+    const joined = wrapped.map((row) => row.map((segment) => segment.text).join("")).join(" ");
+    expect(joined).toContain("message");
+    expect(joined).toContain("quit");
+    // Past two rows the legend truncates with an ellipsis on the last row.
+    const truncated = wrapLegend(segments, 24, 2);
+    expect(truncated).toHaveLength(2);
+    expect(truncated[1]![truncated[1]!.length - 1]!.text.endsWith("…")).toBe(true);
   });
 
   it("stacks description under the diff window at a fixed 50/50 on medium frames", () => {
