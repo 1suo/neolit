@@ -1,6 +1,6 @@
 {
   "name": "neolit",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Planned-diff augmentation core and host-neutral JSON-RPC server",
   "type": "module",
   "main": "./dist/index.js",
