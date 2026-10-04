@@ -57,6 +57,79 @@ export interface PaneView {
   live?: LiveStatus;
   /** Content of a repository-only file selection (no plan state to show). */
   filePreview?: FilePreview;
+  /** Current working-tree content of the selected file (merged view input). */
+  fileContent?: string;
+  /** Expand the drafted patch over the file body instead of showing the raw diff. */
+  mergedView?: boolean;
+}
+
+/** One line of the merged view: the file's own line, marked when the diff touches it. */
+export interface MergedLine {
+  text: string;
+  kind: "context" | "add" | "remove";
+}
+
+/**
+ * Expand a unified diff over the file's full content: the body stays whole
+ * and hunk lines appear in place — context plain, additions prefixed `+`,
+ * removals `-`. Returns undefined when the patch does not read cleanly
+ * against the content (drifted basis, malformed patch), so callers fall back
+ * to the raw diff instead of showing a wrong body.
+ */
+export function mergedLines(content: string, patch: string): MergedLine[] | undefined {
+  const file = content.split(/\r?\n/);
+  if (file.length && file[file.length - 1] === "") file.pop();
+  const out: MergedLine[] = [];
+  let filePos = 0;
+  let inHunk = false;
+  for (const raw of patch.split(/\r?\n/)) {
+    if (!inHunk) {
+      const header = raw.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+      if (!header) continue; // file headers, index lines, prose — skip to the first hunk
+      const oldCount = header[2] === undefined ? 1 : Number.parseInt(header[2], 10);
+      const oldStart = Number.parseInt(header[1], 10) - (oldCount === 0 ? 0 : 1);
+      if (!Number.isInteger(oldStart) || oldStart < filePos || oldStart > file.length) return undefined;
+      while (filePos < oldStart) out.push({ text: file[filePos++]!, kind: "context" });
+      inHunk = true;
+      continue;
+    }
+    if (raw.startsWith("@@")) {
+      const header = raw.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+      if (!header) return undefined;
+      const oldCount = header[2] === undefined ? 1 : Number.parseInt(header[2], 10);
+      const oldStart = Number.parseInt(header[1], 10) - (oldCount === 0 ? 0 : 1);
+      if (oldStart < filePos || oldStart > file.length) return undefined;
+      while (filePos < oldStart) out.push({ text: file[filePos++]!, kind: "context" });
+      continue;
+    }
+    if (raw.startsWith("\n") || raw.startsWith("\\ No newline")) continue;
+    if (raw === "") {
+      // A truly empty line is not hunk content: an empty context line is
+      // written as a single space, so this is the split tail — the patch
+      // ended (or the line was space-trimmed away; consume it when the file
+      // has an empty line here).
+      if (file[filePos] === "") {
+        out.push({ text: "", kind: "context" });
+        filePos++;
+      }
+      continue;
+    }
+    if (raw.startsWith("+")) out.push({ text: raw.slice(1), kind: "add" });
+    else if (raw.startsWith("-")) {
+      if (file[filePos] !== raw.slice(1)) return undefined;
+      out.push({ text: raw.slice(1), kind: "remove" });
+      filePos++;
+    }
+    else if (raw.startsWith(" ")) {
+      if (file[filePos] !== raw.slice(1)) return undefined;
+      out.push({ text: raw.slice(1), kind: "context" });
+      filePos++;
+    }
+    else return undefined;
+  }
+  if (!inHunk) return undefined; // no hunks to expand
+  while (filePos < file.length) out.push({ text: file[filePos++]!, kind: "context" });
+  return out;
 }
 
 
@@ -375,7 +448,19 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   if (diffs.length) {
     const appliedCount = diffs.filter((diff) => appliedDiffIds.includes(diff.id)).length;
     const appliedSuffix = appliedCount === diffs.length ? " ✓" : appliedCount ? ` · ${appliedCount}/${diffs.length} ✓` : "";
-    if (isDirectory) {
+    // The merged view expands the file's own latest patch over its body;
+    // only a file row with readable content can carry it.
+    const primary = diffs.at(-1)!;
+    const merged = view.mergedView && !isDirectory && view.fileContent !== undefined && view.fileContent !== ""
+      ? mergedLines(view.fileContent, primary.patch)
+      : undefined;
+    if (merged) {
+      label("MERGED");
+      add(`${primary.path || primary.id} · ${changeSummary(diffs)}${appliedSuffix} · basis ${primary.basisRevision.slice(0, 12)}`, state.color, true);
+      if (diffs.length > 1) add(`  latest of ${diffs.length} drafted revisions`, theme.muted);
+      for (const line of merged) add(line.kind === "context" ? line.text : `${line.kind === "add" ? "+" : "-"}${line.text}`, line.kind === "add" ? theme.success : line.kind === "remove" ? theme.error : theme.text);
+    }
+    else if (isDirectory) {
       label("CHANGES");
       add(changeSummary(diffs) + appliedSuffix, state.color, true);
       for (const diff of diffs.slice(0, 3)) {
@@ -390,6 +475,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     else {
       const totalLines = diffs.reduce((count, diff) => count + diff.patch.split(/\r?\n/).length, 0);
       label("CHANGES");
+      if (view.mergedView && !isDirectory) add("  merged view unavailable — the patch does not read against the file; showing the raw diff", theme.muted);
       add(`${changeSummary(diffs)}${appliedSuffix} · ${totalLines} lines · basis ${diffs[0]!.basisRevision.slice(0, 12)}`, state.color, true);
       for (const diff of diffs) {
         add(`${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " ✓" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
@@ -427,20 +513,24 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
 
 
 /**
- * The detail content split into its two panes: every line up to the CHANGES
- * label is `description`; the CHANGES label and every line after it is
- * `diff`. A selection without a drafted patch yields an empty `diff`, so
- * where no diff exists the same space falls back to the description —
- * diff where it exists, description everywhere else.
+ * The detail content split into its two panes: every line up to the first
+ * content-section label (`CHANGES`, `PREVIEW`, or `MERGED`) is
+ * `description`; that label and every line after it is `diff`. A selection
+ * without drafted content yields an empty `diff`, so where no diff exists
+ * the same space falls back to the description — content where it exists,
+ * description everywhere else.
  */
 export interface DetailSections {
   description: DetailLine[];
   diff: DetailLine[];
 }
 
+/** Labels that open the diff pane's content section (the split point for the two panes). */
+const DIFF_SECTION_LABELS = new Set(["CHANGES", "PREVIEW", "MERGED"]);
+
 export function detailSections(task: PlanTask | undefined, row: PlannedTreeRow | undefined, view: PaneView = {}): DetailSections {
   const lines = detailLines(task, row, view);
-  const changes = lines.findIndex((line) => line.text === "CHANGES");
+  const changes = lines.findIndex((line) => DIFF_SECTION_LABELS.has(line.text));
   if (changes === -1) return { description: lines, diff: [] };
   return { description: lines.slice(0, changes), diff: lines.slice(changes) };
 }

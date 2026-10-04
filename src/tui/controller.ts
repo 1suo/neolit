@@ -44,6 +44,10 @@ export interface TuiActionState {
   relatedOnly: boolean;
   /** Content preview for a repository-only file selection, read fresh on refresh. */
   filePreview?: FilePreview;
+  /** Working-tree content of the selected drafted file (merged view input). */
+  fileContent?: string;
+  /** Whether the diff pane expands drafted patches over the file body. */
+  mergedView: boolean;
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
   /** Repository root the panel operates on; tasks and sessions are bound to it. */
@@ -74,6 +78,17 @@ export interface FilePreview {
 
 const FILE_PREVIEW_MAX_LINES = 100;
 const FILE_PREVIEW_MAX_CHARS = 32_000;
+const FILE_CONTENT_MAX_CHARS = 512_000;
+
+function readFileContent(absolute: string): string | undefined {
+  try {
+    const content = fs.readFileSync(absolute, "utf8");
+    if (content.includes("\0") || content.length > FILE_CONTENT_MAX_CHARS) return undefined;
+    return content;
+  } catch {
+    return undefined;
+  }
+}
 
 function readFilePreview(absolute: string): FilePreview | undefined {
   try {
@@ -322,7 +337,9 @@ export class AugmentTuiController {
   private error?: string;
   private readonly foldedPaths = new Set<string>();
   private relatedOnly = false;
+  private mergedView = false;
   private filePreview?: FilePreview;
+  private fileContent?: string;
   private readonly listeners = new Set<() => void>();
   private socket?: SocketService;
   private toolDriver?: ToolSessionDriver;
@@ -532,6 +549,8 @@ export class AugmentTuiController {
       appliedDiffIds: [...this.appliedDiffIds],
       relatedOnly: this.relatedOnly,
       filePreview: this.filePreview,
+      fileContent: this.fileContent,
+      mergedView: this.mergedView,
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
       directory: this.directory,
@@ -624,6 +643,16 @@ export class AugmentTuiController {
     this.message = this.relatedOnly
       ? "Showing only planned and marked paths. [H] shows the full repository again."
       : "Showing the full repository tree.";
+  }
+
+  /** Expands drafted patches over the file body in the diff pane (merged view). */
+  toggleMergedView(): void {
+    this.mergedView = !this.mergedView;
+    this.error = undefined;
+    this.refresh();
+    this.message = this.mergedView
+      ? "Diff pane expands drafted patches over the file body. [M] shows raw diffs again."
+      : "Diff pane shows raw drafted patches.";
   }
 
   async start(objective: string, basisRevision = currentRevision(this.directory)): Promise<void> {
@@ -1428,9 +1457,14 @@ export class AugmentTuiController {
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
     // A repository-only file has no plan state to describe: the pane shows
     // its content instead, read fresh so the preview tracks the working tree.
+    // A drafted file's content feeds the merged view the same way.
     const selected = this.rows.find((row) => row.id === this.selectedRowId);
-    this.filePreview = selected?.repositoryOnly && selected.entry.kind === "file"
-      ? readFilePreview(path.join(this.directory, selected.entry.path))
+    const selectedFile = selected?.entry.kind === "file" ? selected : undefined;
+    this.filePreview = selectedFile?.repositoryOnly
+      ? readFilePreview(path.join(this.directory, selectedFile.entry.path))
+      : undefined;
+    this.fileContent = this.mergedView && selectedFile && selectedFile.entry.diffIds.length
+      ? readFileContent(path.join(this.directory, selectedFile.entry.path))
       : undefined;
     if (this.persistTasks && this.task) {
       // Tasks are scoped per repository directory: other projects' entries

@@ -11,7 +11,7 @@ import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../sr
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { rememberSessionBinding } from "../src/tui/session-store.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
-import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, sharedContentRows, subtreeProgress, theme, wrappedRows, wrapLegend, type LegendSegment } from "../src/tui/detail.js";
+import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, mergedLines, sharedContentRows, subtreeProgress, theme, wrappedRows, wrapLegend, type LegendSegment } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
 import type { SessionStreamLine, ToolSessionDriver } from "../src/tui/tool-session.js";
@@ -372,12 +372,19 @@ describe("augment TUI controller", () => {
     expect(output).not.toContain("[LOCK");
   });
 
-  it("previews a repository-only file in the detail pane", async () => {
+  it("previews a repository-only file in the diff pane", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     controller.select("entry:LICENSE");
-    const preview = controller.snapshot().filePreview;
-    expect(preview).toBeDefined();
-    expect(preview!.lines.length).toBeGreaterThan(0);
+    const snapshot = controller.snapshot();
+    expect(snapshot.filePreview).toBeDefined();
+    expect(snapshot.filePreview!.lines.length).toBeGreaterThan(0);
+    // The preview is diff-pane content: the section split lands it there,
+    // out of the description.
+    const row = snapshot.rows.find((candidate) => candidate.id === "entry:LICENSE");
+    const sections = detailSections(snapshot.task, row, { filePreview: snapshot.filePreview });
+    expect(sections.diff[0]?.text).toBe("PREVIEW");
+    expect(sections.diff.some((line) => line.text.includes("MIT"))).toBe(true);
+    expect(sections.description.some((line) => line.text.includes("MIT"))).toBe(false);
     const instance = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
     const output = instance.lastFrame() ?? "";
     instance.unmount();
@@ -385,6 +392,48 @@ describe("augment TUI controller", () => {
     expect(output).toContain("MIT");
     // Plan hints are for planned paths; a plain file shows content instead.
     expect(output).not.toContain("develop selected path");
+  });
+
+  it("expands drafted patches over the file body in the merged view", async () => {
+    const directory = tempGitRepo();
+    const controller = new AugmentTuiController({
+      directory,
+      runtime: singleFileRuntime("--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,3 @@\n alpha\n beta\n+gamma\n"),
+    });
+    await controller.start("append gamma", "commit:1");
+    await controller.develop();
+    controller.select("entry:session.ts");
+    controller.toggleMergedView();
+    const snapshot = controller.snapshot();
+    expect(snapshot.mergedView).toBe(true);
+    expect(snapshot.fileContent).toBe("alpha\nbeta\n");
+    const row = snapshot.rows.find((candidate) => candidate.id === "entry:session.ts");
+    const sections = detailSections(snapshot.task, row, {
+      appliedDiffIds: snapshot.appliedDiffIds,
+      fileContent: snapshot.fileContent,
+      mergedView: true,
+    });
+    expect(sections.diff[0]?.text).toBe("MERGED");
+    // The body stays whole: unchanged lines plain, the addition marked.
+    expect(sections.diff.some((line) => line.text === "alpha")).toBe(true);
+    expect(sections.diff.some((line) => line.text === "+gamma")).toBe(true);
+    expect(sections.diff.some((line) => line.text === "@@ -1,2 +1,3 @@")).toBe(false);
+  });
+
+  it("mergedLines expands, creates, deletes, and refuses drifted patches", () => {
+    const modify = mergedLines("one\ntwo\nthree\n", "--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n")!;
+    expect(modify.map((line) => `${line.kind === "context" ? "" : line.kind === "add" ? "+" : "-"}${line.text}`)).toEqual(["one", "-two", "+TWO", "three"]);
+
+    const created = mergedLines("", "--- a/f\n+++ b/f\n@@ -0,0 +1,2 @@\n+alpha\n+beta\n")!;
+    expect(created).toEqual([{ text: "alpha", kind: "add" }, { text: "beta", kind: "add" }]);
+
+    const removed = mergedLines("only\n", "--- a/f\n+++ b/f\n@@ -1,1 +0,0 @@\n-only\n")!;
+    expect(removed).toEqual([{ text: "only", kind: "remove" }]);
+
+    // A preimage that does not match the content must not render a body.
+    expect(mergedLines("different\n", "--- a/f\n+++ b/f\n@@ -1,1 +1,1 @@\n-only\n+two\n")).toBeUndefined();
+    // A patch without hunks has nothing to expand.
+    expect(mergedLines("one\n", "--- a/f\n+++ b/f\n")).toBeUndefined();
   });
 
   it("explains the selected node inside an active change task", async () => {

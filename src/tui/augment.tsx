@@ -204,7 +204,9 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     appliedDiffIds: state.appliedDiffIds,
     live: liveStatus,
     filePreview: state.filePreview,
-  }), [state.task, selectedRow, state.pendingMarks, state.pendingMode, state.appliedDiffIds, liveStatus, state.filePreview]);
+    fileContent: state.fileContent,
+    mergedView: state.mergedView,
+  }), [state.task, selectedRow, state.pendingMarks, state.pendingMode, state.appliedDiffIds, liveStatus, state.filePreview, state.fileContent, state.mergedView]);
   const visibleDiff = contentView === "description" ? [] : sections.diff;
   const paneLines = visibleDiff.length ? visibleDiff : sections.description;
   const statusMessage = state.busy ? `${state.operation ?? "Working"}...` : state.error ?? state.message;
@@ -280,6 +282,14 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         return;
       }
       beginInput("message");
+      return;
+    }
+
+    // Uppercase bindings are distinct keys (the lowercase map below folds
+    // case): M toggles the merged diff view.
+    if (input === "M") {
+      props.controller.toggleMergedView();
+      sync();
       return;
     }
 
@@ -467,8 +477,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
             { text: " lock ·", color: theme.primary },
             { text: "[W]", color: theme.primary, bold: true },
             { text: " allow ·", color: theme.primary },
-            { text: "[M]", color: theme.primary, bold: true },
+            { text: "[m]", color: theme.primary, bold: true },
             { text: " models ·", color: theme.primary },
+            { text: "[M]", color: theme.primary, bold: true },
+            { text: " merged ·", color: theme.primary },
             { text: "[N]", color: theme.primary, bold: true },
             { text: " new ·", color: theme.primary },
             { text: "[F]", color: theme.muted, bold: true },
