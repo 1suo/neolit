@@ -146,7 +146,11 @@ augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment.sock"
 
 and its MCP tool calls (`draft_file`, `select_approach`, …) mutate the task
 the TUI is rendering: each adopted change repaints the tree and detail panes
-while the TUI is idle, and the winbar-style header shows the served address.
+while the TUI is idle. The header carries the location and identity instead
+of the address: `dir/branch` for the repository the panel is bound to, and
+`ses_… (task:…)` for the agent session serving the active task (read from
+the directory-scoped session store; the address itself is the deterministic
+default above or `AUGMENT_TUI_SOCKET`).
 A write that races a running TUI operation queues behind it and then fails
 the optimistic-concurrency check, exactly like any other stale writer.
 `AugmentTuiController` exposes `server` for hosts that want to serve the

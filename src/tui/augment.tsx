@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import path from "node:path";
 import { Box, Text, render, useApp, useInput, useWindowSize, type RenderOptions } from "ink";
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
 import type { SessionStreamLine } from "./tool-session.js";
 import { AugmentTuiController, candidatesForEntry, type PlannedTreeRow, type TuiActionState } from "./controller.js";
-import { adaptiveLayout, detailSections, entryName, entryState, entryTouchesNode, sharedContentRows, theme, wrappedRows, wrapLegend, type DetailLine, type InputMode, type LegendSegment, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
+import { adaptiveLayout, detailSections, entryName, entryState, entryTouchesNode, sharedContentRows, shortSessionId, shortTaskId, theme, wrappedRows, wrapLegend, type DetailLine, type InputMode, type LegendSegment, type LiveStatus, type RowLiveFlags, type RowView } from "./detail.js";
 import { Picker, availableModels, toPickerItems, type PickerItem } from "./setup.js";
 
 
@@ -339,22 +340,16 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       <Box gap={2} flexShrink={0}>
         <Text color={theme.primary} bold>NEOLIT</Text>
         <Text color={state.error ? theme.error : status === "IDLE" ? theme.muted : theme.success}>[{status}]</Text>
-        <Text color={theme.secondary}>[{state.task?.mode === "explanation" ? "EXPLANATION" : "PLANNED CHANGE"}]</Text>
+        <Text color={theme.secondary}>{path.basename(state.directory)}{state.branch ? `/${state.branch}` : ""}</Text>
+        {state.task ? (
+          <Text color={theme.muted}>{state.agentSession ? `${shortSessionId(state.agentSession)} (${shortTaskId(state.task.id)})` : shortTaskId(state.task.id)}</Text>
+        ) : null}
         {(state.task?.lockedPaths.length ?? 0) > 0 || state.pendingMarks.length > 0 ? (
           <Text color={(state.task?.restrictionMode ?? state.pendingMode) === "lock" ? theme.error : theme.accent}>
             [{(state.task?.restrictionMode ?? state.pendingMode) === "lock" ? "LOCK" : "ALLOW"} {state.task?.lockedPaths.length ?? state.pendingMarks.length}]
           </Text>
         ) : null}
         {state.relatedOnly ? <Text color={theme.secondary}>[RELATED]</Text> : null}
-        {state.task ? (
-          <Text color={theme.muted}>r{state.task.revision} · {state.task.basisRevision.slice(0, 12)}</Text>
-        ) : null}
-        {state.socketPath ? (
-          <Text color={theme.muted}>⎇ agents: {state.socketPath}</Text>
-        ) : null}
-        {state.toolSession ? (
-          <Text color={theme.secondary}>[TOOLS]</Text>
-        ) : null}
         <Box flexGrow={1} />
         <Text color={props.modelAvailable ? theme.success : theme.warning}>{props.modelAvailable ? props.modelLabel ?? "OPENCODE" : "NO MODEL"}</Text>
       </Box>

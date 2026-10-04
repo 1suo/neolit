@@ -80,6 +80,19 @@ export function entryName(entry: PlannedTreeRow["entry"]): string {
   return entry.kind === "dir" ? `${entry.name}/` : entry.name;
 }
 
+/**
+ * Compact header forms of the session and task ids: enough to recognize at a
+ * glance and correlate across panels, short enough to fit a narrow frame.
+ * Task ids are millisecond timestamps, so the tail carries the distinction.
+ */
+export function shortSessionId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 12)}…` : id;
+}
+
+export function shortTaskId(id: string): string {
+  return id.startsWith("task:") ? `task:${id.slice(-6)}` : id;
+}
+
 function diffLabel(kind: PlannedDiff["kind"]): string {
   if (kind === "new") return "added";
   if (kind === "delete") return "removed";

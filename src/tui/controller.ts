@@ -8,6 +8,7 @@ import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js"
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
 import type { SessionStreamLine, ToolSessionDriver } from "./tool-session.js";
+import { sessionBindingFor } from "./session-store.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, RoutedMessage, RoutedOption, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
@@ -43,6 +44,12 @@ export interface TuiActionState {
   relatedOnly: boolean;
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
+  /** Repository root the panel operates on; tasks and sessions are bound to it. */
+  directory: string;
+  /** Current git branch (short sha on a detached HEAD; undefined outside git). */
+  branch?: string;
+  /** Agent session bound to the active task in this directory, if any. */
+  agentSession?: string;
   /** Socket address external agents attach to (`augmentd --mcp --connect …`). */
   socketPath?: string;
   /** Model operations run as prompts in one tool-using agent session per task. */
@@ -264,6 +271,7 @@ export function candidatesForEntry(task: PlanTask | undefined, entry: PlanTreeEn
 
 export class AugmentTuiController {
   readonly directory: string;
+  private readonly branch?: string;
   private readonly runtime?: ModelRuntime;
   /** The embedded protocol server; hosts may serve it on additional transports. */
   readonly server: AugmentServer;
@@ -297,6 +305,7 @@ export class AugmentTuiController {
 
   constructor(options: AugmentTuiControllerOptions) {
     this.directory = options.directory;
+    this.branch = currentBranch(options.directory);
     this.runtime = options.runtime;
     this.server = new AugmentServer({ runtime: options.runtime });
     this.defaultLod = options.defaultLod ?? "file";
@@ -496,6 +505,9 @@ export class AugmentTuiController {
       relatedOnly: this.relatedOnly,
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
+      directory: this.directory,
+      branch: this.branch,
+      agentSession: this.task ? sessionBindingFor(this.directory, this.task.id) : undefined,
       socketPath: this.socket?.path,
       toolSession: this.toolDriver !== undefined,
       sessionLines: [...this.sessionLines],
@@ -1460,4 +1472,18 @@ export function currentRevision(directory: string): string {
   } catch {
     return `workspace:${new Date().toISOString()}`;
   }
+}
+
+/** Branch name (short sha on a detached HEAD); undefined outside a repository. */
+export function currentBranch(directory: string): string | undefined {
+  const git = (args: string[]): string | undefined => {
+    try {
+      return execFileSync("git", ["-C", directory, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const ref = git(["rev-parse", "--abbrev-ref", "HEAD"]);
+  if (ref === undefined) return undefined;
+  return ref === "HEAD" ? git(["rev-parse", "--short", "HEAD"]) : ref;
 }

@@ -9,6 +9,7 @@ import { cleanup, render as renderInk } from "ink-testing-library";
 import { preflightPatches } from "../src/tui/apply.js";
 import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../src/tui/opencode-runtime.js";
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
+import { rememberSessionBinding } from "../src/tui/session-store.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
 import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, sharedContentRows, subtreeProgress, theme, wrappedRows, wrapLegend, type LegendSegment } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
@@ -37,11 +38,11 @@ function fakeOpenCode(output = "{\"type\":\"message\",\"parts\":[{\"type\":\"tex
   return file;
 }
 
-function tempGitRepo(): string {
+function tempGitRepo(branch?: string): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "augment-apply-"));
   temporaryDirectories.push(directory);
   const git = (args: string[]) => execFileSync("git", ["-C", directory, ...args], { stdio: "ignore" });
-  git(["init", "-q"]);
+  git(["init", "-q", ...(branch ? ["-b", branch] : [])]);
   fs.writeFileSync(path.join(directory, "session.ts"), "alpha\nbeta\n");
   git(["add", "session.ts"]);
   git(["-c", "user.email=t@example.com", "-c", "user.name=test", "commit", "-q", "-m", "init"]);
@@ -407,7 +408,7 @@ describe("augment TUI controller", () => {
 
     controller.select("entry:src/augment");
     const output = renderToString(React.createElement(AugmentTui, { controller, modelAvailable: true }));
-    expect(output).toContain("EXPLANATION");
+    expect(output).toContain("EXPLAINED");
     expect(output).toContain("Owns planned state.");
     expect(output).toContain("Core planning subsystem.");
   });
@@ -1101,6 +1102,53 @@ describe("augment TUI rendering", () => {
     expect(output).toContain("augment/");
     expect(output).not.toContain("unchanged");
     expect(output).toContain("Press [N] to describe a change.");
+  });
+
+  it("heads the panel with the repository directory, branch, and session(task)", async () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = state;
+    const directory = tempGitRepo("panel-branch");
+    try {
+      const controller = new AugmentTuiController({ directory, runtime: modelRuntime() });
+      // Before a task exists the header carries the location, not task noise.
+      // (The ink test terminal is 100 columns: room for one header line.)
+      const idle = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
+      const idleOutput = idle.lastFrame() ?? "";
+      idle.unmount();
+      expect(idleOutput).toContain(`${path.basename(directory)}/panel-branch`);
+      expect(idleOutput).not.toContain("PLANNED CHANGE");
+
+      // A task shows its id; once a session is bound to it in this directory
+      // the header names the session with the task it serves (compact forms
+      // so a narrow frame still fits one line).
+      await controller.start("bounded retries", "commit:1");
+      const taskId = controller.snapshot().task!.id;
+      const started = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
+      const startedOutput = started.lastFrame() ?? "";
+      started.unmount();
+      expect(startedOutput).toContain(`task:${taskId.slice(-6)}`);
+
+      rememberSessionBinding(directory, taskId, "ses_header1");
+      const bound = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
+      const boundOutput = bound.lastFrame() ?? "";
+      bound.unmount();
+      expect(boundOutput).toContain(`ses_header1 (task:${taskId.slice(-6)})`);
+
+      // A session bound to the same task id in ANOTHER directory must not
+      // surface here — the header cannot claim a foreign project's session.
+      const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "augment-other-dir-"));
+      temporaryDirectories.push(elsewhere);
+      rememberSessionBinding(elsewhere, taskId, "ses_foreign9");
+      const after = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
+      const afterOutput = after.lastFrame() ?? "";
+      after.unmount();
+      expect(afterOutput).toContain("ses_header1");
+      expect(afterOutput).not.toContain("ses_foreign9");
+    } finally {
+      if (previous === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previous;
+    }
   });
 
   it("animates the active operation in the tree and preview, then clears it", async () => {
