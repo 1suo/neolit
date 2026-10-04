@@ -355,6 +355,38 @@ describe("augment TUI controller", () => {
     }
   });
 
+  it("marks the related filter on the FILES pane, not the header", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    await controller.start("bounded retries", "commit:1");
+    controller.select("entry:src/augment/state.ts");
+    await controller.toggleRestriction("lock");
+    controller.toggleRelatedOnly();
+    const instance = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
+    const output = instance.lastFrame() ?? "";
+    instance.unmount();
+    // The filter belongs to the tree: its pane title says so.
+    expect(output).toContain("FILES · related");
+    // The header carries identity only — no state chips for locks or filters
+    // (locked rows carry their marks inline).
+    expect(output).not.toContain("[RELATED]");
+    expect(output).not.toContain("[LOCK");
+  });
+
+  it("previews a repository-only file in the detail pane", async () => {
+    const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
+    controller.select("entry:LICENSE");
+    const preview = controller.snapshot().filePreview;
+    expect(preview).toBeDefined();
+    expect(preview!.lines.length).toBeGreaterThan(0);
+    const instance = renderInk(React.createElement(AugmentTui, { controller, modelAvailable: false }));
+    const output = instance.lastFrame() ?? "";
+    instance.unmount();
+    expect(output).toContain("PREVIEW");
+    expect(output).toContain("MIT");
+    // Plan hints are for planned paths; a plain file shows content instead.
+    expect(output).not.toContain("develop selected path");
+  });
+
   it("explains the selected node inside an active change task", async () => {
     const controller = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime() });
     await controller.start("bounded retries", "commit:1");

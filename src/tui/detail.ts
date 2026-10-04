@@ -1,5 +1,5 @@
 import type { PlanNode, PlanTask, PlannedDiff } from "../augment/types.js";
-import { candidatesForEntry, entryHasPlan, type PlannedTreeRow } from "./controller.js";
+import { candidatesForEntry, entryHasPlan, type FilePreview, type PlannedTreeRow } from "./controller.js";
 
 /** Node kinds that develop by drafting their own patch. */
 const FILE_TARGET_KINDS = ["file", "hunk", "virtual"];
@@ -55,6 +55,8 @@ export interface PaneView {
   pendingMode?: "lock" | "allow";
   appliedDiffIds?: string[];
   live?: LiveStatus;
+  /** Content of a repository-only file selection (no plan state to show). */
+  filePreview?: FilePreview;
 }
 
 
@@ -398,13 +400,23 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   }
   else {
     if (!task) add("  [N] describe a change or ask about the repository", theme.muted);
-    else if (possible.length) {
-      // Nothing extra here: the option list and its 1-N hint render in DESCRIPTION.
+    if (!isDirectory && !nodes.length) {
+      // A repository-only file: show what it holds instead of plan hints.
+      if (view.filePreview) {
+        label("PREVIEW");
+        for (const line of view.filePreview.lines) add(line.length ? line : " ", theme.text);
+        if (view.filePreview.truncated) add(`… ${view.filePreview.totalLines - view.filePreview.lines.length} more lines`, theme.muted);
+      }
+      else if (task) add("  [Enter] message/regenerate · [D] develop selected path · [H] related only", theme.muted);
     }
-    else if (nodes.some((node) => (node.kind === "root" || node.kind === "dir") && node.status === "unresolved" && !node.candidateIds.length)) add("  [D] generate approaches for this path · [Enter] add a guiding message first", theme.muted);
-    else if (!isDirectory && nodes.length) add("  [D] develop — drafts this file's exact patch · [A] apply after", theme.muted);
-    else if (isDirectory) add("  [D] develop — drafts every undrafted file below · [F] fold · [H] related only", theme.muted);
-    else add("  [Enter] message/regenerate · [D] develop selected path · [H] related only", theme.muted);
+    else if (task) {
+      if (possible.length) {
+        // Nothing extra here: the option list and its 1-N hint render in DESCRIPTION.
+      }
+      else if (nodes.some((node) => (node.kind === "root" || node.kind === "dir") && node.status === "unresolved" && !node.candidateIds.length)) add("  [D] generate approaches for this path · [Enter] add a guiding message first", theme.muted);
+      else if (!isDirectory && nodes.length) add("  [D] develop — drafts this file's exact patch · [A] apply after", theme.muted);
+      else if (isDirectory) add("  [D] develop — drafts every undrafted file below · [F] fold · [H] related only", theme.muted);
+    }
   }
 
   if (nodes.some((node) => node.challengeExhausted)) {

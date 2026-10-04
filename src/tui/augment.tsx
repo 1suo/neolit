@@ -203,7 +203,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     pendingMode: state.pendingMode,
     appliedDiffIds: state.appliedDiffIds,
     live: liveStatus,
-  }), [state.task, selectedRow, state.pendingMarks, state.pendingMode, state.appliedDiffIds, liveStatus]);
+    filePreview: state.filePreview,
+  }), [state.task, selectedRow, state.pendingMarks, state.pendingMode, state.appliedDiffIds, liveStatus, state.filePreview]);
   const visibleDiff = contentView === "description" ? [] : sections.diff;
   const paneLines = visibleDiff.length ? visibleDiff : sections.description;
   const statusMessage = state.busy ? `${state.operation ?? "Working"}...` : state.error ?? state.message;
@@ -344,12 +345,6 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
         {state.task ? (
           <Text color={theme.muted}>{state.agentSession ? `${shortSessionId(state.agentSession)} (${shortTaskId(state.task.id)})` : shortTaskId(state.task.id)}</Text>
         ) : null}
-        {(state.task?.lockedPaths.length ?? 0) > 0 || state.pendingMarks.length > 0 ? (
-          <Text color={(state.task?.restrictionMode ?? state.pendingMode) === "lock" ? theme.error : theme.accent}>
-            [{(state.task?.restrictionMode ?? state.pendingMode) === "lock" ? "LOCK" : "ALLOW"} {state.task?.lockedPaths.length ?? state.pendingMarks.length}]
-          </Text>
-        ) : null}
-        {state.relatedOnly ? <Text color={theme.secondary}>[RELATED]</Text> : null}
         <Box flexGrow={1} />
         <Text color={props.modelAvailable ? theme.success : theme.warning}>{props.modelAvailable ? props.modelLabel ?? "OPENCODE" : "NO MODEL"}</Text>
       </Box>
@@ -392,7 +387,7 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       <Box flexGrow={1} minHeight={0} gap={1}>
         <Box flexDirection="column" width={layout.treeColumns} flexShrink={0}>
           <Box flexGrow={1} minHeight={0} borderStyle="round" borderColor={pane === "tree" ? theme.borderActive : theme.border} flexDirection="column" overflow="hidden" paddingX={1}>
-            <Text color={pane === "tree" ? theme.primary : theme.muted} bold>FILES</Text>
+            <Text color={state.relatedOnly ? theme.accent : pane === "tree" ? theme.primary : theme.muted} bold>FILES{state.relatedOnly ? " · related" : ""}</Text>
             {treeRows.length === 0 ? (
               <Text color={theme.muted}>No plan yet. Press [N].</Text>
             ) : treeRows.map((row) => {

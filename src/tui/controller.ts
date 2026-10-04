@@ -42,6 +42,8 @@ export interface TuiActionState {
   pendingMode: "lock" | "allow";
   appliedDiffIds: string[];
   relatedOnly: boolean;
+  /** Content preview for a repository-only file selection, read fresh on refresh. */
+  filePreview?: FilePreview;
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
   /** Repository root the panel operates on; tasks and sessions are bound to it. */
@@ -60,6 +62,31 @@ export interface TuiActionState {
   sessionView: boolean;
   /** Offered interpretations of the last ambiguous message, keyed 1-N; cleared once one is chosen or a new message arrives. */
   routedOptions?: RoutedOption[];
+}
+
+/** Bounded read of a repository file's content for the detail-pane preview. */
+export interface FilePreview {
+  path: string;
+  lines: string[];
+  truncated: boolean;
+  totalLines: number;
+}
+
+const FILE_PREVIEW_MAX_LINES = 100;
+const FILE_PREVIEW_MAX_CHARS = 32_000;
+
+function readFilePreview(absolute: string): FilePreview | undefined {
+  try {
+    const content = fs.readFileSync(absolute, "utf8");
+    if (content.includes("\0")) return undefined; // binary: nothing to preview
+    const all = content.split(/\r?\n/);
+    let lines = all.slice(0, FILE_PREVIEW_MAX_LINES);
+    while (lines.length > 1 && lines.join("\n").length > FILE_PREVIEW_MAX_CHARS) lines = lines.slice(0, -1);
+    if (!lines.length || (lines.length === 1 && !lines[0]!.trim())) return undefined;
+    return { path: absolute, lines, truncated: lines.length < all.length, totalLines: all.length };
+  } catch {
+    return undefined;
+  }
 }
 
 export interface AugmentTuiControllerOptions {
@@ -295,6 +322,7 @@ export class AugmentTuiController {
   private error?: string;
   private readonly foldedPaths = new Set<string>();
   private relatedOnly = false;
+  private filePreview?: FilePreview;
   private readonly listeners = new Set<() => void>();
   private socket?: SocketService;
   private toolDriver?: ToolSessionDriver;
@@ -503,6 +531,7 @@ export class AugmentTuiController {
       pendingMode: this.pendingMode,
       appliedDiffIds: [...this.appliedDiffIds],
       relatedOnly: this.relatedOnly,
+      filePreview: this.filePreview,
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
       directory: this.directory,
@@ -539,7 +568,12 @@ export class AugmentTuiController {
   }
 
   select(rowId: string): void {
-    if (this.rows.some((row) => row.id === rowId)) this.selectedRowId = rowId;
+    if (this.rows.some((row) => row.id === rowId)) {
+      this.selectedRowId = rowId;
+      // Selection drives the detail pane; derived state (the file preview)
+      // must follow it immediately, not one keypress behind.
+      this.refresh();
+    }
   }
 
   /**
@@ -1392,6 +1426,12 @@ export class AugmentTuiController {
     const view = this.viewOptions();
     this.rows = this.task ? plannedTreeRows(this.task, this.repository, view) : plannedTreeRowsFromRepository(this.repository, view);
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
+    // A repository-only file has no plan state to describe: the pane shows
+    // its content instead, read fresh so the preview tracks the working tree.
+    const selected = this.rows.find((row) => row.id === this.selectedRowId);
+    this.filePreview = selected?.repositoryOnly && selected.entry.kind === "file"
+      ? readFilePreview(path.join(this.directory, selected.entry.path))
+      : undefined;
     if (this.persistTasks && this.task) {
       // Tasks are scoped per repository directory: other projects' entries
       // stay untouched, and this project keeps at most MAX_STORED_TASKS of
