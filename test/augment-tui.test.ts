@@ -325,27 +325,29 @@ describe("augment TUI controller", () => {
     }
   });
 
-  it("resumes a legacy unscoped task once and rewrites it with its directory", async () => {
+  it("never resumes an unscoped task, whichever folder opens next", async () => {
     const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
     const previous = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = state;
     try {
       // Seed the store the pre-scoping way: a saved entry without a directory.
       const seeder = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
-      await seeder.start("legacy task", "commit:1");
+      await seeder.start("orphaned task", "commit:1");
       const storePath = path.join(state, "neolit", "augment-tasks.json");
       const seeded = JSON.parse(fs.readFileSync(storePath, "utf8"));
       for (const entry of seeded) delete entry.directory;
       fs.writeFileSync(storePath, JSON.stringify(seeded));
 
-      // The legacy entry still resumes — the task and its agent session
-      // survive the upgrade — and the next save adopts it with a directory.
-      const resumed = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
-      expect(resumed.snapshot().task?.objective).toBe("legacy task");
-      resumed.toggleRelatedOnly();
-      const adopted = JSON.parse(fs.readFileSync(storePath, "utf8")) as Array<{ directory?: string }>;
-      expect(adopted).toHaveLength(1);
-      expect(adopted[0]!.directory).toBe(process.cwd());
+      // An unscoped entry cannot be attributed to a project, so no folder
+      // adopts it: this controller starts empty instead of resuming it.
+      const opened = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
+      expect(opened.snapshot().task).toBeUndefined();
+      // Doing work drops the unscoped entry from the store for good.
+      await opened.start("fresh scoped task", "commit:2");
+      const stored = JSON.parse(fs.readFileSync(storePath, "utf8")) as Array<{ directory: string; task: { objective: string } }>;
+      expect(stored).toHaveLength(1);
+      expect(stored[0]!.directory).toBe(process.cwd());
+      expect(stored[0]!.task.objective).toBe("fresh scoped task");
     } finally {
       if (previous === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previous;
@@ -2027,7 +2029,109 @@ describe("OpenCode CLI runtime parsing", () => {
       await new OpenCodeCliRuntime({ directory: process.cwd(), command: file, timeoutMs: 5_000 }).call(request);
       const logged = fs.readFileSync(log, "utf8");
       expect(logged.match(/--session ses_persist1/g)?.length).toBe(1);
-      expect(JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-sessions.json"), "utf8"))).toEqual({ "task:persist": "ses_persist1" });
+      expect(JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-sessions.json"), "utf8")))
+        .toEqual({ [path.resolve(process.cwd())]: { "task:persist": "ses_persist1" } });
+    } finally {
+      if (previous === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
+  it("never resumes a session that belongs to another repository directory", async () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = state;
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "augment-other-repo-"));
+    temporaryDirectories.push(other);
+    try {
+      const output = JSON.stringify({ type: "message", sessionID: "ses_mine1", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
+      const script = (log: string) => {
+        const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+        fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+        fs.chmodSync(file, 0o755);
+        temporaryFiles.push(file);
+        return file;
+      };
+      const request = (taskId: string) => ({
+        operation: "challenge-domain" as const,
+        context: {
+          taskId,
+          taskRevision: 1,
+          objective: "objective",
+          basisRevision: "commit:1",
+          node: {} as never,
+          candidates: [],
+          constraints: [],
+          obligations: [],
+          diffs: [],
+          taskDiffs: [],
+          lockedPaths: [],
+          rejectedCandidates: [],
+        },
+        temperature: "normal" as const,
+        lod: "file" as const,
+      });
+      // One directory binds a session for the task…
+      const homeLog = path.join(os.tmpdir(), `augment-cross-home-${process.pid}-${temporaryFiles.length}.txt`);
+      temporaryFiles.push(homeLog);
+      await new OpenCodeCliRuntime({ directory: process.cwd(), command: script(homeLog), timeoutMs: 5_000 }).call(request("task:cross"));
+      // …and another directory must not see it, so its first call starts a
+      // fresh session instead of resuming the foreign one.
+      const otherLog = path.join(os.tmpdir(), `augment-cross-other-${process.pid}-${temporaryFiles.length}.txt`);
+      temporaryFiles.push(otherLog);
+      await new OpenCodeCliRuntime({ directory: other, command: script(otherLog), timeoutMs: 5_000 }).call(request("task:cross"));
+      expect(fs.readFileSync(otherLog, "utf8")).not.toContain("--session ses_mine1");
+      const stored = JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-sessions.json"), "utf8"));
+      expect(stored).toEqual({
+        [path.resolve(process.cwd())]: { "task:cross": "ses_mine1" },
+        [path.resolve(other)]: { "task:cross": "ses_mine1" },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
+  it("ignores a pre-scoping flat session file instead of reviving its bindings", async () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = state;
+    try {
+      fs.mkdirSync(path.join(state, "neolit"), { recursive: true });
+      fs.writeFileSync(path.join(state, "neolit", "augment-sessions.json"), JSON.stringify({ "task:old": "ses_foreign1" }));
+      const log = path.join(os.tmpdir(), `augment-flat-log-${process.pid}-${temporaryFiles.length}.txt`);
+      temporaryFiles.push(log);
+      const output = JSON.stringify({ type: "message", sessionID: "ses_fresh1", parts: [{ type: "text", text: "{\"kind\":\"accept\"}" }] });
+      const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
+      fs.writeFileSync(file, `#!/bin/sh\nif [ "$1" = "serve" ]; then printf 'Serving on http://127.0.0.1:1\n'; exit 0; fi\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+      fs.chmodSync(file, 0o755);
+      temporaryFiles.push(file);
+      await new OpenCodeCliRuntime({
+        directory: process.cwd(),
+        command: file,
+        timeoutMs: 5_000,
+      }).call({
+        operation: "challenge-domain" as const,
+        context: {
+          taskId: "task:old",
+          taskRevision: 1,
+          objective: "objective",
+          basisRevision: "commit:1",
+          node: {} as never,
+          candidates: [],
+          constraints: [],
+          obligations: [],
+          diffs: [],
+          taskDiffs: [],
+          lockedPaths: [],
+          rejectedCandidates: [],
+        },
+        temperature: "normal" as const,
+        lod: "file" as const,
+      });
+      expect(fs.readFileSync(log, "utf8")).not.toContain("--session ses_foreign1");
+      expect(JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-sessions.json"), "utf8")))
+        .toEqual({ [path.resolve(process.cwd())]: { "task:old": "ses_fresh1" } });
     } finally {
       if (previous === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previous;

@@ -1,11 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { ModelCallRequest, ModelContextPacket, ModelRuntime } from "../augment/types.js";
 import { parseRawDraftReply } from "../augment/raw-diff.js";
 import { preflightPatches } from "./apply.js";
 import { backendById, extractServerUrl, opencodeBackend, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
+import { forgetSessionBinding, rememberSessionBinding, sessionBindingFor } from "./session-store.js";
 
 export { extractAssistantText } from "./agent-backends.js";
 
@@ -180,31 +180,6 @@ const TRUNCATED_DIFF_CORRECTION = "Your previous reply contained no complete uni
 
 const DRAFT_MODEL_FALLBACK_NOTE = "The faster draft model could not produce a usable answer, so you are the reliable fallback. Answer with only the requested diff: minimal hunks, no prose, complete to the end.";
 
-function sessionsStorePath(): string {
-  const base = process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim()
-    ? process.env.XDG_STATE_HOME
-    : path.join(os.homedir(), ".local", "state");
-  return path.join(base, "neolit", "augment-sessions.json");
-}
-
-function loadSessions(): Map<string, string> {
-  try {
-    const raw = JSON.parse(fs.readFileSync(sessionsStorePath(), "utf8")) as Record<string, unknown>;
-    return new Map(Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].startsWith("ses_")));
-  } catch {
-    return new Map();
-  }
-}
-
-function saveSessions(sessions: Map<string, string>): void {
-  try {
-    fs.mkdirSync(path.dirname(sessionsStorePath()), { recursive: true });
-    fs.writeFileSync(sessionsStorePath(), `${JSON.stringify(Object.fromEntries(sessions), null, 2)}\n`, "utf8");
-  } catch {
-    // Persistence is best-effort; the in-memory mapping keeps working.
-  }
-}
-
 const DRAFT_FILE_EMBED_LIMIT = 64_000;
 const DRAFT_OPERATIONS = new Set(["draft-patch", "repair-patch", "draft-patches"]);
 /** Single-file drafts reply with the raw unified diff itself, not JSON. */
@@ -358,7 +333,6 @@ export class CliAgentRuntime implements ModelRuntime {
   private readonly serverUrl?: string;
   private readonly retries: number;
   private readonly retryDelayMs: number;
-  private readonly sessions: Map<string, string> = loadSessions();
 
   constructor(options: OpenCodeCliRuntimeOptions) {
     this.directory = options.directory;
@@ -449,7 +423,7 @@ export class CliAgentRuntime implements ModelRuntime {
     // the context and pushes the long patch reply over output limits. Only
     // conversation-style operations (domain, challenge, refine, explain)
     // continue their session.
-    const previous = this.continueSessions && !DRAFT_OPERATIONS.has(request.operation) ? this.sessions.get(taskId) : undefined;
+    const previous = this.continueSessions && !DRAFT_OPERATIONS.has(request.operation) ? sessionBindingFor(this.directory, taskId) : undefined;
     const regenerationNote = request.operation === "generate-domain" && request.context.rejectedCandidates?.length
       ? "This is a regeneration: the operator rejected the approaches listed in rejectedCandidates. Produce materially different candidates — never repeat a rejected label or a trivial rewording of one."
       : undefined;
@@ -473,8 +447,7 @@ export class CliAgentRuntime implements ModelRuntime {
         this.rememberSession(taskId, stdout);
         return { text: this.backend.parseAssistantText(stdout), stdout };
       } catch {
-        this.sessions.delete(taskId);
-        saveSessions(this.sessions);
+        forgetSessionBinding(this.directory, taskId);
       }
     }
     const stdout = await this.run(this.invocation(request, baseParts.join("\n\n"), undefined, modelOverride));
@@ -492,13 +465,7 @@ export class CliAgentRuntime implements ModelRuntime {
 
   private rememberSession(taskId: string, stdout: string): void {
     const session = this.backend.extractSessionId(stdout);
-    if (!session) return;
-    this.sessions.set(taskId, session);
-    if (this.sessions.size > 64) {
-      const oldest = this.sessions.keys().next().value;
-      if (oldest !== undefined) this.sessions.delete(oldest);
-    }
-    saveSessions(this.sessions);
+    if (session) rememberSessionBinding(this.directory, taskId, session);
   }
 
   private run(args: string[]): Promise<string> {

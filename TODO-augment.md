@@ -9,7 +9,7 @@ Known gaps between shipped behavior and `src/augment/SPEC.md`.
 - [x] Add task-local locked paths with mutation rejection.
 - [x] Keep candidate domains node-local and scope candidate paths to their owning node.
 - [ ] Add native OpenCode-plugin and Codex `ModelRuntime` adapters.
-- [ ] Persist and reload TUI tasks across process restarts.
+- [x] Persist and reload TUI tasks across process restarts.
 - [x] Add a stable transport address (Unix socket) alongside stdio: the TUI (and any embedding host) serves its embedded server on `$XDG_RUNTIME_DIR/neolit/augment.sock`, mutation notifications broadcast to attached clients, and per-task serialization of mutating dispatch keeps concurrent writers from losing updates (a racing writer fails the optimistic-concurrency check instead of being overwritten by a stale-snapshot result).
 - [ ] Add protocol change notifications for multi-client tree views.
 - [ ] Add path-aware filesystem indexing.

@@ -175,10 +175,12 @@ exactly the session-applied paths. While it runs, the TUI serves its embedded
 server on a Unix socket, so an external agent (`augmentd --mcp --connect`)
 drives the same task store and every tool-driven mutation renders in the panes
 as it lands. When the backend can carry MCP tools into non-interactive runs,
-the TUI keeps one tool-using agent session per task and its own operations
-become short pointing prompts against that socket; `AUGMENT_TUI_NO_TOOLS=1`
-falls back to one-shot prompts. The full keymap, layout, and interaction
-conventions are canonical in [`src/tui/README.md`](./src/tui/README.md).
+the TUI keeps one tool-using agent session per task — bound to the task's
+repository directory, revived on restart, and never shared across projects —
+and its own operations become short pointing prompts against that socket;
+`AUGMENT_TUI_NO_TOOLS=1` falls back to one-shot prompts. The full keymap,
+layout, and interaction conventions are canonical in
+[`src/tui/README.md`](./src/tui/README.md).
 
 ## Documentation
 

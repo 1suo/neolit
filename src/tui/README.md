@@ -112,6 +112,11 @@ The executable uses `CliAgentRuntime`, a backend-neutral agent runner: prompt
 construction, retries, corrective feedback, session persistence, timeouts,
 and per-operation model routing are shared, while each backend contributes
 only its argv shape and output parsing in `src/tui/agent-backends.ts`.
+Sessions are bound per task and per repository directory through
+`src/tui/session-store.ts` (`$XDG_STATE_HOME/neolit/augment-sessions.json`,
+keyed `{ [directory]: { [taskId]: sessionId } }`): a restarted TUI revives a
+task's session, and a session created in one directory is never resumed for
+another. Pre-scoping flat session files are ignored rather than guessed at.
 Backends with a server mode can also skip the CLI's fixed startup cost:
 `opencode` exposes `serveArgs` (`opencode serve --port 0`), and
 `PersistentAgentServer` in `src/tui/opencode-runtime.ts` keeps that one
@@ -168,11 +173,11 @@ AUGMENT_OPENCODE_DRAFT_MODEL
 AUGMENT_OPENCODE_CHALLENGE_MODEL
 AUGMENT_OPENCODE_AGENT
 AUGMENT_OPENCODE_TIMEOUT_MS    (default 600000; slow model runs are killed after this budget)
-AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh session for every call)
+AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh session for every call; bindings are scoped per repository directory in $XDG_STATE_HOME/neolit/augment-sessions.json)
 AUGMENT_OPENCODE_SERVER        (OpenCode URL; every call connects to this server — no implicit service spawn)
 AUGMENT_OPENCODE_RETRIES       (default 2; extra attempts for rate limits, disconnects, and unparseable output)
 AUGMENT_CHALLENGE_ROUNDS       (0-2, default 2; 0 skips challenge rounds for much faster domains)
-AUGMENT_TUI_TASKS              (default on; set 0 to disable persisting and resuming the active task; tasks are scoped per repository directory and never resume in another project)
+AUGMENT_TUI_TASKS              (default on; set 0 to disable persisting and resuming the active task; tasks are scoped per repository directory, stamped at creation, and never resume in another project — stored entries without a directory are dropped at load)
 AUGMENT_TUI_NO_MODEL=1
 ```
 

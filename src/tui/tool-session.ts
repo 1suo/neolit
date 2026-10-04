@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { AugmentServer } from "../augmentd/server.js";
 import type { PlanTask } from "../augment/types.js";
 import type { CliAgentBackend } from "./agent-backends.js";
+import { rememberSessionBinding, sessionBindingFor } from "./session-store.js";
 
 /**
  * ToolSessionDriver: the TUI's model operations become short prompts in
@@ -22,7 +23,9 @@ import type { CliAgentBackend } from "./agent-backends.js";
  * the objective, and the agent reads files and state fresh through its own
  * tools (plan_status, read_diff, read), which also removes the stale-embed
  * class of draft failures. The human gates stay in the TUI: the agent
- * proposes and challenges, people choose.
+ * proposes and challenges, people choose. The task→session binding lives
+ * in the directory-scoped session store, so a restarted TUI revives the
+ * session — and a session created in another directory is never reused.
  */
 
 /** Backends whose non-interactive runs accept generated MCP wiring today. */
@@ -183,7 +186,6 @@ interface ToolStep {
 export class ToolSessionDriver {
   private readonly options: ToolSessionOptions;
   private readonly bridge: string[];
-  private readonly sessions = new Map<string, string>();
   private readonly opened = new Set<string>();
   private wiring?: { env: Record<string, string>; extraArgs: string[]; file: string; socketPath: string };
 
@@ -259,9 +261,9 @@ export class ToolSessionDriver {
     const message = this.opened.has(taskId)
       ? `${step.prompt}\n\n${anchor}`
       : `${toolPrompts.open(taskId, objective)}\n\n${step.prompt}\n\n${anchor}`;
-    const completed = await this.run(this.argv(message, this.sessions.get(taskId), wiring), wiring.env);
+    const completed = await this.run(this.argv(message, sessionBindingFor(this.options.directory, taskId), wiring), wiring.env);
     const sessionId = this.backendValue().extractSessionId(completed.stdout);
-    if (sessionId) this.sessions.set(taskId, sessionId);
+    if (sessionId) rememberSessionBinding(this.options.directory, taskId, sessionId);
     this.opened.add(taskId);
     if (completed.code !== 0) {
       const raw = this.backendValue().extractError(completed.stdout) ?? (firstLine(completed.stdout) || `exit code ${completed.code}`);
