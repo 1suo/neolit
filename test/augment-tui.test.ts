@@ -394,7 +394,7 @@ describe("augment TUI controller", () => {
     expect(output).not.toContain("develop selected path");
   });
 
-  it("expands drafted patches over the file body in the merged view", async () => {
+  it("shows a drafted file as its body with the change marked; M flips to the raw patch", async () => {
     const directory = tempGitRepo();
     const controller = new AugmentTuiController({
       directory,
@@ -403,21 +403,58 @@ describe("augment TUI controller", () => {
     await controller.start("append gamma", "commit:1");
     await controller.develop();
     controller.select("entry:session.ts");
-    controller.toggleMergedView();
-    const snapshot = controller.snapshot();
-    expect(snapshot.mergedView).toBe(true);
+    // Default: the body, whole, with the addition marked in place.
+    let snapshot = controller.snapshot();
+    expect(snapshot.rawDiffView).toBe(false);
     expect(snapshot.fileContent).toBe("alpha\nbeta\n");
-    const row = snapshot.rows.find((candidate) => candidate.id === "entry:session.ts");
-    const sections = detailSections(snapshot.task, row, {
+    let row = snapshot.rows.find((candidate) => candidate.id === "entry:session.ts");
+    let sections = detailSections(snapshot.task, row, {
       appliedDiffIds: snapshot.appliedDiffIds,
       fileContent: snapshot.fileContent,
-      mergedView: true,
     });
     expect(sections.diff[0]?.text).toBe("MERGED");
-    // The body stays whole: unchanged lines plain, the addition marked.
     expect(sections.diff.some((line) => line.text === "alpha")).toBe(true);
     expect(sections.diff.some((line) => line.text === "+gamma")).toBe(true);
     expect(sections.diff.some((line) => line.text === "@@ -1,2 +1,3 @@")).toBe(false);
+    // M: the classic unified patch.
+    controller.toggleRawDiffView();
+    snapshot = controller.snapshot();
+    row = snapshot.rows.find((candidate) => candidate.id === "entry:session.ts");
+    sections = detailSections(snapshot.task, row, {
+      appliedDiffIds: snapshot.appliedDiffIds,
+      fileContent: snapshot.fileContent,
+      rawDiffView: true,
+    });
+    expect(sections.diff[0]?.text).toBe("CHANGES");
+    expect(sections.diff.some((line) => line.text === "@@ -1,2 +1,3 @@")).toBe(true);
+  });
+
+  it("previews a planned but undrafted file in the diff pane", async () => {
+    const directory = tempGitRepo();
+    // Refine succeeds, the draft fails: the file node exists with no patch.
+    const runtime: ModelRuntime = {
+      async call(request) {
+        if (request.operation === "draft-patch" || request.operation === "draft-patches") {
+          throw new Error("draft backend unavailable");
+        }
+        return singleFileRuntime("--- a/session.ts\n+++ b/session.ts\n").call(request);
+      },
+    };
+    const controller = new AugmentTuiController({ directory, runtime });
+    await controller.start("append gamma", "commit:1");
+    await controller.develop();
+    controller.select("entry:session.ts");
+    const snapshot = controller.snapshot();
+    const row = snapshot.rows.find((candidate) => candidate.id === "entry:session.ts");
+    expect(row?.repositoryOnly).toBe(false); // planned…
+    expect(snapshot.task?.diffs && Object.keys(snapshot.task.diffs).length === 0).toBe(true); // …but undrafted
+    expect(snapshot.filePreview).toBeDefined(); // …so its body previews
+    const sections = detailSections(snapshot.task, row, { filePreview: snapshot.filePreview });
+    expect(sections.diff[0]?.text).toBe("PREVIEW");
+    expect(sections.diff.some((line) => line.text === "alpha")).toBe(true);
+    // The develop hint stays in the description pane.
+    expect(sections.description.some((line) => line.text.includes("develop"))).toBe(true);
+    expect(sections.diff.some((line) => line.text.includes("develop"))).toBe(false);
   });
 
   it("mergedLines expands, creates, deletes, and refuses drifted patches", () => {

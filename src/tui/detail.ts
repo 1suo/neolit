@@ -57,10 +57,10 @@ export interface PaneView {
   live?: LiveStatus;
   /** Content of a repository-only file selection (no plan state to show). */
   filePreview?: FilePreview;
-  /** Current working-tree content of the selected file (merged view input). */
+  /** Current working-tree content of the selected file (body view input). */
   fileContent?: string;
-  /** Expand the drafted patch over the file body instead of showing the raw diff. */
-  mergedView?: boolean;
+  /** Show the raw unified patch instead of the file body with changes marked. */
+  rawDiffView?: boolean;
 }
 
 /** One line of the merged view: the file's own line, marked when the diff touches it. */
@@ -448,14 +448,14 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   if (diffs.length) {
     const appliedCount = diffs.filter((diff) => appliedDiffIds.includes(diff.id)).length;
     const appliedSuffix = appliedCount === diffs.length ? " ✓" : appliedCount ? ` · ${appliedCount}/${diffs.length} ✓` : "";
-    // The merged view expands the file's own latest patch over its body;
-    // only a file row with readable content can carry it.
+    // The body view is the default: the file's latest patch expands over
+    // its whole body; rawDiffView asks for the classic unified patch, and a
+    // patch that cannot expand (drifted basis) falls back to raw too.
     const primary = diffs.at(-1)!;
-    const merged = view.mergedView && !isDirectory && view.fileContent !== undefined && view.fileContent !== ""
+    const merged = !view.rawDiffView && !isDirectory && view.fileContent !== undefined && view.fileContent !== ""
       ? mergedLines(view.fileContent, primary.patch)
       : undefined;
-    if (merged) {
-      label("MERGED");
+    if (merged) {      label("MERGED");
       add(`${primary.path || primary.id} · ${changeSummary(diffs)}${appliedSuffix} · basis ${primary.basisRevision.slice(0, 12)}`, state.color, true);
       if (diffs.length > 1) add(`  latest of ${diffs.length} drafted revisions`, theme.muted);
       for (const line of merged) add(line.kind === "context" ? line.text : `${line.kind === "add" ? "+" : "-"}${line.text}`, line.kind === "add" ? theme.success : line.kind === "remove" ? theme.error : theme.text);
@@ -475,7 +475,6 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
     else {
       const totalLines = diffs.reduce((count, diff) => count + diff.patch.split(/\r?\n/).length, 0);
       label("CHANGES");
-      if (view.mergedView && !isDirectory) add("  merged view unavailable — the patch does not read against the file; showing the raw diff", theme.muted);
       add(`${changeSummary(diffs)}${appliedSuffix} · ${totalLines} lines · basis ${diffs[0]!.basisRevision.slice(0, 12)}`, state.color, true);
       for (const diff of diffs) {
         add(`${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " ✓" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
@@ -487,13 +486,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   else {
     if (!task) add("  [N] describe a change or ask about the repository", theme.muted);
     if (!isDirectory && !nodes.length) {
-      // A repository-only file: show what it holds instead of plan hints.
-      if (view.filePreview) {
-        label("PREVIEW");
-        for (const line of view.filePreview.lines) add(line.length ? line : " ", theme.text);
-        if (view.filePreview.truncated) add(`… ${view.filePreview.totalLines - view.filePreview.lines.length} more lines`, theme.muted);
-      }
-      else if (task) add("  [Enter] message/regenerate · [D] develop selected path · [H] related only", theme.muted);
+      if (!view.filePreview && task) add("  [Enter] message/regenerate · [D] develop selected path · [H] related only", theme.muted);
     }
     else if (task) {
       if (possible.length) {
@@ -507,6 +500,15 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
 
   if (nodes.some((node) => node.challengeExhausted)) {
     add("⚠ coverage unproven", theme.warning);
+  }
+
+  // The diff pane is the content pane: with no drafted patch to show, the
+  // selected file's body previews there — planned or repository-only, the
+  // hints above stay in the description pane.
+  if (!isDirectory && !diffs.length && view.filePreview) {
+    label("PREVIEW");
+    for (const line of view.filePreview.lines) add(line.length ? line : " ", theme.text);
+    if (view.filePreview.truncated) add(`… ${view.filePreview.totalLines - view.filePreview.lines.length} more lines`, theme.muted);
   }
   return lines;
 }

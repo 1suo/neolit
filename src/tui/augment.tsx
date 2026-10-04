@@ -205,8 +205,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     live: liveStatus,
     filePreview: state.filePreview,
     fileContent: state.fileContent,
-    mergedView: state.mergedView,
-  }), [state.task, selectedRow, state.pendingMarks, state.pendingMode, state.appliedDiffIds, liveStatus, state.filePreview, state.fileContent, state.mergedView]);
+    rawDiffView: state.rawDiffView,
+  }), [state.task, selectedRow, state.pendingMarks, state.pendingMode, state.appliedDiffIds, liveStatus, state.filePreview, state.fileContent, state.rawDiffView]);
   const visibleDiff = contentView === "description" ? [] : sections.diff;
   const paneLines = visibleDiff.length ? visibleDiff : sections.description;
   const statusMessage = state.busy ? `${state.operation ?? "Working"}...` : state.error ?? state.message;
@@ -285,14 +285,6 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
       return;
     }
 
-    // Uppercase bindings are distinct keys (the lowercase map below folds
-    // case): M toggles the merged diff view.
-    if (input === "M") {
-      props.controller.toggleMergedView();
-      sync();
-      return;
-    }
-
     const command = input.toLowerCase();
     const selectedEntry = props.controller.selectedRow()?.entry;
     const choices = candidatesForEntry(props.controller.snapshot().task, selectedEntry).filter((candidate) => candidate.status === "possible");
@@ -322,6 +314,10 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
     }
     else if (command === "h") {
       props.controller.toggleRelatedOnly();
+      sync();
+    }
+    else if (command === "r") {
+      props.controller.toggleRawDiffView();
       sync();
     }
     else if (command === "m") {
@@ -479,8 +475,8 @@ export function AugmentTui(props: { controller: AugmentTuiController; modelAvail
             { text: " allow ·", color: theme.primary },
             { text: "[m]", color: theme.primary, bold: true },
             { text: " models ·", color: theme.primary },
-            { text: "[M]", color: theme.primary, bold: true },
-            { text: " merged ·", color: theme.primary },
+            { text: "[R]", color: theme.muted, bold: true },
+            { text: " raw diff ·", color: theme.muted },
             { text: "[N]", color: theme.primary, bold: true },
             { text: " new ·", color: theme.primary },
             { text: "[F]", color: theme.muted, bold: true },

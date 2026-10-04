@@ -46,8 +46,8 @@ export interface TuiActionState {
   filePreview?: FilePreview;
   /** Working-tree content of the selected drafted file (merged view input). */
   fileContent?: string;
-  /** Whether the diff pane expands drafted patches over the file body. */
-  mergedView: boolean;
+  /** Whether the diff pane shows raw unified patches instead of file bodies. */
+  rawDiffView: boolean;
   active?: { nodeId?: string; operation?: string };
   failed?: { nodeId?: string; operation?: string; error?: string };
   /** Repository root the panel operates on; tasks and sessions are bound to it. */
@@ -337,7 +337,7 @@ export class AugmentTuiController {
   private error?: string;
   private readonly foldedPaths = new Set<string>();
   private relatedOnly = false;
-  private mergedView = false;
+  private rawDiffView = false;
   private filePreview?: FilePreview;
   private fileContent?: string;
   private readonly listeners = new Set<() => void>();
@@ -550,7 +550,7 @@ export class AugmentTuiController {
       relatedOnly: this.relatedOnly,
       filePreview: this.filePreview,
       fileContent: this.fileContent,
-      mergedView: this.mergedView,
+      rawDiffView: this.rawDiffView,
       active: this.busy ? { nodeId: this.activeNodeId, operation: this.operation } : undefined,
       failed: this.failedNodeId ? { nodeId: this.failedNodeId, operation: this.failedOperation, error: this.failedError } : undefined,
       directory: this.directory,
@@ -645,14 +645,14 @@ export class AugmentTuiController {
       : "Showing the full repository tree.";
   }
 
-  /** Expands drafted patches over the file body in the diff pane (merged view). */
-  toggleMergedView(): void {
-    this.mergedView = !this.mergedView;
+  /** Toggles the diff pane between file bodies (with changes marked) and raw patches. */
+  toggleRawDiffView(): void {
+    this.rawDiffView = !this.rawDiffView;
     this.error = undefined;
     this.refresh();
-    this.message = this.mergedView
-      ? "Diff pane expands drafted patches over the file body. [M] shows raw diffs again."
-      : "Diff pane shows raw drafted patches.";
+    this.message = this.rawDiffView
+      ? "Diff pane shows raw drafted patches."
+      : "Diff pane shows file bodies with drafted changes marked in place.";
   }
 
   async start(objective: string, basisRevision = currentRevision(this.directory)): Promise<void> {
@@ -1455,15 +1455,15 @@ export class AugmentTuiController {
     const view = this.viewOptions();
     this.rows = this.task ? plannedTreeRows(this.task, this.repository, view) : plannedTreeRowsFromRepository(this.repository, view);
     if (this.rows.length && !this.rows.some((row) => row.id === this.selectedRowId)) this.selectedRowId = this.rows[0]!.id;
-    // A repository-only file has no plan state to describe: the pane shows
-    // its content instead, read fresh so the preview tracks the working tree.
-    // A drafted file's content feeds the merged view the same way.
+    // A selected file always has a body to show: without a draft it previews
+    // as-is; with a draft the patch expands over it. Both read fresh so
+    // they track the working tree.
     const selected = this.rows.find((row) => row.id === this.selectedRowId);
     const selectedFile = selected?.entry.kind === "file" ? selected : undefined;
-    this.filePreview = selectedFile?.repositoryOnly
+    this.filePreview = selectedFile && !selectedFile.entry.diffIds.length
       ? readFilePreview(path.join(this.directory, selectedFile.entry.path))
       : undefined;
-    this.fileContent = this.mergedView && selectedFile && selectedFile.entry.diffIds.length
+    this.fileContent = selectedFile && selectedFile.entry.diffIds.length
       ? readFileContent(path.join(this.directory, selectedFile.entry.path))
       : undefined;
     if (this.persistTasks && this.task) {
