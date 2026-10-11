@@ -100,7 +100,9 @@ F  fold/unfold the selected directory (folded folders show `▸` and hide their 
 V  show/hide the agent session stream pane under the files tree (tool sessions)
 H  toggle the related-only filter: show only planned paths (nodes, approaches, drafts, explanations) and restriction-plain marks with their connecting ancestors; press again for the full repository tree. The FILES pane title carries a `· related` suffix while active
 R  toggle the diff pane between the file's body (drafted changes marked in place) and the raw unified patch
-M  switch the live runtime's default/draft/challenge model — arrow-key picker over the backend's current catalog, applied without restarting the session
+M  switch agent, then role, then model — the picker starts at the backend (`augment setup` parity), and choosing another one rebuilds the live runtime, its tool session, and the persisted config without restarting; the role/model steps then run over the chosen backend's catalog
+T  switch task: arrow-key picker over this repository's stored tasks (newest first, the active one marked); choosing one resumes it — plan, applied set, and session-stream tail travel with it
+X  send one raw message straight into the task's agent session: no routing, no plan mutation; the operator message and the reply stream into the SESSION pane like every other turn (needs a tool session)
 O  reopen selected node with a reason
 S  mark a real path changed outside the plan
 Tab  switch pane

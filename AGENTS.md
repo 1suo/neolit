@@ -12,10 +12,12 @@ document:
 | Concern | Canonical document |
 |---|---|
 | Shipped package, public seam, design principles, and repository map | `README.md` |
-| Shipped graph topology, state, routing, and failure mechanics | `src/solution-lod/README.md` |
-| Desired normative solution-graph behavior | `src/solution-lod/SPEC.md` |
-| Script ownership and generated documentation | `scripts/README.md` |
-| Known gaps between shipped and desired behavior | `TODO.md` and the relevant `TODO-*.md` file |
+| Shipped planned-diff core architecture and invariants | `src/augment/README.md` |
+| Desired normative planned-diff behavior | `src/augment/SPEC.md` |
+| Shipped graph topology, protocol methods, and failure mechanics | `src/augmentd/README.md` |
+| Standalone TUI layout, keymap, and model runtime | `src/tui/README.md` |
+| Script ownership and generated documentation | `scripts/README.md` (when a `scripts/` directory exists) |
+| Known gaps between shipped and desired behavior | `TODO-augment.md` and `SOTA-GAPS.md` |
 
 Follow links from those documents only as far as the changed concern requires.
 Keep the three documentation layers distinct:
@@ -61,7 +63,8 @@ When creating or changing a README:
 
 ## Keep the codebase legible while it grows
 
-- Put domain behavior under `src/solution-lod/`; keep generic connector and
+- Put domain behavior under `src/augment/` (planned-diff core) and its host
+  surfaces under `src/augmentd/` and `src/tui/`; keep generic connector and
   runtime contracts in the top-level `src/` modules.
 - Put tests under `test/` and name them after the behavior or regression they
   protect.
@@ -78,9 +81,10 @@ When creating or changing a README:
   a known SPEC gap. Do not describe completed behavior as pending.
 - Keep one canonical explanation for each contract. Other documents should link
   to it instead of copying it.
-- Keep generated documentation generated. The role graph in
-  `src/solution-lod/README.md` comes from `src/solution-lod/roles.ts`; run
-  `npm run graph:write` to update it and `npm run graph:check` to verify it.
+- Keep generated documentation generated. When a generated document exists,
+  its generator stays the single source: run the generator to update the
+  document and its check (if any) to verify it. Never edit generated output
+  by hand.
 
 ## Engineering rules
 

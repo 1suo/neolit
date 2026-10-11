@@ -165,8 +165,12 @@ the root node; a single viable approach is adopted automatically, multiple
 approaches ask for `1-7`, and lower nodes receive candidates only when
 explicitly opened. `Enter` is the single message entry point: one bounded
 `message/route` classification sends the message into the selected node's
-develop flow, an explanation, or an offered set of interpretations. `D`
-develops a selected path and its whole subtree —
+develop flow, an explanation, or an offered set of interpretations — and `x`
+bypasses routing entirely, sending one raw message straight into the task's
+agent session with the reply streaming into the SESSION pane. `t` switches
+between the repository's stored tasks; `m` picks the agent backend first,
+then role and model, switching live. `D` develops
+a selected path and its whole subtree —
 expand, crystallize, refine, draft every undrafted file — stopping only where
 an approach choice needs a human. Drafted patches touch the working tree only
 on request: `A` preflights each selected patch with `git apply --check`
