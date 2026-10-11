@@ -14,54 +14,63 @@ function toolPart(status: string, title: string, input: unknown) {
 describe("formatStreamEvent", () => {
   it("carries the call's key argument on completed and failed tools", () => {
     expect(formatStreamEvent(toolPart("completed", "execute", { command: "git status --short" })))
-      .toEqual({ kind: "tool", text: "✓ execute · git status --short" });
+      .toEqual([{ kind: "tool", text: "✓ execute · git status --short" }]);
     expect(formatStreamEvent(toolPart("error", "execute", { command: "git push" })))
-      .toEqual({ kind: "tool", text: "✗ execute · git push" });
+      .toEqual([{ kind: "tool", text: "✗ execute · git push" }]);
   });
 
   it("prefers the naming argument across common tool shapes", () => {
     expect(formatStreamEvent(toolPart("completed", "read", { path: "src/tui/controller.ts", encoding: "utf8" })))
-      .toEqual({ kind: "tool", text: "✓ read · src/tui/controller.ts" });
+      .toEqual([{ kind: "tool", text: "✓ read · src/tui/controller.ts" }]);
     expect(formatStreamEvent(toolPart("completed", "glob", { pattern: "src/**/*.ts", path: "." })))
-      .toEqual({ kind: "tool", text: "✓ glob · src/**/*.ts" });
+      .toEqual([{ kind: "tool", text: "✓ glob · src/**/*.ts" }]);
     expect(formatStreamEvent(toolPart("completed", "grep", { query: "retryPolicy", path: "src/" })))
-      .toEqual({ kind: "tool", text: "✓ grep · retryPolicy" });
+      .toEqual([{ kind: "tool", text: "✓ grep · retryPolicy" }]);
   });
 
   it("falls back to compact JSON for unknown shapes and marks truncation", () => {
     expect(formatStreamEvent(toolPart("completed", "edit", { weird: true, nested: { a: 1 } })))
-      .toEqual({ kind: "tool", text: '✓ edit · {"weird":true,"nested":{"a":1}}' });
+      .toEqual([{ kind: "tool", text: '✓ edit · {"weird":true,"nested":{"a":1}}' }]);
     const long = formatStreamEvent(toolPart("completed", "execute", { command: "x".repeat(300) }));
-    expect(long!.text.endsWith("…")).toBe(true);
-    expect(long!.text.length).toBe("✓ execute · ".length + 200 + 1);
+    expect(long[0]!.text.endsWith("…")).toBe(true);
+    expect(long[0]!.text.length).toBe("✓ execute · ".length + 200 + 1);
   });
 
   it("prefers the code argument over the JSON envelope", () => {
     const line = formatStreamEvent(toolPart("completed", "execute", { code: 'const x = await tools.neolit.plan_status({\n  taskId: "task:1",\n});' }));
-    expect(line).toEqual({ kind: "tool", text: "✓ execute · const x = await tools.neolit.plan_status({ taskId: \"task:1\", });" });
+    expect(line).toEqual([{ kind: "tool", text: "✓ execute · const x = await tools.neolit.plan_status({ taskId: \"task:1\", });" }]);
   });
 
   it("caps long text at 400 characters with a visible ellipsis", () => {
-    const line = formatStreamEvent({ type: "text", text: "y".repeat(500) });
-    expect(line!.text.length).toBe(401);
-    expect(line!.text.endsWith("…")).toBe(true);
+    const lines = formatStreamEvent({ type: "text", text: "y".repeat(500) });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.text.length).toBe(401);
+    expect(lines[0]!.text.endsWith("…")).toBe(true);
+  });
+
+  it("keeps reply paragraphs as separate lines instead of flattening them", () => {
+    expect(formatStreamEvent({ type: "text", text: "first paragraph\n\nsecond paragraph\nmeanwhile: details" }))
+      .toEqual([
+        { kind: "text", text: "first paragraph" },
+        { kind: "text", text: "second paragraph" },
+        { kind: "text", text: "meanwhile: details" },
+      ]);
   });
 
   it("keeps the running marker and survives missing input", () => {
     expect(formatStreamEvent(toolPart("running", "write", { path: "a.ts" })))
-      .toEqual({ kind: "tool", text: "→ write · a.ts" });
+      .toEqual([{ kind: "tool", text: "→ write · a.ts" }]);
     expect(formatStreamEvent(toolPart("completed", "tool", undefined)))
-      .toEqual({ kind: "tool", text: "✓ tool" });
+      .toEqual([{ kind: "tool", text: "✓ tool" }]);
     expect(formatStreamEvent(toolPart("completed", "tool", { command: "   " })))
-      .toEqual({ kind: "tool", text: "✓ tool" });
+      .toEqual([{ kind: "tool", text: "✓ tool" }]);
   });
 
   it("maps the non-tool event shapes unchanged", () => {
-    expect(formatStreamEvent({ type: "step_start" })).toEqual({ kind: "step", text: "▸ step" });
-    expect(formatStreamEvent({ type: "error", message: "boom" })).toEqual({ kind: "error", text: "✗ boom" });
-    expect(formatStreamEvent({ type: "text", text: "hello\nworld" })).toEqual({ kind: "text", text: "hello world" });
-    expect(formatStreamEvent({ type: "whatever" })).toBeUndefined();
-    expect(formatStreamEvent(undefined)).toBeUndefined();
+    expect(formatStreamEvent({ type: "step_start" })).toEqual([{ kind: "step", text: "▸ step" }]);
+    expect(formatStreamEvent({ type: "error", message: "boom" })).toEqual([{ kind: "error", text: "✗ boom" }]);
+    expect(formatStreamEvent({ type: "whatever" })).toEqual([]);
+    expect(formatStreamEvent(undefined)).toEqual([]);
   });
 });
 
@@ -129,6 +138,49 @@ describe("ToolSessionDriver session revival", () => {
       expect(secondInvocation.match(/--session ses_revive1/g)?.length).toBe(1);
       expect(JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-sessions.json"), "utf8")))
         .toEqual({ [path.resolve(directory)]: { "task:revive": "ses_revive1" } });
+    } finally {
+      if (previous === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
+  it("chat sends the raw message into the same session and returns the reply", async () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = state;
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "augment-driver-repo-"));
+    try {
+      const server = new AugmentServer({});
+      const started = await server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: "task:chat", objective: "make retries bounded", basisRevision: "commit:1" } });
+      if (!started || "error" in started) throw new Error("task/start failed");
+      const task = started.result as { id: string };
+
+      const log = path.join(os.tmpdir(), `augment-driver-chat-log-${process.pid}.txt`);
+      fs.rmSync(log, { force: true });
+      const output = JSON.stringify({ type: "message", sessionID: "ses_chat1", parts: [{ type: "text", text: "here is the answer" }] });
+      const command = path.join(os.tmpdir(), `augment-driver-chat-cli-${process.pid}.sh`);
+      fs.writeFileSync(command, `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nprintf '%s' ${JSON.stringify(output)}\n`);
+      fs.chmodSync(command, 0o755);
+
+      const driver = new ToolSessionDriver({
+        directory,
+        backend: opencodeBackend,
+        command,
+        server,
+        socketPath: () => "/tmp/opencode/neolit-test.sock",
+        bridge: ["augmentd"],
+      });
+      const reply = await driver.chat({ taskId: task.id, objective: "make retries bounded", message: "why did the draft fail?" });
+      driver.dispose();
+
+      expect(reply).toBe("here is the answer");
+      const invocation = fs.readFileSync(log, "utf8");
+      // The raw message rides the prompt verbatim, anchored to the task id.
+      expect(invocation).toContain("why did the draft fail?");
+      expect(invocation).toContain("task:chat");
+      expect(invocation).not.toContain("--session", "a first chat opens a fresh session");
+      expect(JSON.parse(fs.readFileSync(path.join(state, "neolit", "augment-sessions.json"), "utf8")))
+        .toEqual({ [path.resolve(directory)]: { "task:chat": "ses_chat1" } });
     } finally {
       if (previous === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previous;

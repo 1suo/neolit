@@ -31,7 +31,7 @@ export function loadAugmentConfig(): AugmentConfig {
   try {
     const raw = JSON.parse(fs.readFileSync(configPath(), "utf8")) as Record<string, unknown>;
     const config: AugmentConfig = {};
-    for (const key of ["model", "draftModel", "challengeModel", "command", "server", "agent"] as const) {
+    for (const key of ["backend", "model", "draftModel", "challengeModel", "command", "server", "agent"] as const) {
       if (typeof raw[key] === "string" && (raw[key] as string).trim()) config[key] = raw[key] as string;
     }
     for (const key of ["timeoutMs", "challengeRounds"] as const) {

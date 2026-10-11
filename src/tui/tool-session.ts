@@ -70,30 +70,37 @@ function toolDetail(input: unknown): string {
   return capped(JSON.stringify(input), TOOL_DETAIL_CAP);
 }
 
-export function formatStreamEvent(message: unknown): SessionStreamLine | undefined {
-  if (!message || typeof message !== "object") return undefined;
+export function formatStreamEvent(message: unknown): SessionStreamLine[] {
+  if (!message || typeof message !== "object") return [];
   const record = message as Record<string, unknown>;
   if (record.type === "error") {
     const failure = record.error as { message?: unknown } | undefined;
     const text = typeof record.message === "string" ? record.message : typeof failure?.message === "string" ? failure.message : undefined;
-    return text ? { kind: "error", text: `✗ ${text}` } : undefined;
+    return text ? [{ kind: "error", text: `✗ ${text}` }] : [];
   }
-  if (record.type === "step_start") return { kind: "step", text: "▸ step" };
+  if (record.type === "step_start") return [{ kind: "step", text: "▸ step" }];
   const part = record.part as Record<string, unknown> | undefined;
   const partText = part && typeof part.text === "string" ? part.text : typeof record.text === "string" ? record.text : undefined;
   if ((record.type === "text" || part?.type === "text") && partText) {
-    return { kind: "text", text: capped(partText, TEXT_LINE_CAP) };
+    // Reply text keeps its shape: newlines are the model's paragraphing,
+    // so each line streams as its own display line (capped individually)
+    // instead of one flattened, truncated run.
+    return partText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => ({ kind: "text" as const, text: capped(line, TEXT_LINE_CAP) }));
   }
   if (part?.type === "tool" && part.state && typeof part.state === "object") {
     const state = part.state as { status?: unknown; title?: unknown; input?: unknown };
     const title = typeof state.title === "string" && state.title ? state.title : "tool";
     const detail = toolDetail(state.input);
     const suffix = detail ? ` · ${detail}` : "";
-    if (state.status === "completed") return { kind: "tool", text: `✓ ${title}${suffix}` };
-    if (state.status === "error") return { kind: "tool", text: `✗ ${title}${suffix}` };
-    return { kind: "tool", text: `→ ${title}${suffix}` };
+    if (state.status === "completed") return [{ kind: "tool", text: `✓ ${title}${suffix}` }];
+    if (state.status === "error") return [{ kind: "tool", text: `✗ ${title}${suffix}` }];
+    return [{ kind: "tool", text: `→ ${title}${suffix}` }];
   }
-  return undefined;
+  return [];
 }
 
 export function toolSessionSupported(backendId: string): boolean {
@@ -242,6 +249,25 @@ export class ToolSessionDriver {
     });
   }
 
+  /**
+   * One raw operator message into the same agent session: no operation, no
+   * effect-waiting — the reply streams through onLine like every turn, and
+   * the resolved value is the assistant's text (empty when it replied with
+   * tool calls only).
+   */
+  async chat(input: { taskId: string; objective: string; message: string }): Promise<string> {
+    const completed = await this.exchange(input.taskId, input.objective, input.message);
+    if (completed.code !== 0) {
+      const raw = this.backendValue().extractError(completed.stdout) ?? (firstLine(completed.stdout) || `exit code ${completed.code}`);
+      throw new Error(`The agent session failed (${raw}).`);
+    }
+    try {
+      return this.backendValue().parseAssistantText(completed.stdout);
+    } catch {
+      return "";
+    }
+  }
+
   dispose(): void {
     if (this.wiring) {
       try {
@@ -254,17 +280,7 @@ export class ToolSessionDriver {
   }
 
   private async step(taskId: string, objective: string, step: ToolStep): Promise<void> {
-    const wiring = await this.ensureWiring();
-    // The anchor rides every message: sessions compact and forget, and a
-    // step must always be able to address the store it acts on.
-    const anchor = `(task id ${taskId}) — call plan_status with it for the current state and ids.`;
-    const message = this.opened.has(taskId)
-      ? `${step.prompt}\n\n${anchor}`
-      : `${toolPrompts.open(taskId, objective)}\n\n${step.prompt}\n\n${anchor}`;
-    const completed = await this.run(this.argv(message, sessionBindingFor(this.options.directory, taskId), wiring), wiring.env);
-    const sessionId = this.backendValue().extractSessionId(completed.stdout);
-    if (sessionId) rememberSessionBinding(this.options.directory, taskId, sessionId);
-    this.opened.add(taskId);
+    const completed = await this.exchange(taskId, objective, step.prompt);
     if (completed.code !== 0) {
       const raw = this.backendValue().extractError(completed.stdout) ?? (firstLine(completed.stdout) || `exit code ${completed.code}`);
       throw new Error(`${step.failure}: the agent session failed (${raw}).`);
@@ -274,6 +290,24 @@ export class ToolSessionDriver {
       const reply = firstLine(this.backendValue().parseAssistantText(completed.stdout));
       throw new Error(`${step.failure}. The agent replied: ${reply || "(no answer text)"}`);
     }
+  }
+
+  /**
+   * Runs one prompt in the task's session: the opener anchors a fresh
+   * conversation, the task id rides every message (sessions compact and
+   * forget), and the session binding is remembered for the next step.
+   */
+  private async exchange(taskId: string, objective: string, prompt: string): Promise<{ stdout: string; code: number }> {
+    const wiring = await this.ensureWiring();
+    const anchor = `(task id ${taskId}) — call plan_status with it for the current state and ids.`;
+    const message = this.opened.has(taskId)
+      ? `${prompt}\n\n${anchor}`
+      : `${toolPrompts.open(taskId, objective)}\n\n${prompt}\n\n${anchor}`;
+    const completed = await this.run(this.argv(message, sessionBindingFor(this.options.directory, taskId), wiring), wiring.env);
+    const sessionId = this.backendValue().extractSessionId(completed.stdout);
+    if (sessionId) rememberSessionBinding(this.options.directory, taskId, sessionId);
+    this.opened.add(taskId);
+    return completed;
   }
 
   private backendValue(): CliAgentBackend {
@@ -371,8 +405,7 @@ export class ToolSessionDriver {
       } catch {
         continue;
       }
-      const display = formatStreamEvent(message);
-      if (display) this.onLine(display);
+      for (const display of formatStreamEvent(message)) this.onLine(display);
     }
   }
 

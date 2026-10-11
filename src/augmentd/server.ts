@@ -125,13 +125,23 @@ export interface TaskChange {
 
 export class AugmentServer {
   private readonly tasks = new Map<string, PlanTask>();
-  private readonly runtime: ModelRuntime;
+  private runtime: ModelRuntime;
   private readonly changeListeners = new Set<(change: TaskChange) => void>();
   private readonly taskLocks = new Map<string, Promise<void>>();
   private nextTaskId = 1;
 
   constructor(options: AugmentServerOptions = {}) {
     this.runtime = options.runtime ?? new UnavailableModelRuntime();
+  }
+
+  /**
+   * Swap the model runtime (an unavailable one rejects model operations).
+   * For hosts that switch agent backends live: the task store is untouched,
+   * so subsequent model operations route through the new runtime while
+   * deterministic operations keep working throughout.
+   */
+  setRuntime(runtime: ModelRuntime | undefined): void {
+    this.runtime = runtime ?? new UnavailableModelRuntime();
   }
 
   /**

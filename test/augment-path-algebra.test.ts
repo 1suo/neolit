@@ -104,6 +104,52 @@ describe("planned-diff path algebra", () => {
     expect(pathIsLocked(task, probe)).toBe(true);
   });
 
+  it("allow mode rejects candidate patterns that merely overlap the allowed set", () => {
+    // Allowed: src/auth only. A candidate touching `src` names paths
+    // outside the allowed region (superset), so it escapes even though it
+    // also covers the allowed path.
+    const task = allowedTask(["src/auth"]);
+    const touching = (paths: string[]) => () => generateDomain(task, {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      nodeId: task.rootNodeId,
+      candidates: [{ label: "Approach", rationale: "touches paths", confidence: 70, touchedPaths: paths }],
+    });
+    expect(touching(["src"])).toThrow(/escapes the allowed paths: src/u);
+    expect(touching(["srcx"])).toThrow(/escapes the allowed paths/u);
+    const inside = touching(["src/auth/session.ts"]);
+    expect(inside).not.toThrow();
+  });
+
+  it("allow mode accepts only what a marked glob fully covers", () => {
+    const task = allowedTask(["src/**"]);
+    const touching = (paths: string[]) => () => generateDomain(task, {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      nodeId: task.rootNodeId,
+      candidates: [{ label: "Approach", rationale: "touches paths", confidence: 70, touchedPaths: paths }],
+    });
+    expect(touching(["src/deep/a.ts"])).not.toThrow();
+    // `x/**` covers x itself too (the glob's own semantics), so `src` is
+    // inside the allowed set — but anything outside it still escapes.
+    expect(touching(["src"])).not.toThrow();
+    expect(touching(["test/a.ts"])).toThrow(/escapes the allowed paths/u);
+  });
+
+  it("lock mode rejects candidate patterns that span a locked path", () => {
+    const task = lockedTask(["src/a.ts"]);
+    const touching = (paths: string[]) => () => generateDomain(task, {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      nodeId: task.rootNodeId,
+      candidates: [{ label: "Approach", rationale: "touches paths", confidence: 70, touchedPaths: paths }],
+    });
+    // A folder-spanning pattern touches the locked file inside it.
+    expect(touching(["src"])).toThrow(/touches locked path: src/u);
+    expect(touching(["src/**"])).toThrow(/touches locked path/u);
+    expect(touching(["srcx"])).not.toThrow();
+  });
+
   property("node scope contains real children and excludes prefix siblings", 500, (random) => {
     const task = createPlanTask({ id: "task:scope", objective: "scope algebra", basisRevision: "commit:1" });
     const withDomain = generateDomain(task, {

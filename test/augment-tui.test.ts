@@ -301,6 +301,83 @@ describe("augment TUI controller", () => {
     }
   });
 
+  it("lists stored tasks and switches between them", async () => {
+    const directory = tempGitRepo();
+    const controller = new AugmentTuiController({ directory, runtime: modelRuntime(), persistTasks: true });
+    await controller.start("first objective", "commit:1");
+    const firstId = controller.snapshot().task!.id;
+    await controller.start("second objective", "commit:2");
+    const secondId = controller.snapshot().task!.id;
+
+    const tasks = controller.listTasks();
+    expect(tasks.map((summary) => summary.objective)).toContain("first objective");
+    expect(tasks.map((summary) => summary.objective)).toContain("second objective");
+    expect(tasks[0]!.objective).toBe("second objective", "newest task leads the list");
+    expect(tasks.find((summary) => summary.active)!.objective).toBe("second objective");
+
+    await controller.switchTask(firstId);
+    const switched = controller.snapshot();
+    expect(switched.task?.id).toBe(firstId);
+    expect(switched.task?.objective).toBe("first objective");
+    expect(switched.message).toContain("Resumed task: first objective");
+    expect(controller.listTasks().find((summary) => summary.active)!.objective).toBe("first objective");
+
+    // Switching back is just another switch; unknown ids refuse politely.
+    await controller.switchTask(secondId);
+    expect(controller.snapshot().task?.objective).toBe("second objective");
+    await controller.switchTask("task:missing");
+    expect(controller.snapshot().error).toContain("No stored task");
+  });
+
+  it("chat sends a raw message through the tool session into the stream", async () => {
+    const directory = tempGitRepo();
+    const controller = new AugmentTuiController({ directory, runtime: modelRuntime(), persistTasks: true });
+    await controller.start("bounded retries", "commit:1");
+
+    // Without a tool session there is no conversation to talk to.
+    await controller.chat("hello?");
+    expect(controller.snapshot().error).toContain("Raw chat needs the agent session");
+
+    const seen: string[] = [];
+    const driver = {
+      dispose() { seen.push("dispose"); },
+      async chat(input: { message: string }) {
+        seen.push(input.message);
+        driver.onLine!({ kind: "text", text: "the answer" });
+        return "the answer";
+      },
+      onLine: undefined as ((line: SessionStreamLine) => void) | undefined,
+    };
+    controller.useToolSession(driver as unknown as ToolSessionDriver);
+    await controller.chat("why did the draft fail?");
+    const snapshot = controller.snapshot();
+    expect(seen).toEqual(["why did the draft fail?"]);
+    expect(snapshot.error).toBeUndefined();
+    expect(snapshot.message).toContain("Agent replied");
+    expect(snapshot.sessionView).toBe(true, "chat reveals the session pane");
+    expect(snapshot.sessionLines.map((line) => line.text)).toEqual(["› why did the draft fail?", "the answer"]);
+  });
+
+  it("setRuntime swaps the live runtime and follows it with the driver", async () => {
+    const directory = tempGitRepo();
+    const controller = new AugmentTuiController({ directory });
+    expect(controller.runtimeAgent()).toBeUndefined();
+    const before = await controller.server.handle({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    expect((before!.result as { capabilities: { modelRuntime: boolean } }).capabilities.modelRuntime).toBe(false);
+
+    const live = Object.assign(modelRuntime(), { backendId: "opencode", commandName: "opencode" });
+    let disposed = false;
+    const staleDriver = { dispose() { disposed = true; }, onLine: undefined };
+    controller.useToolSession(staleDriver as unknown as ToolSessionDriver);
+    controller.setRuntime(live as ModelRuntime);
+
+    expect(controller.runtimeAgent()).toEqual({ backendId: "opencode", command: "opencode" });
+    expect(controller.snapshot().toolSession).toBe(false, "the backend-bound driver is dropped with the old runtime");
+    expect(disposed).toBe(true);
+    const after = await controller.server.handle({ jsonrpc: "2.0", id: 2, method: "initialize" });
+    expect((after!.result as { capabilities: { modelRuntime: boolean } }).capabilities.modelRuntime).toBe(true, "server model operations route through the new runtime");
+  });
+
   it("never resumes a task from another repository directory", async () => {
     const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
     const previous = process.env.XDG_STATE_HOME;
@@ -2364,6 +2441,10 @@ describe("OpenCode CLI runtime parsing", () => {
       expect(loadAugmentConfig()).toEqual({ model: "opencode/x", challengeRounds: 1 });
       saveAugmentConfig({ draftModel: "opencode/y" });
       expect(loadAugmentConfig()).toEqual({ model: "opencode/x", draftModel: "opencode/y", challengeRounds: 1 });
+      // The chosen agent backend survives a restart (setup writes it; the
+      // loader must read it back, not just the model roles).
+      saveAugmentConfig({ backend: "claude" });
+      expect(loadAugmentConfig()).toEqual({ model: "opencode/x", draftModel: "opencode/y", challengeRounds: 1, backend: "claude" });
       expect(configFromEnvironment({ AUGMENT_OPENCODE_MODEL: "opencode/env" })).toEqual({ model: "opencode/env" });
       expect(effectiveConfig({ model: "opencode/x" }, { model: "opencode/env", draftModel: "opencode/env-draft" })).toEqual({ model: "opencode/env", draftModel: "opencode/env-draft" });
     } finally {

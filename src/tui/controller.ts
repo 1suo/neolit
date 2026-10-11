@@ -121,6 +121,10 @@ const MAX_REPOSITORY_ENTRIES = 5_000;
 /** Deterministic bound for one [D] keypress: enough for any legal subtree. */
 const MAX_DEVELOP_STEPS = 256;
 
+/** Task-id sequence: two starts inside one millisecond still get distinct
+ *  ids (a bare Date.now() collides and the second task/start is rejected). */
+let taskSequence = 0;
+
 /** The session stream is a bounded tail, not an unbounded transcript. */
 const MAX_SESSION_LINES = 200;
 
@@ -136,7 +140,29 @@ export interface StoredTask {
   savedAt: number;
 }
 
+/** One stored task as a picker sees it (see `AugmentTuiController.listTasks`). */
+export interface StoredTaskSummary {
+  id: string;
+  objective: string;
+  mode: PlanTask["mode"];
+  savedAt: number;
+  revision: number;
+  drafts: number;
+  active: boolean;
+}
+
 const MAX_STORED_TASKS = 8;
+
+/**
+ * Strictly increasing save stamps: two tasks started inside one millisecond
+ * still order "newest first" (a bare Date.now() ties and the store's array
+ * order decides, which is not recency).
+ */
+let lastSaveStamp = 0;
+function nextSaveStamp(): number {
+  lastSaveStamp = Math.max(Date.now(), lastSaveStamp + 1);
+  return lastSaveStamp;
+}
 
 function tasksStorePath(): string {
   const base = process.env.XDG_STATE_HOME && process.env.XDG_STATE_HOME.trim()
@@ -314,7 +340,7 @@ export function candidatesForEntry(task: PlanTask | undefined, entry: PlanTreeEn
 export class AugmentTuiController {
   readonly directory: string;
   private readonly branch?: string;
-  private readonly runtime?: ModelRuntime;
+  private runtime?: ModelRuntime;
   /** The embedded protocol server; hosts may serve it on additional transports. */
   readonly server: AugmentServer;
   private readonly defaultLod: LOD;
@@ -324,7 +350,7 @@ export class AugmentTuiController {
   private task?: PlanTask;
   private pendingMarks: string[] = [];
   private pendingMode: "lock" | "allow" = "lock";
-  private readonly appliedDiffIds = new Set<string>();
+  private appliedDiffIds = new Set<string>();
   private activeNodeId?: string;
   private failedNodeId?: string;
   private failedOperation?: string;
@@ -413,13 +439,130 @@ export class AugmentTuiController {
    * construction, once the socket the driver needs is observable.
    */
   useToolSession(driver: ToolSessionDriver): void {
+    this.toolDriver?.dispose();
     this.toolDriver = driver;
+    this.wireDriver(driver);
+    this.refresh();
+  }
+
+  private wireDriver(driver: ToolSessionDriver): void {
     driver.onLine = (line) => {
       this.sessionLines.push(line);
       if (this.sessionLines.length > MAX_SESSION_LINES) this.sessionLines.splice(0, this.sessionLines.length - MAX_SESSION_LINES);
       this.refresh();
     };
+  }
+
+  /**
+   * Swaps the model runtime (and, with it, the tool-session driver) without
+   * losing the task store — for hosts that switch agent backends live. The
+   * server keeps serving deterministic operations throughout; model
+   * operations route through the new runtime from the next call on. The
+   * driver always follows the runtime: it is backend-bound wiring.
+   */
+  setRuntime(runtime?: ModelRuntime, driver?: ToolSessionDriver): void {
+    this.runtime = runtime;
+    this.server.setRuntime(runtime);
+    this.toolDriver?.dispose();
+    this.toolDriver = driver;
+    if (driver) this.wireDriver(driver);
     this.refresh();
+  }
+
+  /**
+   * Stored tasks for this repository, newest first, with the active one
+   * marked — the picker behind task switching. Sessions with no stored
+   * entry (persistTasks off, or never started) see only the active task.
+   */
+  listTasks(): StoredTaskSummary[] {
+    const directoryKey = path.resolve(this.directory);
+    const stored = loadStoredTasks()
+      .filter((entry) => path.resolve(entry.directory) === directoryKey)
+      .sort((left, right) => right.savedAt - left.savedAt)
+      .map((entry) => ({
+        id: entry.task.id,
+        objective: entry.task.objective,
+        mode: entry.task.mode,
+        savedAt: entry.savedAt,
+        revision: entry.task.revision,
+        drafts: Object.keys(entry.task.diffs).length,
+        active: entry.task.id === this.task?.id,
+      }));
+    if (this.task && !stored.some((summary) => summary.id === this.task!.id)) {
+      stored.unshift({
+        id: this.task.id,
+        objective: this.task.objective,
+        mode: this.task.mode,
+        savedAt: nextSaveStamp(),
+        revision: this.task.revision,
+        drafts: Object.keys(this.task.diffs).length,
+        active: true,
+      });
+    }
+    return stored;
+  }
+
+  /**
+   * Switches the panel to a stored task of this repository: the server
+   * adopts it (restoring when it does not know it yet), the session stream
+   * tail and applied set travel with it, and the tree rerenders.
+   */
+  async switchTask(taskId: string): Promise<void> {
+    const directoryKey = path.resolve(this.directory);
+    const stored = loadStoredTasks().find((entry) => path.resolve(entry.directory) === directoryKey && entry.task.id === taskId);
+    if (!stored) {
+      this.error = `No stored task '${taskId}' belongs to this repository.`;
+      return;
+    }
+    if (this.busy) {
+      this.error = `Another operation is already running: ${this.operation ?? "unknown"}.`;
+      return;
+    }
+    await this.dispatch("Switching task", async () => {
+      const known = await this.server.handle({ jsonrpc: "2.0", id: 34, method: "task/get", params: { taskId } });
+      if (!known || "error" in known) {
+        const restored = await this.server.handle({ jsonrpc: "2.0", id: 35, method: "task/restore", params: { task: stored.task } });
+        if (!restored || "error" in restored) throw new Error((restored && "error" in restored && restored.error.message) || `task/restore failed for ${taskId}.`);
+      }
+      this.task = stored.task;
+      this.appliedDiffIds = new Set(stored.appliedDiffIds);
+      this.sessionLines = [...(stored.sessionLines ?? [])].slice(-MAX_SESSION_LINES);
+      this.routedOptions = undefined;
+      this.repository = repositoryTree(this.directory);
+      this.select(`entry:.`);
+      this.refresh();
+      this.message = `Resumed task: ${stored.task.objective}`;
+    });
+  }
+
+  /**
+   * Sends one raw message straight into the task's agent session (x): no
+   * routing, no plan mutation — the reply streams into the session pane
+   * like every other agent turn. Needs a tool session; a one-shot runtime
+   * has no conversation to talk to.
+   */
+  async chat(message: string): Promise<void> {
+    const task = this.requireTask();
+    const text = message.trim();
+    if (!text) {
+      this.error = "Message text is required.";
+      return;
+    }
+    if (!this.toolDriver) {
+      this.error = "Raw chat needs the agent session (a tool-capable backend with a model).";
+      return;
+    }
+    this.sessionView = true;
+    await this.dispatch("Chatting with the agent session", async () => {
+      // The operator side of the conversation is part of the stream: the
+      // pane shows what was asked, then the agent's answer as it streams.
+      this.sessionLines.push({ kind: "step", text: `› ${text}` });
+      if (this.sessionLines.length > MAX_SESSION_LINES) this.sessionLines.splice(0, this.sessionLines.length - MAX_SESSION_LINES);
+      this.refresh();
+      const reply = await this.withToolFlow(() => this.toolDriver!.chat({ taskId: task.id, objective: task.objective, message: text }));
+      this.refresh();
+      this.message = reply.trim() ? "Agent replied in the session stream." : "Agent session finished; see the stream.";
+    });
   }
 
   /** Shows or hides the agent session stream pane under the files tree. */
@@ -663,7 +806,7 @@ export class AugmentTuiController {
     await this.dispatch("Starting plan", async () => {
       this.sessionLines = [];
       this.routedOptions = undefined;
-      const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision, mode: "change" } });
+      const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}-${++taskSequence}`, objective: objective.trim(), basisRevision, mode: "change" } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       if (this.pendingMode !== "lock" || this.pendingMarks.length) {
         const restricted = await this.server.handle({
@@ -730,7 +873,7 @@ export class AugmentTuiController {
         jsonrpc: "2.0",
         id: 13,
         method: "task/start",
-        params: { taskId: `task:${Date.now()}`, objective: objective.trim(), basisRevision, mode: "explanation" },
+        params: { taskId: `task:${Date.now()}-${++taskSequence}`, objective: objective.trim(), basisRevision, mode: "explanation" },
       });
       let task = expectResult(started, PlanTaskLike.is) as PlanTask;
       this.task = task;
@@ -1477,7 +1620,7 @@ export class AugmentTuiController {
         .filter((entry) => path.resolve(entry.directory) === directoryKey && entry.task.id !== this.task!.id)
         .sort((left, right) => right.savedAt - left.savedAt)
         .slice(0, MAX_STORED_TASKS - 1);
-      saveStoredTasks([...others, ...mine, { directory: this.directory, task: this.task, appliedDiffIds: [...this.appliedDiffIds], sessionLines: [...this.sessionLines].slice(-MAX_SESSION_LINES), savedAt: Date.now() }]);
+      saveStoredTasks([...others, ...mine, { directory: this.directory, task: this.task, appliedDiffIds: [...this.appliedDiffIds], sessionLines: [...this.sessionLines].slice(-MAX_SESSION_LINES), savedAt: nextSaveStamp() }]);
     }
     this.notify();
   }

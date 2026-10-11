@@ -309,7 +309,28 @@ export function pathIsAllowed(task: PlanTask, path: string): boolean {
   return !pathIsLocked(task, path);
 }
 
-function patternInsideMarkedSet(task: PlanTask, pattern: PathPattern): boolean {
+/**
+ * Allow-mode test: the pattern must be COVERED by the marked set — every
+ * path it can name lies inside one marked entry. A pattern that merely
+ * overlaps an allowed path (a superset such as `src` when only `src/a` is
+ * allowed) still names paths outside the set and escapes. Coverage by a
+ * single marked entry is required; union coverage across several entries
+ * is not inferred from finite globs.
+ */
+function patternCoveredByMarkedSet(task: PlanTask, pattern: PathPattern): boolean {
+  const normalized = normalizePath(pattern);
+  return task.lockedPaths.some((marked) => {
+    if (normalized === marked || normalized.startsWith(`${marked}/`)) return true;
+    return globToRegExp(marked).test(normalized);
+  });
+}
+
+/**
+ * Lock-mode test: the pattern INTERSECTS the marked set in any direction —
+ * naming a locked path, lying inside one, or spanning one — because in
+ * lock mode touching even one marked path is forbidden.
+ */
+function patternIntersectsMarkedSet(task: PlanTask, pattern: PathPattern): boolean {
   const normalized = normalizePath(pattern);
   return task.lockedPaths.some((marked) => {
     if (normalized === marked || normalized.startsWith(`${marked}/`) || marked.startsWith(`${normalized}/`)) return true;
@@ -319,10 +340,10 @@ function patternInsideMarkedSet(task: PlanTask, pattern: PathPattern): boolean {
 
 function requireChangeablePattern(task: PlanTask, label: string, pattern: PathPattern): void {
   if (task.restrictionMode === "allow") {
-    if (!task.lockedPaths.length || !patternInsideMarkedSet(task, pattern)) throw new PlanStateError(`Candidate ${label} escapes the allowed paths: ${pattern}`, "locked-path");
+    if (!task.lockedPaths.length || !patternCoveredByMarkedSet(task, pattern)) throw new PlanStateError(`Candidate ${label} escapes the allowed paths: ${pattern}`, "locked-path");
     return;
   }
-  if (patternInsideMarkedSet(task, pattern)) throw new PlanStateError(`Candidate ${label} touches locked path: ${pattern}`, "locked-path");
+  if (patternIntersectsMarkedSet(task, pattern)) throw new PlanStateError(`Candidate ${label} touches locked path: ${pattern}`, "locked-path");
 }
 
 function requireChangeablePath(task: PlanTask, path: string): void {

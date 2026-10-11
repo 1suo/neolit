@@ -79,24 +79,48 @@ for (let index = 0; index < rawArguments.length; index++) {
 }
 const objective = objectiveArguments.join(" ").trim();
 const directory = process.cwd();
-const backend = backendById(config.backend ?? "opencode");
-const requested = config.command ?? backend.defaultCommand;
+// Mutable runtime wiring: `augment setup` is one way to choose the agent,
+// the TUI's [m] picker is the other — it rebuilds the runtime, its tool
+// session, and the persisted config live.
+let backend = backendById(config.backend ?? "opencode");
+let requested = config.command ?? backend.defaultCommand;
+const buildRuntime = () => modelAvailable
+  ? new CliAgentRuntime({
+    directory,
+    backend,
+    command: requested,
+    model,
+    draftModel: config.draftModel,
+    challengeModel: config.challengeModel,
+    server: config.server,
+    agent: config.agent,
+    timeoutMs: config.timeoutMs,
+  })
+  : undefined;
+const buildDriver = (controller: AugmentTuiController) => modelAvailable && process.env.AUGMENT_TUI_NO_TOOLS !== "1" && toolSessionSupported(backend.id)
+  ? new ToolSessionDriver({
+    directory,
+    backend,
+    command: requested,
+    model,
+    timeoutMs: config.timeoutMs,
+    server: controller.server,
+    socketPath: () => controller.snapshot().socketPath,
+  })
+  : undefined;
+const switchBackend = (controller: AugmentTuiController) => (backendId: string) => {
+  backend = backendById(backendId);
+  requested = backend.defaultCommand;
+  saveAugmentConfig({ backend: backendId });
+  controller.setRuntime(buildRuntime(), buildDriver(controller));
+  if (!commandAvailable(requested)) {
+    controller.report(`The ${backendId} CLI (${requested}) is not on PATH — model operations will fail until it is installed.`);
+  }
+};
 const modelAvailable = !disableModel && commandAvailable(requested);
 const controller = new AugmentTuiController({
   directory,
-  runtime: modelAvailable
-    ? new CliAgentRuntime({
-      directory,
-      backend,
-      command: requested,
-      model,
-      draftModel: config.draftModel,
-      challengeModel: config.challengeModel,
-      server: config.server,
-      agent: config.agent,
-      timeoutMs: config.timeoutMs,
-    })
-    : undefined,
+  runtime: buildRuntime(),
   challengeRounds: config.challengeRounds,
   persistTasks: process.env.AUGMENT_TUI_TASKS !== "0",
 });
@@ -113,20 +137,13 @@ if (objective) {
 // One tool-using agent session per task: TUI operations become short
 // prompts, and the model writes into the plan through the neolit MCP tools
 // attached to this TUI's socket. Opt out with AUGMENT_TUI_NO_TOOLS=1.
-if (modelAvailable && process.env.AUGMENT_TUI_NO_TOOLS !== "1" && toolSessionSupported(backend.id)) {
-  controller.useToolSession(new ToolSessionDriver({
-    directory,
-    backend,
-    command: requested,
-    model,
-    timeoutMs: config.timeoutMs,
-    server: controller.server,
-    socketPath: () => controller.snapshot().socketPath,
-  }));
+{
+  const driver = buildDriver(controller);
+  if (driver) controller.useToolSession(driver);
 }
 
 try {
-  await runAugmentTui(controller, modelAvailable, model ?? "OPENCODE DEFAULT");
+  await runAugmentTui(controller, modelAvailable, model ?? "OPENCODE DEFAULT", switchBackend(controller));
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
   process.exitCode = 1;

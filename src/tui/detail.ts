@@ -25,7 +25,7 @@ export const theme = {
 };
 
 
-export type InputMode = "idle" | "objective" | "message" | "reopen" | "stale";
+export type InputMode = "idle" | "objective" | "message" | "reopen" | "stale" | "chat";
 
 
 export interface LiveStatus {
