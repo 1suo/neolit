@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createConnection } from "node:net";
 import { AugmentServer, type JsonRpcRequest } from "../src/augmentd/server.js";
-import { serveAugmentSocket, SocketAugmentPeer } from "../src/augmentd/socket.js";
+import { serveAugmentSocket, defaultSocketPath, SocketAugmentPeer } from "../src/augmentd/socket.js";
 import { McpAugmentServer } from "../src/augmentd/mcp.js";
 import { AugmentTuiController } from "../src/tui/controller.js";
 import type { ModelRuntime } from "../src/augment/types.js";
@@ -205,5 +205,73 @@ describe("augmentd socket transport", () => {
     expect(rendered.filter((revision) => revision > fresh.revision)).toHaveLength(1);
     peer.close();
     await service.close();
+  });
+});
+
+describe("repository-keyed default socket addresses", () => {
+  /** Resolves once the controller's best-effort socket serve has bound. */
+  function waitForControllerSocket(controller: AugmentTuiController): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const deadline = Date.now() + 2_000;
+      const tick = (): void => {
+        const socketPath = controller.snapshot().socketPath;
+        if (socketPath) return resolve(socketPath);
+        if (Date.now() > deadline) return reject(new Error("the controller never served its socket"));
+        setTimeout(tick, 25);
+      };
+      tick();
+    });
+  }
+
+  it("derives a deterministic, directory-unique default name", () => {
+    const neolit = defaultSocketPath("/home/isuo/Projects/neolit");
+    expect(neolit).toBe(defaultSocketPath("/home/isuo/Projects/neolit"));
+    expect(neolit).not.toBe(defaultSocketPath("/home/isuo/Projects/other"));
+    expect(path.basename(neolit).startsWith("augment-neolit-")).toBe(true);
+    expect(path.basename(neolit).endsWith(".sock")).toBe(true);
+    // Without a directory the plain legacy default stays stable for embedders.
+    expect(path.basename(defaultSocketPath())).toBe("augment.sock");
+  });
+
+  it("serves TUIs in different directories side by side; one owner per directory", async () => {
+    const previousRuntime = process.env.XDG_RUNTIME_DIR;
+    const runtimeDir = mkdtempSync(path.join(tmpdir(), "augment-xdg-"));
+    process.env.XDG_RUNTIME_DIR = runtimeDir;
+    try {
+      const alpha = mkdtempSync(path.join(tmpdir(), "augment-dir-"));
+      const beta = mkdtempSync(path.join(tmpdir(), "augment-dir-"));
+      const first = new AugmentTuiController({ directory: alpha });
+      const firstPath = await waitForControllerSocket(first);
+      const second = new AugmentTuiController({ directory: beta });
+      const secondPath = await waitForControllerSocket(second);
+      expect(firstPath).not.toBe(secondPath);
+
+      // Both stores answer the native protocol at the same time.
+      const left = await SocketAugmentPeer.connect(firstPath);
+      const right = await SocketAugmentPeer.connect(secondPath);
+      await left.handle(request(80, "task/start", { taskId: "task:left", objective: "left", basisRevision: "commit:1" }));
+      await right.handle(request(81, "task/start", { taskId: "task:right", objective: "right", basisRevision: "commit:1" }));
+      const seenLeft = await left.handle(request(82, "task/get", { taskId: "task:right" }));
+      expect(seenLeft && "error" in seenLeft).toBe(true); // stores stay separate
+      const seenRight = await right.handle(request(83, "task/get", { taskId: "task:right" }));
+      expect(seenRight && "result" in seenRight).toBe(true);
+      left.close();
+      right.close();
+
+      // A third TUI in an already-served directory keeps working but never
+      // wins the address: tool sessions there fail instead of split-braining
+      // one task store.
+      const third = new AugmentTuiController({ directory: alpha });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(third.snapshot().socketPath).toBeUndefined();
+
+      await first.dispose();
+      await second.dispose();
+      await third.dispose();
+      expect(existsSync(firstPath)).toBe(false);
+    } finally {
+      if (previousRuntime === undefined) delete process.env.XDG_RUNTIME_DIR;
+      else process.env.XDG_RUNTIME_DIR = previousRuntime;
+    }
   });
 });

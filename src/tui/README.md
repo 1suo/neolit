@@ -138,13 +138,20 @@ agent is the same: implement the `CliAgentBackend` interface and register it.
 
 ## Agent socket
 
-While the TUI runs it serves its embedded `AugmentServer` on a Unix socket
-(default `$XDG_RUNTIME_DIR/neolit/augment.sock`; `AUGMENT_TUI_SOCKET`
-overrides the path, `AUGMENT_TUI_NO_SOCKET=1` disables it). An external
-agent attaches with:
+While the TUI runs it serves its embedded `AugmentServer` on a Unix socket.
+The default address is keyed to the repository directory —
+`$XDG_RUNTIME_DIR/neolit/augment-<basename>-<hash>.sock`, where `<basename>`
+is the repository folder and `<hash>` a short digest of its resolved path
+(else a uid-keyed temp path of the same shape) — so several TUIs in
+different projects each serve their own task store side by side. Only two
+instances opened in the SAME directory collide: the loser runs fine but
+serves nothing, and its tool sessions fail instead of split-braining one
+store. `AUGMENT_TUI_SOCKET` overrides the path, `AUGMENT_TUI_NO_SOCKET=1`
+disables serving. An external agent attaches with:
 
 ```sh
-augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment.sock"
+ls "$XDG_RUNTIME_DIR/neolit/"    # find the repository-keyed socket
+augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment-<project>-<hash>.sock"
 ```
 
 and its MCP tool calls (`draft_file`, `select_approach`, …) mutate the task

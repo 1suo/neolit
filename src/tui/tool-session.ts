@@ -368,7 +368,7 @@ export class ToolSessionDriver {
       const socketPath = this.options.socketPath();
       if (socketPath) return socketPath;
       if (Date.now() > deadline) {
-        throw new Error("The agent socket is not available; tool sessions need it (another TUI may own the address, or AUGMENT_TUI_NO_SOCKET is set).");
+        throw new Error("The agent socket is not available; tool sessions need it (another TUI in this directory may own the address, or AUGMENT_TUI_NO_SOCKET is set).");
       }
       await sleep(100);
     }

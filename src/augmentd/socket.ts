@@ -1,4 +1,5 @@
 import { createConnection, createServer, type Socket } from "node:net";
+import { createHash } from "node:crypto";
 import { mkdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -10,15 +11,34 @@ import type { NativePeer } from "./mcp.js";
  * serves its embedded `AugmentServer` on the socket while it runs, so an
  * external agent (through the MCP bridge) drives the SAME task store and
  * every mutation it lands renders live in the TUI. The socket is
- * user-local: `$XDG_RUNTIME_DIR/neolit/augment.sock`, falling back to the
- * temp directory keyed by uid.
+ * user-local: `$XDG_RUNTIME_DIR/neolit/`, falling back to the temp
+ * directory keyed by uid. With a directory the name is repository-keyed
+ * (`augment-<basename>-<hash>.sock`), so TUIs in different projects each
+ * serve their own store instead of fighting over one address.
  */
 
-export function defaultSocketPath(): string {
+/** Readable, bounded slug of the directory's basename for socket names. */
+function directorySlug(directory: string): string {
+  const slug = path.basename(path.resolve(directory))
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 24);
+  return slug || "dir";
+}
+
+/** Suffix that uniquely and deterministically keys one repository. */
+function directorySuffix(directory: string): string {
+  const digest = createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 10);
+  return `-${directorySlug(directory)}-${digest}`;
+}
+
+export function defaultSocketPath(directory?: string): string {
+  const suffix = directory ? directorySuffix(directory) : "";
   const runtime = process.env.XDG_RUNTIME_DIR?.trim();
-  if (runtime) return path.join(runtime, "neolit", "augment.sock");
+  if (runtime) return path.join(runtime, "neolit", `augment${suffix}.sock`);
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
-  return path.join(process.env.TMPDIR ?? "/tmp", `neolit-augment-${uid}.sock`);
+  return path.join(process.env.TMPDIR ?? "/tmp", `neolit-augment-${uid}${suffix}.sock`);
 }
 
 function linesFrom(socket: Socket, onLine: (line: string) => void): void {

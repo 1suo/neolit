@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
-import { serveAugmentSocket, type SocketService } from "../augmentd/socket.js";
+import { defaultSocketPath, serveAugmentSocket, type SocketService } from "../augmentd/socket.js";
 import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
@@ -411,9 +411,12 @@ export class AugmentTuiController {
       ? options.serveSocket.trim()
       : socketEnv || undefined;
     if (options.serveSocket !== false && process.env.AUGMENT_TUI_NO_SOCKET !== "1") {
+      // The default address is keyed to this repository directory, so TUIs
+      // in different projects each serve their own store; only two
+      // instances in the SAME directory collide (single-owner rule).
       // Best-effort: an unusable address just means this TUI keeps working
       // without an external agent channel.
-      void serveAugmentSocket(this.server, explicitSocket).then(
+      void serveAugmentSocket(this.server, explicitSocket ?? defaultSocketPath(this.directory)).then(
         (service) => {
           this.socket = service;
           this.refresh();

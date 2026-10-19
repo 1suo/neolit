@@ -55,7 +55,7 @@ shutdown
 
 `socket.ts` serves the same newline-delimited protocol over a Unix socket, so several clients can reach one task store:
 
-- `serveAugmentSocket(server, path?)` — listen (default `$XDG_RUNTIME_DIR/neolit/augment.sock`, else a uid-keyed temp path), refuse to steal a live server's address, unlink stale files, broadcast `augment/taskChanged` notifications to every attached client, and unlink on close.
+- `serveAugmentSocket(server, path?)` — listen (default `$XDG_RUNTIME_DIR/neolit/augment-<basename>-<hash>.sock` keyed to the repository directory so TUIs in different projects serve side by side, else a uid-keyed temp path; without a directory the plain `augment.sock`), refuse to steal a live server's address, unlink stale files, broadcast `augment/taskChanged` notifications to every attached client, and unlink on close.
 - `SocketAugmentPeer` — client side: answers `handle()` from whichever process owns the socket.
 - Mutating dispatch is serialized per task inside `AugmentServer`: a long operation (a model call inside `crystallize`, a draft) holds its task's turn, so a concurrent writer waits and then fails the optimistic-concurrency check instead of being silently overwritten by a result merged from a stale snapshot.
 
@@ -77,7 +77,7 @@ Each mutating call carries `expectedRevision`; results are compact confirmations
 ```sh
 npx augmentd --mcp                                  # standalone: owns its own task store
 npx augmentd --mcp --directory .                    # + joint git apply diagnostics for drafts
-npx augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment.sock"   # attach to a running TUI
+npx augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment-<project>-<hash>.sock"   # attach to a running TUI (ls that directory to find the address)
 ```
 
 Attached with `--connect`, every tool call mutates the served store — the TUI's (or neolit.nvim's) panel renders each mutation as it lands; detached, the bridge owns its own tasks. The MCP client's agent is the model, so no `ModelRuntime` is injected in either mode. A host embedding the server passes its own `preflight` function and may route dispatch to any `NativePeer` (in-process `AugmentServer` or `SocketAugmentPeer`).
