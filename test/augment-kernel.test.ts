@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { crystallizeNode, draftPatchWithModel, nextDevelopmentStep, refineWithModel, routeMessageWithModel, selectCandidate } from "../src/augment/kernel.js";
+import { crystallizeNode, draftPatchWithModel, draftPatchesWithModel, MAX_DRAFT_SHARD_CONCURRENCY, nextDevelopmentStep, refineWithModel, routeMessageWithModel, selectCandidate } from "../src/augment/kernel.js";
 import { acceptDomain, collapseNode, createPlanTask, generateDomain, refineNode, setPathRestriction } from "../src/augment/state.js";
 import type { ModelCallRequest, ModelRuntime, PlanTask } from "../src/augment/types.js";
 
@@ -101,6 +101,84 @@ describe("augment kernel", () => {
     // A collapsed child directory still owes its refinement: refine descend,
     // never a premature done.
     expect(nextDevelopmentStep(collapsedAuth, collapsedAuth.rootNodeId)).toMatchObject({ action: "descend", path: "src/auth", step: "refine" });
+  });
+
+  it("shards the batch draft by parent directory in bounded waves, all-or-nothing", async () => {
+    const directories = ["a", "b", "c", "d", "e", "f"];
+    const seeded = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 75, touchedPaths: ["src/a/f.ts"] }] }),
+      () => ({ kind: "accept" }),
+      () => ({ children: directories.map((dir) => ({ kind: "file" as const, path: `src/${dir}/f.ts`, lod: "hunk" as const, reason: "r" })) }),
+    ]);
+    let task = createPlanTask({ id: "task:shard", objective: "o", basisRevision: "commit:1" });
+    const domain = await crystallizeNode(seeded, task, { taskId: task.id, nodeId: task.rootNodeId, temperature: "normal", lod: "file" });
+    const selected = selectCandidate(domain, { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]! });
+    const refined = await refineWithModel(seeded, selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "file" });
+
+    // Gate every shard call so the wave structure is observable exactly.
+    const pending: Array<{ targets: string[]; resolve: (value: unknown) => void }> = [];
+    const shards: string[][] = [];
+    let inFlight = 0;
+    let peak = 0;
+    const patchOf = (path: string) => ({ path, patch: `--- a/${path}\n+++ b/${path}\n` });
+    const gated: ModelRuntime = {
+      async call(request) {
+        if (request.operation !== "draft-patches") throw new Error(`unexpected model call ${request.operation}`);
+        const targets = (request.context.draftTargets ?? []).map((target) => target.path);
+        shards.push(targets);
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        const value = await new Promise<unknown>((resolve) => pending.push({ targets, resolve }));
+        inFlight -= 1;
+        return { value };
+      },
+    };
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    const developing = draftPatchesWithModel(gated, refined, { taskId: refined.id, nodeId: refined.rootNodeId, temperature: "low" });
+    await settle();
+    // The first wave is exactly the concurrency bound, one shard per directory.
+    expect(pending).toHaveLength(MAX_DRAFT_SHARD_CONCURRENCY);
+    expect(shards).toEqual(directories.slice(0, MAX_DRAFT_SHARD_CONCURRENCY).map((dir) => [`src/${dir}/f.ts`]));
+    for (const call of pending.splice(0)) call.resolve({ patches: call.targets.map(patchOf) });
+    await settle();
+    // The second wave carries only the remainder.
+    expect(pending).toHaveLength(directories.length - MAX_DRAFT_SHARD_CONCURRENCY);
+    for (const call of pending.splice(0)) call.resolve({ patches: call.targets.map(patchOf) });
+    const drafted = await developing;
+    expect(peak).toBe(MAX_DRAFT_SHARD_CONCURRENCY);
+    expect(shards).toHaveLength(directories.length);
+    expect(Object.keys(drafted.diffs)).toHaveLength(directories.length);
+  });
+
+  it("rejects the whole sharded batch when one shard names an outside path", async () => {
+    const seeded = runtime([
+      () => ({ candidates: [{ label: "Only", rationale: "one family", confidence: 75, touchedPaths: ["src/a/f.ts"] }] }),
+      () => ({ kind: "accept" }),
+      () => ({ children: [
+        { kind: "file", path: "src/a/f.ts", lod: "hunk", reason: "r" },
+        { kind: "file", path: "src/b/f.ts", lod: "hunk", reason: "r" },
+      ] }),
+    ]);
+    let task = createPlanTask({ id: "task:shard-fail", objective: "o", basisRevision: "commit:1" });
+    const domain = await crystallizeNode(seeded, task, { taskId: task.id, nodeId: task.rootNodeId, temperature: "normal", lod: "file" });
+    const selected = selectCandidate(domain, { taskId: domain.id, expectedRevision: domain.revision, nodeId: domain.rootNodeId, candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]! });
+    const refined = await refineWithModel(seeded, selected, { taskId: selected.id, nodeId: selected.rootNodeId, temperature: "normal", lod: "file" });
+    let calls = 0;
+    const poisoned: ModelRuntime = {
+      async call(request) {
+        calls += 1;
+        const targets = (request.context.draftTargets ?? []).map((target) => target.path);
+        const patches = calls === 1
+          ? [{ path: "elsewhere/x.ts", patch: "--- a/elsewhere/x.ts\n+++ b/elsewhere/x.ts\n" }]
+          : targets.map((path) => ({ path, patch: `--- a/${path}\n+++ b/${path}\n` }));
+        return { value: { patches } };
+      },
+    };
+    await expect(draftPatchesWithModel(poisoned, refined, { taskId: refined.id, nodeId: refined.rootNodeId, temperature: "low" }))
+      .rejects.toThrow("elsewhere/x.ts");
+    // The poisoned first wave fails the batch before any second wave flies.
+    expect(calls).toBeLessThanOrEqual(MAX_DRAFT_SHARD_CONCURRENCY);
   });
 
   it("drafts a file target even when its node is collapsed or in a domain", () => {

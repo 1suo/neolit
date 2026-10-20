@@ -1014,11 +1014,13 @@ describe("augment TUI controller", () => {
     expect(second.taskTree.some((entry) => entry.path === "src/auth/session.ts" && entry.drafted)).toBe(true);
   });
 
-  it("develops a refined path with one batched draft call for all files", async () => {
+  it("develops a refined path with one sharded batch draft call per directory", async () => {
     const calls: string[] = [];
+    const shardTargets: string[][] = [];
     const runtime: ModelRuntime = {
       call: async (request) => {
         calls.push(request.operation);
+        if (request.operation === "draft-patches") shardTargets.push((request.context.draftTargets ?? []).map((target) => target.path));
         return modelRuntime().call(request);
       },
     };
@@ -1029,7 +1031,10 @@ describe("augment TUI controller", () => {
     await controller.develop();
     const snapshot = controller.snapshot();
     expect(Object.keys(snapshot.task?.diffs ?? {})).toHaveLength(2);
-    expect(calls.filter((operation) => operation === "draft-patches")).toHaveLength(1);
+    // The batch is sharded by parent directory: one call per directory, its
+    // targets all siblings, never a mix.
+    expect(calls.filter((operation) => operation === "draft-patches")).toHaveLength(2);
+    expect(shardTargets).toEqual([["src/auth/session.ts"], ["test/auth/retry.test.ts"]]);
     expect(calls.filter((operation) => operation === "draft-patch")).toHaveLength(0);
     expect(snapshot.message).toContain("Developed 2 files");
   });
@@ -1040,7 +1045,9 @@ describe("augment TUI controller", () => {
       call: async (request) => {
         if (request.operation === "draft-patches" && failBatch) {
           failBatch = false;
-          return { value: { patches: [{ path: "src/auth/session.ts", patch: "not a diff" }] } };
+          // Names a path outside its shard: the whole sharded batch is
+          // rejected wholesale, so development falls back to single drafts.
+          return { value: { patches: [{ path: "elsewhere/x.ts", patch: "not a diff" }] } };
         }
         if (request.operation === "draft-patch" && request.context.node.path === "test/auth/retry.test.ts") {
           throw new Error("model exploded for this file");
