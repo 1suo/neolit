@@ -437,6 +437,9 @@ export class AugmentServer {
       case "patch/draft-batch": {
         const base = taskMutation(params);
         const input = object(params);
+        // draftPatchesWithModel shards the batch by parent directory and
+        // runs shard calls concurrently, bounded by the kernel's shard cap;
+        // the whole batch still holds this task's turn via exclusive().
         const updated = await draftPatchesWithModel(this.runtime, this.requireTask(base.taskId), {
           taskId: base.taskId,
           nodeId: string(input.nodeId, "nodeId"),

@@ -33,7 +33,7 @@ Model runtimes execute outside this module. `crystallize` and `refine` in `kerne
 - `state.ts`: pure task operations and the filesystem-shaped `planTree` projection.
 - `schemas.ts`: Zod contracts for model proposals.
 - `raw-diff.ts`: raw unified-diff reply parsing for draft and repair operations.
-- `kernel.ts`: bounded model-driven `crystallize` and `refine` operations, the pure `routeMessageWithModel` message classifier, and the shared domain/challenge proposal merges.
+- `kernel.ts`: bounded model-driven `crystallize` and `refine` operations, the pure `routeMessageWithModel` message classifier, the shared domain/challenge proposal merges, and the sharded `draftPatchesWithModel` batch draft.
 
 ## Invariants
 
@@ -45,6 +45,7 @@ Model runtimes execute outside this module. `crystallize` and `refine` in `kerne
 - Patches and refinement carry the task basis revision.
 - A stale node cannot become ready without an explicit `refreshNode`; refresh restores each stale node to its last live lifecycle point and may re-anchor the task to a new basis revision, while existing diffs keep the basis they record.
 - Candidate and refinement counts are bounded to prevent model-driven bloat.
+- A batch draft is sharded by parent directory: shard calls fly in bounded waves (`MAX_DRAFT_SHARD_CONCURRENCY`) and every shard merges all-or-nothing through the pure reducer chain.
 - Candidate confidence is presentation metadata and never selects or eliminates a candidate.
 - Initial domains contain at most five candidates; two challenge slots keep the live bound at seven. Exhausting the challenge budget records `challengeExhausted` and permits human selection without claiming acceptance. Any model proposal — initial candidates and challenge additions alike — whose paths escape the node's scope is split by the one `candidateScopeEscapes` predicate: in-scope work proceeds, escaping paths are recorded as constraints on the node ("Out-of-scope dependency") so the omission survives, and only a proposal with nothing in scope fails, with a message naming the escapes. A challenge candidate touching a locked path stays a failure: the restriction plain is controller authority. `nextDevelopmentStep` derives the next deterministic step for any node (crystallize, refine, draft, descend, choose, done, stalled) so hosts never re-derive the lifecycle; a file, hunk, or virtual target always drafts when undrafted regardless of its domain lifecycle, and a collapsed child directory is reported as a refine descend so a host driving a whole subtree never stops early.
 - Locked paths are controller authority and reject candidate, refinement, or patch mutations inside them.

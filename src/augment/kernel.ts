@@ -436,28 +436,55 @@ export interface DraftPatchesWithModelInput {
   temperature: Temperature;
 }
 
+/** Upper bound on concurrent draft-shard model calls; shards fly in fixed-size waves. */
+export const MAX_DRAFT_SHARD_CONCURRENCY = 4;
+
+/** Shard key: the target's parent directory, so sibling files draft together. */
+function shardKey(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "." : path.slice(0, slash);
+}
+
 /**
- * One batched draft for every undrafted file target under a node: the model
- * sees the whole subtree in one prompt, so imports and shared types stay
- * coherent and one call replaces N sequential ones. All-or-nothing — every
- * patch is attached on a chain of pure reducers first, so an invalid or
- * incomplete batch leaves the task state untouched.
+ * Batched draft for every undrafted file target under a node, sharded by
+ * parent directory: each shard is one `draft-patches` call whose targets are
+ * siblings, so imports and shared types stay coherent inside a directory
+ * while directories draft concurrently in bounded waves. All-or-nothing —
+ * every shard reply is validated and every patch attached on a chain of pure
+ * reducers in path order, so an invalid or incomplete shard leaves the task
+ * state untouched.
  */
 export async function draftPatchesWithModel(runtime: ModelRuntime, task: PlanTask, input: DraftPatchesWithModelInput): Promise<PlanTask> {
   const node = requireNode(task, input.nodeId);
   const targets = undraftedFileTargets(task, input.nodeId);
   if (!targets.length) throw new AugmentModelError(`Node ${node.id} has no undrafted file targets to draft.`, "node-state");
-  const proposal = await call(runtime, task, node, "draft-patches", input.temperature, node.lod, parseWith(BatchPatchProposalSchema), {
-    draftTargets: targets.map((target) => ({ path: target.path! })),
-  });
-  const known = new Set(targets.map((target) => target.path!));
-  for (const patch of proposal.patches) {
-    if (!known.has(patch.path)) throw new AugmentModelError(`Batch draft names ${patch.path}, which is not an undrafted target under ${node.id}.`, "invalid-model-output");
+  const shards = new Map<string, PlanNode[]>();
+  for (const target of targets) {
+    const key = shardKey(target.path!);
+    shards.set(key, [...(shards.get(key) ?? []), target]);
   }
-  const byPath = new Map(proposal.patches.map((patch) => [patch.path, patch.patch]));
+  const patches = new Map<string, string>();
+  const queue = [...shards.entries()];
+  for (let offset = 0; offset < queue.length; offset += MAX_DRAFT_SHARD_CONCURRENCY) {
+    const wave = queue.slice(offset, offset + MAX_DRAFT_SHARD_CONCURRENCY);
+    const proposals = await Promise.all(wave.map(([, shardTargets]) =>
+      call(runtime, task, node, "draft-patches", input.temperature, node.lod, parseWith(BatchPatchProposalSchema), {
+        draftTargets: shardTargets.map((target) => ({ path: target.path! })),
+      }).then((proposal) => {
+        const known = new Set(shardTargets.map((target) => target.path!));
+        for (const patch of proposal.patches) {
+          if (!known.has(patch.path)) throw new AugmentModelError(`Batch draft names ${patch.path}, which is not an undrafted target under ${node.id}.`, "invalid-model-output");
+        }
+        return proposal;
+      }),
+    ));
+    for (const proposal of proposals) {
+      for (const patch of proposal.patches) patches.set(patch.path, patch.patch);
+    }
+  }
   let current = task;
   for (const target of targets) {
-    const patch = byPath.get(target.path!);
+    const patch = patches.get(target.path!);
     if (!patch) throw new AugmentModelError(`Batch draft omits ${target.path}; a batch must cover every target.`, "invalid-model-output");
     current = attachPatch(current, { taskId: task.id, expectedRevision: current.revision, nodeId: target.id, patch });
   }

@@ -196,7 +196,7 @@ export interface ModelContextPacket {
   lockedPaths: string[];
   restrictionMode: "lock" | "allow";
   rejectedCandidates: Array<{ label: string; reason: string }>;
-  /** File targets a `draft-patches` batch must cover, in deterministic order. */
+  /** Undrafted file targets one `draft-patches` call must cover: one parent-directory shard of the node's subtree, in path order. */
   draftTargets?: Array<{ path: string }>;
   /** The user message a `route-message` call classifies. */
   message?: string;
