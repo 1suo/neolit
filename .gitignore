@@ -6,3 +6,4 @@ opencode-langgraph-*.tgz
 coverage/
 *.tgz
 .opencode/
+logs/
