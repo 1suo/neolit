@@ -69,14 +69,16 @@ Every frame derives its arrangement and pane budgets from the exported `adaptive
 
 ## Flow
 
-After a task is entered in this session and a model is configured, the TUI automatically generates its approaches. A domain with exactly one viable candidate is adopted automatically (through a real `node/select`), so `D` works immediately; multiple candidates still ask for `1-7`. A task resumed from the store (at startup or through `t`) never auto-generates: the resumed message points at the explicit way in — `Enter` with an empty submission rethinks the root, which regenerates its approaches. The intended flow is:
+A task starts into a **marking window**: nothing generates on its own. The previous task's restriction plain (marks and polarity) is already applied, `L`/`W` adjust it, and `D` (or `Enter` with an empty submission) generates approaches — `D` develops straight through: a domain with exactly one viable candidate is adopted automatically (through a real `node/select`) and the run continues into refinement and drafting, while multiple candidates stop for `1-7`. A task resumed from the store (at startup or through `t`) opens the same window. The intended flow is:
 
 ```text
 1. describe the change
-2. inspect the suggested file tree
-3. choose an approach with 1-7
-4. press D to develop it: refine into files, then crystallize, refine, and
-   draft every undrafted file under the selected path, stopping only where an
+2. mark paths with L/W while nothing runs (the previous task's plain
+   carries over)
+3. press D (or Enter, empty submit) to generate approaches
+4. press D to develop the chosen approach: refine into files, then
+   crystallize, refine, and draft every undrafted file under the selected
+   path, stopping only where an
    approach choice (1-7) needs a human
 5. press D on any single file to draft just its patch
 6. press Enter on any path to send it a message — one bounded routing call
@@ -95,7 +97,7 @@ D  develop the selected path and everything under it — a chosen approach expan
 A  apply the selected path's drafted patch(es) to the working tree
 C  commit exactly the paths this session applied (pathspec commit; unrelated dirty or staged files stay untouched)
 L  mark/unmark the selected path in the restriction plain, lock polarity: marked (`#`, red) paths must not change, everything else may
-W  mark/unmark the selected path, allow polarity: marked (`#`, accent) paths are the only ones that may change. One plain, one marked set: pressing the other polarity key inverts it (the set stays, its meaning flips). Marks made before a task starts are applied before its first model run
+W  mark/unmark the selected path, allow polarity: marked (`#`, accent) paths are the only ones that may change. One plain, one marked set: pressing the other polarity key inverts it (the set stays, its meaning flips). Marks made before a task starts are applied before its first model run, and a new task carries the previous task's plain (marks and polarity) over
 F  fold/unfold the selected directory (folded folders show `▸` and hide their subtree)
 V  show/hide the agent session stream pane under the files tree (tool sessions)
 H  toggle the related-only filter: show only planned paths (nodes, approaches, drafts, explanations) and restriction-plain marks with their connecting ancestors; press again for the full repository tree. The FILES pane title carries a `· related` suffix while active
@@ -192,7 +194,7 @@ AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh session for e
 AUGMENT_OPENCODE_SERVER        (OpenCode URL; every call connects to this server — no implicit service spawn)
 AUGMENT_OPENCODE_RETRIES       (default 2; extra attempts for rate limits, disconnects, and unparseable output)
 AUGMENT_CHALLENGE_ROUNDS       (0-2, default 2; 0 skips challenge rounds for much faster domains)
-AUGMENT_TUI_TASKS              (default on; set 0 to disable persisting and resuming the active task; tasks are scoped per repository directory, stamped at creation, and never resume in another project — stored entries without a directory are dropped at load; a resumed task never auto-generates approaches)
+AUGMENT_TUI_TASKS              (default on; set 0 to disable persisting and resuming the active task; tasks are scoped per repository directory, stamped at creation, and never resume in another project — stored entries without a directory are dropped at load)
 AUGMENT_TUI_NO_MODEL=1
 ```
 

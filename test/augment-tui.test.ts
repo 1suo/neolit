@@ -314,7 +314,7 @@ describe("augment TUI controller", () => {
     }
   });
 
-  it("never auto-generates for a resumed task, only for one started in this session", async () => {
+  it("never auto-generates: generation waits for an explicit command", async () => {
     const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
     const previous = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = state;
@@ -327,8 +327,8 @@ describe("augment TUI controller", () => {
         },
       };
       // A task persisted before its first generation: the root stays
-      // unresolved with no candidates, exactly the state a reopen used to
-      // auto-fire generation on.
+      // unresolved with no candidates, exactly the state that used to
+      // auto-fire generation on reopen.
       const first = new AugmentTuiController({ directory: process.cwd(), runtime, persistTasks: true });
       await first.start("paused mid-plan", "commit:1");
       const resumed = new AugmentTuiController({ directory: process.cwd(), runtime, persistTasks: true });
@@ -340,17 +340,58 @@ describe("augment TUI controller", () => {
       expect(operations).toEqual([]);
       instance.unmount();
 
-      // The front door still opens for a task started in the mounted session.
+      // A task started in the mounted session does not generate either: the
+      // marking window between start and the first [D] is where the plain
+      // gets curated.
       const fresh = new AugmentTuiController({ directory: process.cwd(), runtime, persistTasks: false });
       const mounted = renderInk(React.createElement(AugmentTui, { controller: fresh, modelAvailable: true }));
       await fresh.start("fresh objective", "commit:2");
       await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(operations).toEqual([]);
+      expect(fresh.snapshot().message).toContain("[L]/[W]");
+
+      // D is the explicit way in — and it develops through generation
+      // (adopting a singleton), refinement, and the draft in one run.
+      await fresh.develop();
       expect(operations).toContain("generate-domain");
+      expect(operations).toContain("draft-patch");
+      expect(fresh.snapshot().error).toBeUndefined();
+      expect(fresh.snapshot().lastRunCancelled).toBe(false);
       mounted.unmount();
     } finally {
       if (previous === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previous;
     }
+  });
+
+  it("a new task carries the previous task's restriction plain", async () => {
+    const directory = tempGitRepo();
+    // A second path to mark: the repository tree is scanned at construction,
+    // so the file must exist before the controller is built.
+    fs.writeFileSync(path.join(directory, "notes.md"), "# notes\n");
+    const controller = new AugmentTuiController({ directory, runtime: modelRuntime() });
+    await controller.start("first objective", "commit:1");
+    // Lock a path on the active task, then start the next task over it.
+    controller.select("entry:session.ts");
+    await controller.toggleRestriction("lock");
+    const plain = controller.snapshot().task!;
+    expect(plain.lockedPaths).toContain("session.ts");
+    await controller.start("second objective", "commit:2");
+    const carried = controller.snapshot().task!;
+    expect(carried.id).not.toBe(plain.id);
+    expect(carried.restrictionMode).toBe("lock");
+    expect(carried.lockedPaths).toContain("session.ts");
+    // Allow polarity carries the same way. The first W press inverts the
+    // plain (the set stays, its meaning flips); the second marks the path.
+    // Allow polarity carries the same way. The first W press inverts the
+    // plain (the set stays, its meaning flips); the second marks the path.
+    controller.select("entry:notes.md");
+    await controller.toggleRestriction("allow");
+    await controller.toggleRestriction("allow");
+    await controller.start("third objective", "commit:3");
+    const allowCarried = controller.snapshot().task!;
+    expect(allowCarried.restrictionMode).toBe("allow");
+    expect(allowCarried.lockedPaths).toContain("notes.md");
   });
 
   it("cancel stops the running operation as a deliberate stop, not a failure", async () => {

@@ -345,7 +345,7 @@ export function candidatesForEntry(task: PlanTask | undefined, entry: PlanTreeEn
 function resumedTaskMessage(task: PlanTask): string {
   const root = task.nodes[task.rootNodeId];
   return root?.status === "unresolved" && !root.candidateIds.length
-    ? `Resumed task: ${task.objective} — approaches not generated yet; press Enter and submit empty to generate them.`
+    ? `Resumed task: ${task.objective} — approaches not generated yet; [D] (or Enter, empty submit) generates them.`
     : `Resumed task: ${task.objective}`;
 }
 
@@ -835,22 +835,32 @@ export class AugmentTuiController {
     await this.dispatch("Starting plan", async () => {
       this.sessionLines = [];
       this.routedOptions = undefined;
+      // The restriction plain survives task boundaries: a new task starts
+      // with the previous task's marks and polarity applied, so standing
+      // restrictions (generated output, lockfiles, vendored code, …) do not
+      // reset on every N. Pre-task pending marks exist only when no task is
+      // active, so the two sources never mix.
+      const standingMode = this.task?.restrictionMode === "allow" ? "allow" : "lock";
+      const standingMarks = this.task ? [...this.task.lockedPaths] : [];
+      const carryPlain = Boolean(this.task) && (standingMode !== "lock" || standingMarks.length > 0);
       const response = await this.server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: `task:${Date.now()}-${++taskSequence}`, objective: objective.trim(), basisRevision, mode: "change" } });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
-      if (this.pendingMode !== "lock" || this.pendingMarks.length) {
+      const mode = carryPlain ? standingMode : this.pendingMode;
+      const marks = carryPlain ? standingMarks : this.pendingMarks;
+      if (mode !== "lock" || marks.length) {
         const restricted = await this.server.handle({
           jsonrpc: "2.0",
           id: 15,
           method: "path/restrict",
-          params: { taskId: this.task.id, expectedRevision: this.task.revision, mode: this.pendingMode },
+          params: { taskId: this.task.id, expectedRevision: this.task.revision, mode },
         });
         this.task = expectResult(restricted, PlanTaskLike.is) as PlanTask;
-        for (const markPath of this.pendingMarks) {
+        for (const markPath of marks) {
           const marked = await this.server.handle({
             jsonrpc: "2.0",
             id: 19,
             method: "path/restrict",
-            params: { taskId: this.task.id, expectedRevision: this.task.revision, path: markPath, mode: this.pendingMode, marked: true },
+            params: { taskId: this.task.id, expectedRevision: this.task.revision, path: markPath, mode, marked: true },
           });
           this.task = expectResult(marked, PlanTaskLike.is) as PlanTask;
         }
@@ -859,7 +869,11 @@ export class AugmentTuiController {
       this.pendingMode = "lock";
       this.startedTaskId = this.task.id;
       this.refresh();
-      this.message = this.runtime ? "Generating approaches..." : `Plan started at ${this.task.basisRevision}. No model is configured.`;
+      // Generation never fires on its own: the marking window between start
+      // and the first [D] is where the plain gets curated.
+      this.message = this.runtime
+        ? `Plan started at ${this.task.basisRevision}. Mark paths with [L]/[W] to constrain the change; [D] (or Enter, empty submit) generates approaches.`
+        : `Plan started at ${this.task.basisRevision}. No model is configured.`;
     });
   }
 

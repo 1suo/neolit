@@ -160,11 +160,12 @@ npm run build
 AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
-After a change task is entered, the TUI automatically generates approaches for
-the root node (a task resumed from the store never auto-generates, and `Esc`
-cancels any running operation); a single viable approach is adopted automatically, multiple
-approaches ask for `1-7`, and lower nodes receive candidates only when
-explicitly opened. `Enter` is the single message entry point: one bounded
+A change task starts into a marking window — nothing generates on its own.
+The previous task's restriction plain carries over, `L`/`W` adjust it, and
+`D` (or `Enter` with an empty submission) generates approaches (`Esc`
+cancels any running operation). A single viable approach is adopted
+automatically, multiple approaches ask for `1-7`, and lower nodes receive
+candidates only when explicitly opened. `Enter` is the single message entry point: one bounded
 `message/route` classification sends the message into the selected node's
 develop flow, an explanation, or an offered set of interpretations — and `x`
 bypasses routing entirely, sending one raw message straight into the task's
