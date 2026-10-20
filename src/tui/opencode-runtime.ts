@@ -314,10 +314,18 @@ export class CliAgentRuntime implements ModelRuntime {
   }
 
   cancel(): void {
+    // Sticky: a cancel between kernel-side calls (challenge rounds, develop
+    // steps) must stop the NEXT spawn too, not only the child in flight.
+    this.cancelled = true;
     for (const child of activeChildren) {
       if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
     }
     this.server.dispose();
+  }
+
+  /** Clears a sticky cancel so the next deliberate operation can run. */
+  resetCancel(): void {
+    this.cancelled = false;
   }
   readonly directory: string;
   private readonly backend: CliAgentBackend;
@@ -333,6 +341,7 @@ export class CliAgentRuntime implements ModelRuntime {
   private readonly serverUrl?: string;
   private readonly retries: number;
   private readonly retryDelayMs: number;
+  private cancelled = false;
 
   constructor(options: OpenCodeCliRuntimeOptions) {
     this.directory = options.directory;
@@ -413,6 +422,7 @@ export class CliAgentRuntime implements ModelRuntime {
   }
 
   private async prompt(request: ModelCallRequest, corrections: string[] = [], modelOverride?: string): Promise<{ text: string; stdout: string }> {
+    if (this.cancelled) throw new Error("Model call was cancelled.");
     const taskId = request.context.taskId;
     // One kept-alive server serves every call: it starts lazily on the first
     // prompt and is reused; when it cannot start, invocation() keeps the
@@ -488,10 +498,15 @@ export class CliAgentRuntime implements ModelRuntime {
         finish();
         reject(new Error(`Could not start OpenCode runtime ${this.command}: ${error.message}`));
       });
+      // A killed CLI may leave grandchildren (agent servers) holding the
+      // stdio pipes open, so `close` can lag forever: settle on `exit`.
+      child.on("exit", (code) => {
+        if (child.killed && code === null) reject(new Error("Model call was cancelled."));
+      });
       child.on("close", (code) => {
         finish();
         if (code === 0) return resolve(stdout);
-        if (child.killed) return reject(new Error("Model call was cancelled."));
+        if (child.killed) return; // settled by the exit handler
         const raw = this.backend.extractError(stdout) ?? (stderr.trim() || `${this.backend.id} runtime exited with code ${code}.`);
         const hint = /model unavailable|no route|provider\.no-route/i.test(raw) ? " (pick an available model with 'augment setup' or [M])" : "";
         reject(new Error(`${raw}${hint}`));

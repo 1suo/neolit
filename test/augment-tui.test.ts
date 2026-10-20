@@ -11,10 +11,12 @@ import { extractAssistantText, extractJsonOnly, OpenCodeCliRuntime } from "../sr
 import { AugmentTuiController, plannedTreeRows } from "../src/tui/controller.js";
 import { rememberSessionBinding } from "../src/tui/session-store.js";
 import { AugmentTui, tuiRenderOptions } from "../src/tui/augment.js";
+import { backendById } from "../src/tui/agent-backends.js";
+import { AugmentServer } from "../src/augmentd/server.js";
 import { adaptiveLayout, detailLines, detailSections, entryState, frameLayout, layoutMode, mergedLines, sharedContentRows, subtreeProgress, theme, wrappedRows, wrapLegend, type LegendSegment } from "../src/tui/detail.js";
 import { configFromEnvironment, effectiveConfig, loadAugmentConfig, saveAugmentConfig } from "../src/tui/config.js";
 import type { ModelCallRequest, ModelRuntime } from "../src/augment/types.js";
-import type { SessionStreamLine, ToolSessionDriver } from "../src/tui/tool-session.js";
+import { ToolSessionDriver, type SessionStreamLine } from "../src/tui/tool-session.js";
 
 const temporaryFiles: string[] = [];
 const temporaryDirectories: string[] = [];
@@ -33,6 +35,15 @@ afterEach(() => {
 function fakeOpenCode(output = "{\"type\":\"message\",\"parts\":[{\"type\":\"text\",\"text\":\"{\\\"kind\\\":\\\"accept\\\"}\"}]}"): string {
   const file = path.join(os.tmpdir(), `augment-opencode-${process.pid}-${temporaryFiles.length}.sh`);
   fs.writeFileSync(file, `#!/bin/sh\ncat <<'JSON'\n${output}\nJSON\n`);
+  fs.chmodSync(file, 0o755);
+  temporaryFiles.push(file);
+  return file;
+}
+
+/** A stand-in agent CLI that never finishes on its own: only a cancel (or the timeout) ends it. */
+function fakeSleepingAgent(): string {
+  const file = path.join(os.tmpdir(), `augment-agent-sleep-${process.pid}-${temporaryFiles.length}.sh`);
+  fs.writeFileSync(file, "#!/bin/sh\nsleep 30\n");
   fs.chmodSync(file, 0o755);
   temporaryFiles.push(file);
   return file;
@@ -279,6 +290,7 @@ describe("augment TUI controller", () => {
     try {
       const first = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
       await first.start("bounded retries", "commit:1");
+      expect(first.snapshot().taskStartedHere).toBe(true);
       await first.crystallize();
       // Stream a session line through the tool-session seam; it must travel
       // with the persisted task and come back on resume.
@@ -288,6 +300,7 @@ describe("augment TUI controller", () => {
       const second = new AugmentTuiController({ directory: process.cwd(), runtime: modelRuntime(), persistTasks: true });
       const snapshot = second.snapshot();
       expect(snapshot.message).toContain("Resumed task: bounded retries");
+      expect(snapshot.taskStartedHere).toBe(false);
       expect(snapshot.task?.objective).toBe("bounded retries");
       expect(snapshot.task?.nodes[snapshot.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
       expect(snapshot.sessionLines.map((line) => line.text)).toEqual(["agent stepped here"]);
@@ -298,6 +311,113 @@ describe("augment TUI controller", () => {
     } finally {
       if (previous === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
+  it("never auto-generates for a resumed task, only for one started in this session", async () => {
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), "augment-state-"));
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = state;
+    try {
+      const operations: string[] = [];
+      const runtime: ModelRuntime = {
+        async call(request: ModelCallRequest) {
+          operations.push(request.operation);
+          return singleFileRuntime("--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,2 @@\n alpha\n-beta\n+gamma\n").call(request);
+        },
+      };
+      // A task persisted before its first generation: the root stays
+      // unresolved with no candidates, exactly the state a reopen used to
+      // auto-fire generation on.
+      const first = new AugmentTuiController({ directory: process.cwd(), runtime, persistTasks: true });
+      await first.start("paused mid-plan", "commit:1");
+      const resumed = new AugmentTuiController({ directory: process.cwd(), runtime, persistTasks: true });
+      expect(resumed.snapshot().taskStartedHere).toBe(false);
+      expect(resumed.snapshot().message).toContain("approaches not generated yet");
+
+      const instance = renderInk(React.createElement(AugmentTui, { controller: resumed, modelAvailable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(operations).toEqual([]);
+      instance.unmount();
+
+      // The front door still opens for a task started in the mounted session.
+      const fresh = new AugmentTuiController({ directory: process.cwd(), runtime, persistTasks: false });
+      const mounted = renderInk(React.createElement(AugmentTui, { controller: fresh, modelAvailable: true }));
+      await fresh.start("fresh objective", "commit:2");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(operations).toContain("generate-domain");
+      mounted.unmount();
+    } finally {
+      if (previous === undefined) delete process.env.XDG_STATE_HOME;
+      else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
+  it("cancel stops the running operation as a deliberate stop, not a failure", async () => {
+    const directory = tempGitRepo();
+    let hang = true;
+    let rejectHang: ((error: Error) => void) | undefined;
+    const cancellable: ModelRuntime & { cancel(): void; resetCancel(): void } = {
+      async call(request: ModelCallRequest) {
+        if (request.operation === "generate-domain" && hang) {
+          return await new Promise<never>((_, reject) => { rejectHang = reject; });
+        }
+        return singleFileRuntime("--- a/session.ts\n+++ b/session.ts\n@@ -1,2 +1,2 @@\n alpha\n-beta\n+gamma\n").call(request);
+      },
+      cancel() {
+        hang = false;
+        rejectHang?.(new Error("Model call was cancelled."));
+        rejectHang = undefined;
+      },
+      resetCancel() {
+        // The controller clears the runtime's sticky flag before each run;
+        // this fake's stickiness is the local `hang` switch above.
+      },
+    };
+    const controller = new AugmentTuiController({ directory, runtime: cancellable });
+    await controller.start("cancel mid-generation", "commit:1");
+    const running = controller.crystallize();
+    // The server dispatch chains through microtasks: wait until the model
+    // call is actually in flight before cancelling.
+    await new Promise<void>((resolve) => {
+      const check = () => (rejectHang ? resolve() : setImmediate(check));
+      check();
+    });
+    expect(controller.snapshot().busy).toBe(true);
+    controller.cancel();
+    await running;
+    const cancelled = controller.snapshot();
+    expect(cancelled.busy).toBe(false);
+    expect(cancelled.lastRunCancelled).toBe(true);
+    expect(cancelled.error).toBeUndefined();
+    expect(cancelled.failed).toBeUndefined();
+    expect(cancelled.message).toContain("cancelled");
+
+    // The next deliberate operation runs normally and clears the cancel state.
+    await controller.crystallize();
+    const recovered = controller.snapshot();
+    expect(recovered.lastRunCancelled).toBe(false);
+    expect(recovered.error).toBeUndefined();
+    expect(recovered.task?.nodes[recovered.task!.rootNodeId]).toMatchObject({ status: "collapsed" });
+  });
+
+  it("cancel kills the tool session's in-flight agent run", async () => {
+    const directory = tempGitRepo();
+    const driver = new ToolSessionDriver({
+      directory,
+      backend: backendById("opencode"),
+      command: fakeSleepingAgent(),
+      timeoutMs: 10_000,
+      server: new AugmentServer({}),
+      socketPath: () => "/tmp/neolit-test-cancel.sock",
+    });
+    try {
+      const pending = driver.propose({ taskId: "task:cancel", objective: "hang the session", nodeId: "node:root", target: "the whole task" });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      driver.cancel();
+      await expect(pending).rejects.toThrow("Agent session was cancelled.");
+    } finally {
+      driver.dispose();
     }
   });
 
@@ -320,6 +440,7 @@ describe("augment TUI controller", () => {
     expect(switched.task?.id).toBe(firstId);
     expect(switched.task?.objective).toBe("first objective");
     expect(switched.message).toContain("Resumed task: first objective");
+    expect(switched.taskStartedHere).toBe(false);
     expect(controller.listTasks().find((summary) => summary.active)!.objective).toBe("first objective");
 
     // Switching back is just another switch; unknown ids refuse politely.

@@ -69,7 +69,7 @@ Every frame derives its arrangement and pane budgets from the exported `adaptive
 
 ## Flow
 
-After a task is entered and a model is configured, the TUI automatically generates approaches. A domain with exactly one viable candidate is adopted automatically (through a real `node/select`), so `D` works immediately; multiple candidates still ask for `1-7`. The intended flow is:
+After a task is entered in this session and a model is configured, the TUI automatically generates its approaches. A domain with exactly one viable candidate is adopted automatically (through a real `node/select`), so `D` works immediately; multiple candidates still ask for `1-7`. A task resumed from the store (at startup or through `t`) never auto-generates: the resumed message points at the explicit way in — `Enter` with an empty submission rethinks the root, which regenerates its approaches. The intended flow is:
 
 ```text
 1. describe the change
@@ -105,6 +105,7 @@ T  switch task: arrow-key picker over this repository's stored tasks (newest fir
 X  send one raw message straight into the task's agent session: no routing, no plan mutation; the operator message and the reply stream into the SESSION pane like every other turn (needs a tool session)
 O  reopen selected node with a reason
 S  mark a real path changed outside the plan
+Esc  cancel the running operation: the model call or agent-session child is killed at once, nothing is retried automatically, and no failure is recorded — a cancelled run is a deliberate stop
 Tab  switch pane
 Q  quit
 ```
@@ -191,7 +192,7 @@ AUGMENT_OPENCODE_SESSIONS      (default on; set 0 to start a fresh session for e
 AUGMENT_OPENCODE_SERVER        (OpenCode URL; every call connects to this server — no implicit service spawn)
 AUGMENT_OPENCODE_RETRIES       (default 2; extra attempts for rate limits, disconnects, and unparseable output)
 AUGMENT_CHALLENGE_ROUNDS       (0-2, default 2; 0 skips challenge rounds for much faster domains)
-AUGMENT_TUI_TASKS              (default on; set 0 to disable persisting and resuming the active task; tasks are scoped per repository directory, stamped at creation, and never resume in another project — stored entries without a directory are dropped at load)
+AUGMENT_TUI_TASKS              (default on; set 0 to disable persisting and resuming the active task; tasks are scoped per repository directory, stamped at creation, and never resume in another project — stored entries without a directory are dropped at load; a resumed task never auto-generates approaches)
 AUGMENT_TUI_NO_MODEL=1
 ```
 

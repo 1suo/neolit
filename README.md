@@ -161,7 +161,8 @@ AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
 After a change task is entered, the TUI automatically generates approaches for
-the root node; a single viable approach is adopted automatically, multiple
+the root node (a task resumed from the store never auto-generates, and `Esc`
+cancels any running operation); a single viable approach is adopted automatically, multiple
 approaches ask for `1-7`, and lower nodes receive candidates only when
 explicitly opened. `Enter` is the single message entry point: one bounded
 `message/route` classification sends the message into the selected node's

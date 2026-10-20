@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -279,6 +279,17 @@ export class ToolSessionDriver {
     }
   }
 
+  /**
+   * Stops the in-flight agent run (the operator's cancel): the child is
+   * killed and the pending exchange or effect-wait rejects promptly instead
+   * of polling its way to the effect deadline.
+   */
+  cancel(): void {
+    this.cancelRequested = true;
+    const child = this.currentChild;
+    if (child && child.exitCode === null && !child.killed) child.kill("SIGTERM");
+  }
+
   private async step(taskId: string, objective: string, step: ToolStep): Promise<void> {
     const completed = await this.exchange(taskId, objective, step.prompt);
     if (completed.code !== 0) {
@@ -382,6 +393,7 @@ export class ToolSessionDriver {
   private async waitEffect(taskId: string, effected: (task: PlanTask) => boolean): Promise<PlanTask | undefined> {
     const deadline = Date.now() + 1_500;
     for (;;) {
+      if (this.cancelRequested) throw new Error("Agent session was cancelled.");
       const task = await this.fetchTask(taskId);
       if (task && effected(task)) return task;
       if (Date.now() > deadline) return undefined;
@@ -390,6 +402,10 @@ export class ToolSessionDriver {
   }
 
   private stream = "";
+
+  /** Set while an agent CLI run is alive; cancel() kills it. */
+  private currentChild?: ChildProcess;
+  private cancelRequested = false;
 
   /** Emits one display line per complete JSON event as the CLI prints it. */
   private streamChunk(chunk: string): void {
@@ -411,14 +427,19 @@ export class ToolSessionDriver {
 
   private run(argv: string[], env: Record<string, string>): Promise<{ stdout: string; code: number; stderr: string }> {
     return new Promise((resolve, reject) => {
+      this.cancelRequested = false;
       const child = spawn(this.options.command, argv, { cwd: this.options.directory, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+      this.currentChild = child;
       let stdout = "";
       let stderr = "";
       const timer = setTimeout(() => {
         child.kill("SIGTERM");
         reject(new Error(`The agent session timed out after ${this.options.timeoutMs ?? 600_000}ms (AUGMENT_OPENCODE_TIMEOUT_MS adjusts this).`));
       }, this.options.timeoutMs ?? 600_000);
-      const finish = () => clearTimeout(timer);
+      const finish = () => {
+        clearTimeout(timer);
+        if (this.currentChild === child) this.currentChild = undefined;
+      };
       child.stdout?.on("data", (chunk: string) => {
         stdout += chunk;
         this.streamChunk(chunk);
@@ -428,8 +449,14 @@ export class ToolSessionDriver {
         finish();
         reject(new Error(`Could not start the agent session ${this.options.command}: ${error.message}`));
       });
+      // A killed CLI may leave grandchildren (agent servers) holding the
+      // stdio pipes open, so `close` can lag forever: settle on `exit`.
+      child.on("exit", (code) => {
+        if (child.killed && code === null) reject(new Error("Agent session was cancelled."));
+      });
       child.on("close", (code) => {
         finish();
+        if (child.killed && code === null) return; // settled by the exit handler
         resolve({ stdout, code: code ?? 0, stderr });
       });
     });

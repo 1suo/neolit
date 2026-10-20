@@ -66,6 +66,10 @@ export interface TuiActionState {
   sessionView: boolean;
   /** Offered interpretations of the last ambiguous message, keyed 1-N; cleared once one is chosen or a new message arrives. */
   routedOptions?: RoutedOption[];
+  /** True only while the active task was started in this process; a resumed or switched-to stored task is false. */
+  taskStartedHere: boolean;
+  /** The last dispatch ended by operator cancel; cleared when the next dispatch starts. */
+  lastRunCancelled: boolean;
 }
 
 /** Bounded read of a repository file's content for the detail-pane preview. */
@@ -337,6 +341,14 @@ export function candidatesForEntry(task: PlanTask | undefined, entry: PlanTreeEn
   return entry.candidateIds.map((id) => task.candidates[id]).filter(Boolean);
 }
 
+/** Resume message: a task stored before its first generation points at the explicit way in. */
+function resumedTaskMessage(task: PlanTask): string {
+  const root = task.nodes[task.rootNodeId];
+  return root?.status === "unresolved" && !root.candidateIds.length
+    ? `Resumed task: ${task.objective} — approaches not generated yet; press Enter and submit empty to generate them.`
+    : `Resumed task: ${task.objective}`;
+}
+
 export class AugmentTuiController {
   readonly directory: string;
   private readonly branch?: string;
@@ -348,6 +360,10 @@ export class AugmentTuiController {
   private readonly persistTasks: boolean;
   private repository: PlanTreeEntry;
   private task?: PlanTask;
+  /** Set only by start()/startExplanation() in this process: the front-door auto-generation keys on it, so a resumed task never auto-fires. */
+  private startedTaskId?: string;
+  private cancelRequested = false;
+  private lastRunCancelled = false;
   private pendingMarks: string[] = [];
   private pendingMode: "lock" | "allow" = "lock";
   private appliedDiffIds = new Set<string>();
@@ -402,7 +418,7 @@ export class AugmentTuiController {
           // If the payload is somehow rejected the first operation will surface
           // the server's own error; the local copy keeps the tree visible.
         });
-        this.message = `Resumed task: ${stored.task.objective}`;
+        this.message = resumedTaskMessage(stored.task);
       }
     }
     this.watchExternalMutations();
@@ -528,13 +544,14 @@ export class AugmentTuiController {
         if (!restored || "error" in restored) throw new Error((restored && "error" in restored && restored.error.message) || `task/restore failed for ${taskId}.`);
       }
       this.task = stored.task;
+      this.startedTaskId = undefined;
       this.appliedDiffIds = new Set(stored.appliedDiffIds);
       this.sessionLines = [...(stored.sessionLines ?? [])].slice(-MAX_SESSION_LINES);
       this.routedOptions = undefined;
       this.repository = repositoryTree(this.directory);
       this.select(`entry:.`);
       this.refresh();
-      this.message = `Resumed task: ${stored.task.objective}`;
+      this.message = resumedTaskMessage(stored.task);
     });
   }
 
@@ -676,9 +693,16 @@ export class AugmentTuiController {
     this.message = `Models updated: ${changed.join(", ")}`;
   }
 
+  /**
+   * Stops the running operation: the runtime's in-flight model call and the
+   * tool session's agent child are killed, and the flag the dispatch loop
+   * reads records a deliberate stop — never a failure, never auto-retried.
+   */
   cancel(): void {
-    const cancellable = this.runtime as { cancel?: () => void } | undefined;
-    cancellable?.cancel?.();
+    if (!this.busy) return;
+    this.cancelRequested = true;
+    (this.runtime as { cancel?: () => void } | undefined)?.cancel?.();
+    this.toolDriver?.cancel();
   }
 
   snapshot(): TuiActionState {
@@ -707,6 +731,8 @@ export class AugmentTuiController {
       sessionLines: [...this.sessionLines],
       sessionView: this.sessionView,
       routedOptions: this.routedOptions ? [...this.routedOptions] : undefined,
+      taskStartedHere: Boolean(this.task && this.startedTaskId === this.task.id),
+      lastRunCancelled: this.lastRunCancelled,
     };
   }
 
@@ -831,6 +857,7 @@ export class AugmentTuiController {
       }
       this.pendingMarks = [];
       this.pendingMode = "lock";
+      this.startedTaskId = this.task.id;
       this.refresh();
       this.message = this.runtime ? "Generating approaches..." : `Plan started at ${this.task.basisRevision}. No model is configured.`;
     });
@@ -880,6 +907,7 @@ export class AugmentTuiController {
       });
       let task = expectResult(started, PlanTaskLike.is) as PlanTask;
       this.task = task;
+      this.startedTaskId = task.id;
       this.refresh();
       const explained = await this.server.handle({
         jsonrpc: "2.0",
@@ -1226,6 +1254,8 @@ export class AugmentTuiController {
     };
     for (let guard = 0; guard < MAX_DEVELOP_STEPS; guard++) {
       if (!this.task) return;
+      // An operator cancel stops the whole run: nothing respawns.
+      if (this.lastRunCancelled) return;
       const step = nextDevelopmentStep(this.task, nodeId);
       if (step.action === "refine") {
         acted = true;
@@ -1633,6 +1663,8 @@ export class AugmentTuiController {
       this.error = `Another operation is already running: ${this.operation ?? "unknown"}.`;
       return;
     }
+    this.lastRunCancelled = false;
+    (this.runtime as { resetCancel?: () => void } | undefined)?.resetCancel?.();
     this.busy = true;
     this.operation = operation;
     this.activeNodeId = nodeId;
@@ -1646,15 +1678,26 @@ export class AugmentTuiController {
         this.failedError = undefined;
       }
     } catch (error) {
-      this.error = error instanceof Error ? error.message : String(error);
-      this.message = `${operation} failed.`;
-      this.failedNodeId = nodeId;
-      this.failedOperation = operation;
-      this.failedError = this.error;
+      if (this.cancelRequested) {
+        // An operator cancel is a deliberate stop, not a failure: no error,
+        // no × mark — the next explicit keypress works normally.
+        this.error = undefined;
+        this.message = `${operation} cancelled.`;
+      } else {
+        this.error = error instanceof Error ? error.message : String(error);
+        this.message = `${operation} failed.`;
+        this.failedNodeId = nodeId;
+        this.failedOperation = operation;
+        this.failedError = this.error;
+      }
     } finally {
+      this.lastRunCancelled = this.cancelRequested;
+      this.cancelRequested = false;
       this.busy = false;
       this.operation = undefined;
       this.activeNodeId = undefined;
+      // Terminal states (failure and cancel too) reach hosts without a poll.
+      this.refresh();
       if (this.externalPending) {
         this.externalPending = false;
         void this.adoptExternalTask();
