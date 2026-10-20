@@ -4,7 +4,7 @@ import path from "node:path";
 import type { ModelCallRequest, ModelContextPacket, ModelRuntime } from "../augment/types.js";
 import { parseRawDraftReply } from "../augment/raw-diff.js";
 import { preflightPatches } from "./apply.js";
-import { backendById, extractServerUrl, opencodeBackend, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
+import { backendById, extractServerPassword, extractServerUrl, opencodeBackend, WarmTransportUnavailableError, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
 import { forgetSessionBinding, rememberSessionBinding, sessionBindingFor } from "./session-store.js";
 
 export { extractAssistantText } from "./agent-backends.js";
@@ -14,12 +14,15 @@ const SERVER_START_TIMEOUT_MS = 15_000;
 /**
  * Persistent agent server: one kept-alive process replaces per-call CLI
  * spawns. `start()` launches the backend's `serveArgs` once, resolves the
- * address it prints, and reuses it for every later call; `dispose()` and an
- * unexpected exit both clear the state so the next `start()` relaunches.
+ * address and password it prints, and reuses both for every later call;
+ * `dispose()` and an unexpected exit both clear the state so the next
+ * `start()` relaunches. `interrupt()` kills the child without waiting for
+ * the startup timeout — an operator cancel must not sit through it.
  */
 export class PersistentAgentServer {
   private child?: ChildProcess;
   private address?: string;
+  private secret?: string;
   private starting?: Promise<string | undefined>;
 
   constructor(
@@ -33,11 +36,21 @@ export class PersistentAgentServer {
     return this.address;
   }
 
+  /** The password the server printed; v2 guards every route with it. */
+  get password(): string | undefined {
+    return this.secret;
+  }
+
   async start(): Promise<string | undefined> {
     if (this.address) return this.address;
     const pending = this.starting ?? this.launch();
     this.starting = pending;
     return pending;
+  }
+
+  /** Kills the serve child now (a cancel stuck waiting for startup). */
+  interrupt(): void {
+    this.child?.kill("SIGTERM");
   }
 
   private async launch(): Promise<string | undefined> {
@@ -61,6 +74,10 @@ export class PersistentAgentServer {
       }, SERVER_START_TIMEOUT_MS);
       const listen = (chunk: unknown): void => {
         buffered += String(chunk);
+        // The password can arrive after the address settles, so it is
+        // captured on every chunk, independent of settling.
+        const secret = extractServerPassword(buffered);
+        if (secret) this.secret = secret;
         const found = extractServerUrl(buffered);
         if (found) settle(found);
       };
@@ -282,6 +299,8 @@ export interface OpenCodeCliRuntimeOptions {
   autoApprove?: boolean;
   retries?: number;
   retryDelayMs?: number;
+  /** Notified when the warm transport degrades to CLI spawns (chronically, not per hiccup). */
+  onWarmFallback?: (reason: string) => void;
 }
 
 interface OpenCodeCliResult {
@@ -341,7 +360,9 @@ export class CliAgentRuntime implements ModelRuntime {
   private readonly serverUrl?: string;
   private readonly retries: number;
   private readonly retryDelayMs: number;
+  private readonly onWarmFallback?: (reason: string) => void;
   private cancelled = false;
+  private warmFailures = 0;
 
   constructor(options: OpenCodeCliRuntimeOptions) {
     this.directory = options.directory;
@@ -359,6 +380,7 @@ export class CliAgentRuntime implements ModelRuntime {
     this.retries = options.retries ?? Number(process.env.AUGMENT_OPENCODE_RETRIES ?? 2);
     if (!Number.isSafeInteger(this.retries) || this.retries < 0) throw new Error("OpenCode runtime retries must be a non-negative integer.");
     this.retryDelayMs = options.retryDelayMs ?? 4_000;
+    this.onWarmFallback = options.onWarmFallback;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0) throw new Error("OpenCode runtime timeout must be a positive integer.");
   }
 
@@ -453,24 +475,67 @@ export class CliAgentRuntime implements ModelRuntime {
     ];
     if (previous) {
       try {
-        const stdout = await this.run(this.invocation(request, [CONTINUATION_NOTE, ...baseParts].join("\n\n"), previous, modelOverride));
-        this.rememberSession(taskId, stdout);
-        return { text: this.backend.parseAssistantText(stdout), stdout };
+        return await this.send(request, [CONTINUATION_NOTE, ...baseParts].join("\n\n"), previous, modelOverride, taskId);
       } catch {
         forgetSessionBinding(this.directory, taskId);
       }
     }
-    const stdout = await this.run(this.invocation(request, baseParts.join("\n\n"), undefined, modelOverride));
-    this.rememberSession(taskId, stdout);
-    return { text: this.backend.parseAssistantText(stdout), stdout };
+    return this.send(request, baseParts.join("\n\n"), undefined, modelOverride, taskId);
   }
 
   private invocation(request: ModelCallRequest, prompt: string, session?: string, modelOverride?: string): string[] {
     const model = modelOverride ?? this.modelFor(request.operation);
     return this.backend.invocation(
       { model, session, prompt, title: `augment-${request.operation}`, autoApprove: this.autoApprove },
-      { server: this.serverUrl ?? this.server.url, agent: this.agent },
+      // Only an explicitly configured external server rides the CLI flag:
+      // the run client speaks the background-service protocol, not the plain
+      // serve one, so pointing it at our own serve child fails its health
+      // probe. Our child is reached over the warm HTTP transport instead.
+      { server: this.serverUrl, agent: this.agent },
     );
+  }
+
+  /**
+   * One model turn over the cheapest working transport: the kept-alive
+   * server answers a warm HTTP exchange with no per-call CLI process to
+   * boot, and a transport-level warm failure falls back to the universal
+   * one-shot CLI spawn below. A model-run failure read from a healthy
+   * warm reply propagates — the CLI would only repeat it.
+   */
+  private async send(request: ModelCallRequest, prompt: string, session: string | undefined, modelOverride: string | undefined, taskId: string): Promise<{ text: string; stdout: string }> {
+    const warm = this.backend.warmTransport;
+    const url = this.server.url;
+    const password = this.server.password;
+    if (warm && url && password) {
+      try {
+        const reply = await warm.exchange(url, warm.authorization(password), {
+          agent: this.agent,
+          model: modelOverride ?? this.modelFor(request.operation),
+          text: prompt,
+          session,
+          timeoutMs: this.timeoutMs,
+        });
+        rememberSessionBinding(this.directory, taskId, reply.sessionId);
+        this.warmFailures = 0;
+        return { text: reply.text, stdout: reply.stdout };
+      } catch (error) {
+        if (!(error instanceof WarmTransportUnavailableError)) throw error;
+        // Best-effort by design; surface the first degradation of each
+        // episode so a silent API mismatch can never quietly erase the
+        // speedup while every call still succeeds via the CLI.
+        this.noteWarmFallback(error);
+      }
+    }
+    const stdout = await this.run(this.invocation(request, prompt, session, modelOverride));
+    this.rememberSession(taskId, stdout);
+    return { text: this.backend.parseAssistantText(stdout), stdout };
+  }
+
+  private noteWarmFallback(error: unknown): void {
+    const previous = this.warmFailures;
+    this.warmFailures += 1;
+    if (previous !== 0) return;
+    this.onWarmFallback?.(error instanceof Error ? error.message : String(error));
   }
 
   private rememberSession(taskId: string, stdout: string): void {

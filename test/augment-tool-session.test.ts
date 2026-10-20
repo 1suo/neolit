@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -184,6 +185,97 @@ describe("ToolSessionDriver session revival", () => {
     } finally {
       if (previous === undefined) delete process.env.XDG_STATE_HOME;
       else process.env.XDG_STATE_HOME = previous;
+    }
+  });
+
+  it("runs steps over the wiring server's warm transport without spawning the CLI", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "augment-driver-warm-"));
+    try {
+      const server = new AugmentServer({});
+      const started = await server.handle({ jsonrpc: "2.0", id: 1, method: "task/start", params: { taskId: "task:warm", objective: "make retries bounded", basisRevision: "commit:1" } });
+      if (!started || "error" in started) throw new Error("task/start failed");
+      const task = started.result as { id: string; rootNodeId: string; revision: number };
+
+      // The fake v2 serve dialect: create, prompt, wait, message — the step
+      // reply arrives over HTTP, so no CLI child may ever run.
+      const httpServer = http.createServer((request, response) => {
+        let body = "";
+        request.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+        request.on("end", () => {
+          const send = (status: number, payload: unknown): void => {
+            response.writeHead(status, { "content-type": "application/json" });
+            response.end(payload === undefined ? "" : JSON.stringify(payload));
+          };
+          if (request.url === "/api/session" && request.method === "POST") return send(200, { data: { id: "ses_step1" } });
+          if (request.url === "/api/session/ses_step1/prompt" && request.method === "POST") return send(200, { data: { id: "msg_u1" } });
+          if (request.url === "/api/experimental/session/ses_step1/wait" && request.method === "POST") return send(204, undefined);
+          if (request.url === "/api/session/ses_step1/message" && request.method === "GET") {
+            return send(200, { data: [
+              { id: "msg_idle1", type: "idle", outcome: "success" },
+              { id: "msg_a1", type: "assistant", finish: "stop", content: [{ type: "text", text: "proposed two approaches" }] },
+              { id: "msg_u1", type: "user" },
+            ] });
+          }
+          send(404, {});
+        });
+      });
+      const warmUrl = await new Promise<string>((resolve) => {
+        httpServer.listen(0, "127.0.0.1", () => {
+          const address = httpServer.address() as { port: number };
+          resolve(`http://127.0.0.1:${address.port}`);
+        });
+      });
+
+      const log = path.join(os.tmpdir(), `augment-driver-warm-log-${process.pid}.txt`);
+      fs.rmSync(log, { force: true });
+      const command = path.join(os.tmpdir(), `augment-driver-warm-cli-${process.pid}.sh`);
+      fs.writeFileSync(command, [
+        "#!/bin/sh",
+        `if [ "$1" = "serve" ]; then printf '%s\\n' 'server listening on ${warmUrl}'; printf '%s\\n' 'server password sekret'; exec sleep 30; fi`,
+        `printf '%s\\n' "$*" >> ${JSON.stringify(log)}`,
+        "exit 9",
+        "",
+      ].join("\n"));
+      fs.chmodSync(command, 0o755);
+
+      const lines: string[] = [];
+      const driver = new ToolSessionDriver({
+        directory,
+        backend: opencodeBackend,
+        command,
+        server,
+        socketPath: () => "/tmp/opencode/neolit-test.sock",
+        bridge: ["augmentd"],
+      });
+      driver.onLine = (line) => { lines.push(line.text); };
+      // The fake v2 host never calls the neolit tools, so the propose effect
+      // lands through the server's deterministic seam while the step waits.
+      void new Promise((resolve) => setTimeout(resolve, 200)).then(async () => {
+        const current = await server.handle({ jsonrpc: "2.0", id: 2, method: "task/get", params: { taskId: task.id } });
+        const revision = ((current as { result: PlanTask }).result).revision;
+        await server.handle({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "domain/propose",
+          params: {
+            taskId: task.id,
+            expectedRevision: revision,
+            nodeId: task.rootNodeId,
+            candidates: [{ label: "bounded retries", rationale: "because retries must be bounded", confidence: 80, touchedPaths: ["src/retry.ts"] }],
+          },
+        });
+      });
+      try {
+        await driver.propose({ taskId: task.id, objective: "make retries bounded", nodeId: task.rootNodeId, target: "the root" });
+        // No CLI child ever ran: the warm transport carried the whole step.
+        expect(fs.existsSync(log)).toBe(false);
+        expect(lines).toContain("proposed two approaches");
+      } finally {
+        driver.dispose();
+        await new Promise<void>((done) => httpServer.close(() => done()));
+      }
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
     }
   });
 });

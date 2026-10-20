@@ -84,6 +84,9 @@ const directory = process.cwd();
 // session, and the persisted config live.
 let backend = backendById(config.backend ?? "opencode");
 let requested = config.command ?? backend.defaultCommand;
+// Late-bound so buildRuntime() can report warm-transport degradation through
+// the controller's status line once the controller exists.
+let reportWarmFallback: ((reason: string) => void) | undefined;
 const buildRuntime = () => modelAvailable
   ? new CliAgentRuntime({
     directory,
@@ -95,6 +98,7 @@ const buildRuntime = () => modelAvailable
     server: config.server,
     agent: config.agent,
     timeoutMs: config.timeoutMs,
+    onWarmFallback: (reason) => reportWarmFallback?.(`Agent server transport degraded to CLI spawns: ${reason}`),
   })
   : undefined;
 const buildDriver = (controller: AugmentTuiController) => modelAvailable && process.env.AUGMENT_TUI_NO_TOOLS !== "1" && toolSessionSupported(backend.id)
@@ -124,6 +128,7 @@ const controller = new AugmentTuiController({
   challengeRounds: config.challengeRounds,
   persistTasks: process.env.AUGMENT_TUI_TASKS !== "0",
 });
+reportWarmFallback = (reason) => controller.report(reason);
 
 if (objective) {
   await controller.start(objective, currentRevision(directory));

@@ -123,12 +123,30 @@ Sessions are bound per task and per repository directory through
 keyed `{ [directory]: { [taskId]: sessionId } }`): a restarted TUI revives a
 task's session, and a session created in one directory is never resumed for
 another. Pre-scoping flat session files are ignored rather than guessed at.
-Backends with a server mode can also skip the CLI's fixed startup cost:
+Backends with a server mode also skip the CLI's fixed startup cost:
 `opencode` exposes `serveArgs` (`opencode serve --port 0`), and
 `PersistentAgentServer` in `src/tui/opencode-runtime.ts` keeps that one
-process alive, resolves the address it prints, and restarts it if it dies.
-Routing every model call through it automatically is still open — see
-`TODO-augment.md`.
+process alive, resolves the address and password it prints, and restarts it
+if it dies. Every model call first runs as a warm HTTP exchange against
+that server — no CLI process boots per call. The v2 serve dialect (basic
+auth with the printed password, `POST /api/session`, per-session
+`model`/`agent` routing, `prompt`, the experimental `wait` long-poll, and a
+newest-first `message` list whose `idle` marker ends the run) lives in the
+backend's `warmTransport` descriptor in `src/tui/agent-backends.ts`, next
+to every other vendor-specific shape. A transport-level warm failure
+(`WarmTransportUnavailableError`) falls back to the one-shot CLI spawn, so
+a call never depends on the warm path; a model-run failure read from a
+healthy reply fails the call, because the CLI would only repeat it. The
+first degradation of each episode is surfaced through the controller's
+status line so a vendor API change cannot silently erase the speedup. The
+CLI fallback passes `--server` only for an explicitly configured external
+server: the run client speaks the background-service protocol, not the
+plain serve one, so it is never pointed at our own serve child. Tool
+sessions keep their own serve child started with the neolit MCP wiring:
+steps run over that server's warm transport (the server owns the MCP
+connections, so the model sees the neolit tools and consecutive steps
+reuse one agent session), falling back to a private `--standalone` CLI
+server per step when the warm transport is unavailable.
 Single-file drafts (`draft-patch`, `repair-patch`) ask for the raw unified
 diff itself — assumptions as trailing `Assumption:` lines — and the runtime
 falls back to the JSON envelope when a model still answers that way; the

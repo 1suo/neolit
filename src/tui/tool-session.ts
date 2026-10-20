@@ -5,27 +5,27 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AugmentServer } from "../augmentd/server.js";
 import type { PlanTask } from "../augment/types.js";
-import type { CliAgentBackend } from "./agent-backends.js";
+import { WarmTransportUnavailableError, type CliAgentBackend } from "./agent-backends.js";
+import { PersistentAgentServer } from "./opencode-runtime.js";
 import { rememberSessionBinding, sessionBindingFor } from "./session-store.js";
 
 /**
  * ToolSessionDriver: the TUI's model operations become short prompts in
  * ONE agent session bound to the task id, and the model writes into the plan
- * exclusively through the neolit MCP tools — which the spawned CLI loads
- * from generated wiring (OPENCODE_CONFIG for OpenCode, --mcp-config for
- * Claude) pointing at this TUI's socket. Because `opencode run` hands its
- * work to a background service that owns MCP connections, OpenCode steps run
- * --standalone so their private server inherits the generated layer; the run
- * client alone would never see the tools. Every tool call lands in the
- * embedded server, renders live, and is validated by the controller; the
- * driver never parses model replies, it waits for the effect to appear in
- * the task store. Prompts point instead of embed: the session already holds
- * the objective, and the agent reads files and state fresh through its own
- * tools (plan_status, read_diff, read), which also removes the stale-embed
- * class of draft failures. The human gates stay in the TUI: the agent
- * proposes and challenges, people choose. The task→session binding lives
- * in the directory-scoped session store, so a restarted TUI revives the
- * session — and a session created in another directory is never reused.
+ * exclusively through the neolit MCP tools — which the wiring loads into a
+ * kept-alive serve child (OPENCODE_CONFIG for OpenCode, --mcp-config for
+ * Claude) pointing at this TUI's socket. Steps run over that server's warm
+ * HTTP transport when it is up, falling back to a one-shot `--standalone`
+ * CLI spawn per step when it is not. Every tool call lands in the embedded
+ * server, renders live, and is validated by the controller; the driver never
+ * parses model replies, it waits for the effect to appear in the task store.
+ * Prompts point instead of embed: the session already holds the objective,
+ * and the agent reads files and state fresh through its own tools
+ * (plan_status, read_diff, read), which also removes the stale-embed class
+ * of draft failures. The human gates stay in the TUI: the agent proposes
+ * and challenges, people choose. The task→session binding lives in the
+ * directory-scoped session store, so a restarted TUI revives the session —
+ * and a session created in another directory is never reused.
  */
 
 /** Backends whose non-interactive runs accept generated MCP wiring today. */
@@ -196,6 +196,9 @@ export class ToolSessionDriver {
   private readonly opened = new Set<string>();
   private wiring?: { env: Record<string, string>; extraArgs: string[]; file: string; socketPath: string };
 
+  /** Kept-alive serve child carrying the tool wiring; every step runs against it. */
+  private server?: PersistentAgentServer;
+
   /** Live session-stream tap: every parsed CLI event becomes a display line as it arrives. */
   onLine?: (line: SessionStreamLine) => void;
 
@@ -261,6 +264,7 @@ export class ToolSessionDriver {
       const raw = this.backendValue().extractError(completed.stdout) ?? (firstLine(completed.stdout) || `exit code ${completed.code}`);
       throw new Error(`The agent session failed (${raw}).`);
     }
+    if (completed.text !== undefined) return completed.text;
     try {
       return this.backendValue().parseAssistantText(completed.stdout);
     } catch {
@@ -269,6 +273,7 @@ export class ToolSessionDriver {
   }
 
   dispose(): void {
+    this.server?.dispose();
     if (this.wiring) {
       try {
         fs.rmSync(this.wiring.file, { force: true });
@@ -282,12 +287,15 @@ export class ToolSessionDriver {
   /**
    * Stops the in-flight agent run (the operator's cancel): the child is
    * killed and the pending exchange or effect-wait rejects promptly instead
-   * of polling its way to the effect deadline.
+   * of polling its way to the effect deadline. A cancel that arrives while
+   * no CLI child exists (the wiring server is still starting) interrupts
+   * that server instead, so startup waits end immediately too.
    */
   cancel(): void {
     this.cancelRequested = true;
     const child = this.currentChild;
     if (child && child.exitCode === null && !child.killed) child.kill("SIGTERM");
+    else this.server?.interrupt();
   }
 
   private async step(taskId: string, objective: string, step: ToolStep): Promise<void> {
@@ -298,22 +306,60 @@ export class ToolSessionDriver {
     }
     const task = await this.waitEffect(taskId, step.effected);
     if (!task) {
-      const reply = firstLine(this.backendValue().parseAssistantText(completed.stdout));
+      const reply = firstLine(completed.text ?? this.backendValue().parseAssistantText(completed.stdout));
       throw new Error(`${step.failure}. The agent replied: ${reply || "(no answer text)"}`);
     }
   }
 
   /**
-   * Runs one prompt in the task's session: the opener anchors a fresh
-   * conversation, the task id rides every message (sessions compact and
-   * forget), and the session binding is remembered for the next step.
+   * Runs one prompt in the task's session over the warm HTTP transport of
+   * the kept-alive wiring server — the server owns the MCP connections, so
+   * the model sees the neolit tools and no CLI child boots per step. A
+   * transport-level failure falls back to the one-shot `--standalone` CLI
+   * spawn; a model-run failure fails the step, exactly as a non-zero CLI
+   * exit would. The opener anchors a fresh conversation, the task id rides
+   * every message (sessions compact and forget), and the session binding is
+   * remembered for the next step.
    */
-  private async exchange(taskId: string, objective: string, prompt: string): Promise<{ stdout: string; code: number }> {
+  private async exchange(taskId: string, objective: string, prompt: string): Promise<{ stdout: string; code: number; text?: string }> {
     const wiring = await this.ensureWiring();
+    // A cancel that arrived during wiring or server startup must stop the
+    // step here — checking only after the relaunch below would sit through
+    // another full startup wait.
+    if (this.cancelRequested) throw new Error("Agent session was cancelled.");
     const anchor = `(task id ${taskId}) — call plan_status with it for the current state and ids.`;
     const message = this.opened.has(taskId)
       ? `${prompt}\n\n${anchor}`
       : `${toolPrompts.open(taskId, objective)}\n\n${prompt}\n\n${anchor}`;
+    // Relaunch the kept-alive wiring server when it died, so a step never
+    // targets a stale address.
+    await this.server?.start();
+    if (this.cancelRequested) throw new Error("Agent session was cancelled.");
+    const warm = this.options.backend.warmTransport;
+    const url = this.server?.url;
+    const password = this.server?.password;
+    if (warm && url && password) {
+      try {
+        const reply = await warm.exchange(url, warm.authorization(password), {
+          model: this.options.model,
+          text: message,
+          session: sessionBindingFor(this.options.directory, taskId),
+          timeoutMs: this.options.timeoutMs ?? 600_000,
+        });
+        rememberSessionBinding(this.options.directory, taskId, reply.sessionId);
+        this.opened.add(taskId);
+        if (this.onLine) {
+          for (const line of reply.text.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (trimmed) this.onLine({ kind: "text", text: capped(trimmed, TEXT_LINE_CAP) });
+          }
+        }
+        return { stdout: reply.stdout, code: 0, text: reply.text };
+      } catch (error) {
+        if (!(error instanceof WarmTransportUnavailableError)) throw error;
+        // Transport-only: the standalone CLI step below still works.
+      }
+    }
     const completed = await this.run(this.argv(message, sessionBindingFor(this.options.directory, taskId), wiring), wiring.env);
     const sessionId = this.backendValue().extractSessionId(completed.stdout);
     if (sessionId) rememberSessionBinding(this.options.directory, taskId, sessionId);
@@ -337,12 +383,11 @@ export class ToolSessionDriver {
       ];
     }
     // `opencode run` hands its work to a background service that owns MCP
-    // connections, so a config layer on the run client changes nothing, and
-    // `serve` speaks a password-protected server protocol the run client
-    // negotiates separately. `--standalone` gives each step a private
-    // server that inherits this process's environment — the generated
-    // layer (with the neolit bridge) is therefore visible to it. Sessions
-    // persist on disk, so `--session` continuation works across steps.
+    // connections, and that service's protocol differs from a plain serve
+    // child's (`--server` fails its health probe), so the fallback step is
+    // always `--standalone`: a private server inheriting this process's
+    // environment, where the generated layer (with the neolit bridge) is
+    // visible. The fast path is the warm HTTP exchange above, not this.
     if (this.options.backend.id === "opencode") {
       const base = this.options.backend.invocation(
         { model: this.options.model, session, prompt, title: "neolit step", autoApprove: true },
@@ -364,12 +409,20 @@ export class ToolSessionDriver {
       ? openCodeToolConfig(this.bridge, socketPath, this.options.directory)
       : claudeToolConfig(this.bridge, socketPath, this.options.directory);
     fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-    // OpenCode steps run --standalone so their private server inherits this
-    // layer (verified against a live host: the model sees and calls the
-    // neolit tools); Claude takes the config file per invocation.
+    // An OpenCode serve child started with this env owns the MCP layer, so
+    // warm steps through it see the neolit tools; without it, steps fall
+    // back to --standalone CLI spawns. Claude takes the config file per
+    // invocation.
     this.wiring = this.options.backend.id === "opencode"
       ? { env: { OPENCODE_CONFIG: file }, extraArgs: [], file, socketPath }
       : { env: {}, extraArgs: ["--mcp-config", file, "--allowedTools", "mcp__neolit__*"], file, socketPath };
+    if (this.options.backend.id === "opencode") {
+      // One kept-alive serve child started with the wiring env owns the MCP
+      // connections (the neolit bridge): every step runs against it over
+      // the warm HTTP transport, and consecutive steps reuse one session.
+      this.server = new PersistentAgentServer(this.options.command, this.options.backend, this.wiring.env);
+      await this.server.start();
+    }
     return this.wiring;
   }
 
