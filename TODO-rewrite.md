@@ -20,7 +20,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [ ] Discover linked README/SPEC/TODO documents without imposing a new repository layout
   - SPEC: `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-12`
-  - File: `src/planning/workspace.ts`, `src/planning/workspace.test.ts`
+  - File: `src/planning/workspace.ts`, `test/planning-workspace.test.ts`
   - Description: Implemented root-README graph traversal and linked SPEC/TODO discovery, including linked variants. Tests are written but not yet executed; validate against real repository link patterns before closing.
 - [ ] Parse SPEC requirements, acceptance criteria, TODO tasks, nested descriptions, and file references
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-16`, `REWRITE-SPEC.md#R-17`
@@ -36,7 +36,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [ ] Index Git status and actual diff metadata for the selected comparison base
   - SPEC: `REWRITE-SPEC.md#R-33`, `REWRITE-SPEC.md#R-34`, `REWRITE-SPEC.md#R-37`, `REWRITE-SPEC.md#R-38`
-  - File: `src/planning/workspace.ts`, `src/planning/workspace.test.ts`
+  - File: `src/planning/workspace.ts`, `test/planning-workspace.test.ts`
   - Description: Initial read-only HEAD-to-working-tree/index diff and porcelain status loader implemented, including untracked path enumeration. Expand tests for staged, unstaged, deleted, renamed, and unusual paths; expose comparison-base selection later.
 - [ ] Parse diff hunks and map changed paths/hunks to TODO tasks and SPEC requirements
   - SPEC: `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-04`, `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`
