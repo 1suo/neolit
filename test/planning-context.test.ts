@@ -92,7 +92,7 @@ describe("diff context", () => {
     expect(result.status).toBe("ready");
     if (result.status !== "ready") throw new Error("expected a current context packet");
     expect(result.packet).toContain("Diff side: working-tree");
-    expect(result.packet).toContain("src/new.ts hunk old 0--1, new 1-2");
+    expect(result.packet).toContain("src/new.ts hunk old no lines, new 1-2");
     expect(result.packet).toContain("+export const value = 1;");
     expect(result.packet).not.toContain("+export const next = 2;");
     expect(result.packet).toContain("src/new/TODO.md:1: Implement value");
