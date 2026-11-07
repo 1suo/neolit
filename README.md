@@ -207,6 +207,10 @@ The former LangGraph/OpenCode solution graph lives in the sibling
 
 The Git-native simplification rewrite is specified in [`REWRITE-SPEC.md`](./REWRITE-SPEC.md), with its requirement-linked implementation ledger in [`TODO-rewrite.md`](./TODO-rewrite.md). These documents describe the target architecture; the existing planned-diff implementation remains the current shipped behavior until the rewrite is implemented.
 
+## Planning documents (rewrite foundation)
+
+The first Git-native rewrite core is available as a deterministic Markdown/Git-diff parser. It extracts stable SPEC requirement IDs, TODO task references and source ranges, reports unresolved links, parses Git diff paths/hunks, and associates changed files with explicitly referenced TODO file paths. It does not perform filesystem discovery or invoke Git; hosts provide document contents and diff text. See [`src/planning/README.md`](./src/planning/README.md) and the target [`REWRITE-SPEC.md`](./REWRITE-SPEC.md).
+
 ## Development
 
 ```sh
