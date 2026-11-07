@@ -145,6 +145,21 @@ async function git(root: string, args: string[]): Promise<string> {
   return result.stdout;
 }
 
+async function gitNoIndexDiff(root: string, file: string): Promise<string> {
+  try {
+    return await git(root, [
+      "-c", "core.quotePath=false",
+      "diff", "--no-index", "--no-ext-diff", "--no-color", "--",
+      "/dev/null", file,
+    ]);
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === 1) {
+      return "stdout" in error && typeof error.stdout === "string" ? error.stdout : "";
+    }
+    throw error;
+  }
+}
+
 export async function loadPlanningWorkspace(directory: string): Promise<PlanningWorkspace> {
   const root = await realpath(directory);
   const [branch, head, statusOutput] = await Promise.all([
@@ -164,24 +179,32 @@ export async function loadPlanningWorkspace(directory: string): Promise<Planning
   const resolved = resolvePlanningDocuments({ specs, todos });
   const status = parseGitStatus(statusOutput);
   const changedFiles = parseUnifiedDiff(diff);
-  const known = new Set(changedFiles.map((file) => file.path));
 
-  const untrackedIdentities = await Promise.all(status
+  const untrackedResults = await Promise.all(status
     .filter((entry) => entry.index === "?" && entry.worktree === "?")
     .map(async (entry) => {
       try {
         const contents = await readFile(path.join(root, entry.path));
-        return [entry.path, identifyDiff(contents.toString("base64"))].join(":");
+        const contentIdentity = identifyDiff(contents.toString("base64"));
+        const rawDiff = await gitNoIndexDiff(root, entry.path);
+        const parsed = parseUnifiedDiff(rawDiff).find((file) => file.path === entry.path);
+        return {
+          identity: [entry.path, contentIdentity].join(":"),
+          file: parsed
+            ? { ...parsed, untracked: true }
+            : { path: entry.path, status: "added" as const, untracked: true, hunks: [], rawDiff },
+        };
       } catch {
-        return [entry.path, "unavailable"].join(":");
+        return {
+          identity: [entry.path, "unavailable"].join(":"),
+          file: { path: entry.path, status: "added" as const, untracked: true, hunks: [] },
+        };
       }
     }));
 
-  for (const entry of status) {
-    if (entry.index === "?" && entry.worktree === "?" && !known.has(entry.path)) {
-      changedFiles.push({ path: entry.path, status: "added", hunks: [] });
-    }
-  }
+  changedFiles.push(...untrackedResults.map((item) => item.file));
+  const untrackedIdentities = untrackedResults.map((item) => item.identity);
+
 
   const associations = mapDiffToTasks(changedFiles, resolved.tasks);
   const diffIdentity = identifyDiff(JSON.stringify([
