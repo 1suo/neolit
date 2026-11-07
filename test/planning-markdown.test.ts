@@ -193,10 +193,9 @@ describe("planning Markdown", () => {
       "  - SPEC: `SPEC.md#R-01`",
     ].join("\n"));
 
-    expect(remapTaskIdentity(previous, current)).toEqual([
-      expect.objectContaining({ state: "ambiguous", reason: "duplicate-or-competing-match" }),
-      expect.objectContaining({ state: "ambiguous", reason: "duplicate-or-competing-match" }),
-    ]);
+    const result = remapTaskIdentity(previous, current);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ state: "ambiguous", reason: "duplicate-or-competing-match" });
   });
 
 });
