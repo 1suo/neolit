@@ -6,8 +6,8 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [ ] Define and test requirement-ID and TODO-reference parsing
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-18`
-  - File: `src/` (assign the owning component after inspecting current module boundaries)
-  - Description: Parse stable requirement labels and TODO links from ordinary Markdown; report unresolved references without guessing.
+  - File: `src/planning/markdown.ts`, `test/planning-markdown.test.ts`
+  - Description: Implemented the pure SPEC/TODO parser, source ranges, reference resolution diagnostics, Git diff hunk parsing, and conservative file-path associations. Keep this task open until the test suite has been executed and the parser contract is validated.
 - [ ] Define conservative task identity and remapping behavior
   - SPEC: `REWRITE-SPEC.md#R-20`, `REWRITE-SPEC.md#R-21`
   - Description: Derive disposable task keys from document structure and test edits, moves, duplicate text, and ambiguous matches.
