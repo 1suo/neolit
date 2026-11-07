@@ -18,6 +18,7 @@ document:
 | Standalone TUI layout, keymap, and model runtime | `src/tui/README.md` |
 | Script ownership and generated documentation | `scripts/README.md` (when a `scripts/` directory exists) |
 | Git-native rewrite target and implementation ledger | `REWRITE-SPEC.md` and `TODO-rewrite.md` |
+| Git-native Markdown parser and read-only workspace adapter | `src/planning/README.md` |
 | Known gaps in the current planned-diff product | `TODO-augment.md` and `SOTA-GAPS.md` |
 
 Follow links from those documents only as far as the changed concern requires.
