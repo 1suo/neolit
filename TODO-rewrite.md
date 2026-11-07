@@ -43,7 +43,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Start with explicit task file references and conservative path/hunk evidence. Surface ambiguity and unplanned changes instead of guessing.
 - [ ] Derive task and requirement presentation states from Markdown, Git, and verification evidence
   - SPEC: `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-29`, `REWRITE-SPEC.md#R-30`
-  - Description: Implement planned/in-progress/implemented/verified/blocked/unmapped states as read-only projections; keep TODO checkboxes separate.
+  - Description: Added AC-ID parsing and read-only task/requirement projections for planned/in-progress/implemented/verified/blocked/unmapped/unplanned. Verification requires a non-empty command/result, passing result, explicit criterion/task linkage, and exact base/diff identity. Workspace and unit fixtures cover checkbox independence, partial/full path evidence, blockers, unmapped references, all-criteria verification, and stale/failed checks. Keep open until focused tests execute and editor display is verified.
 - [ ] Invalidate and refresh derived views on filesystem and Git changes
   - SPEC: `REWRITE-SPEC.md#R-38`, `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`
   - Description: Watch relevant files for responsiveness, but re-read Git before presenting consequential state.
@@ -57,7 +57,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Build compact contextual question packets
   - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
   - File: `src/planning/context.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added a shared packet builder that validates the current base/diff identity, includes only selected diff text, and appends related TODO/SPEC context. The Neovim prototype now supports `<leader>nx` on a diff-buffer line or visual line range, includes exact selected lines plus file diff/base/diff identity, rejects unsaved working buffers, and refreshes on stale HEAD/diff. It still builds packets in Lua; wire it to the shared builder (or prove equivalent behavior) and added a headless Neovim smoke test for line-range packets. Run the plugin's Lua suite before closing.
+  - Description: Added a shared packet builder that validates the current base/diff identity, includes only selected diff text, and appends related TODO/SPEC context. The Neovim prototype now supports `<leader>nx` on a diff-buffer line or visual line range, includes exact selected lines plus file diff/base/diff identity, rejects unsaved working buffers, and refreshes on stale HEAD/diff. The Neovim prototype now calls the shared `buildDiffQuestionPacket` API; a headless Neovim smoke test covers the line-range packet and stale-diff rejection. Run the plugin's Lua suite before closing.
 - [ ] Add existing-agent handoff with copyable fallback
   - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-49`, `REWRITE-SPEC.md#R-50`
   - Description: Use a supported host API/session integration only when available. Otherwise expose a copyable context prompt and native navigation; do not add a Neolit chat/session layer.
