@@ -29,7 +29,7 @@ function validateRepoPath(value: string): string {
     throw new TypeError("Diff anchor path must be repository-relative.");
   }
   const segments = normalized.split("/");
-  if (segments.some((segment) => segment === ".." || segment === "")) {
+  if (segments.some((segment) => segment === ".." || segment === "." || segment === "")) {
     throw new TypeError("Diff anchor path must not escape the repository root.");
   }
   return normalized;
