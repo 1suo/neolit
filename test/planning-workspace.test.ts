@@ -78,7 +78,7 @@ describe("loadPlanningWorkspace", () => {
     await writeFile(path.join(root, "README.md"), "# Project changed\n");
     await execFileAsync("git", ["add", "README.md"], { cwd: root });
 
-    await execFileAsync("git", ["mv", "src/auth/SPEC.md", "src/auth/RENAMED SPEC.md"], { cwd: root });
+    await execFileAsync("git", ["mv", "src/auth/SPEC.md", "src/auth/SPEC-renamed.md"], { cwd: root });
     await rm(path.join(root, "src/auth/TODO.md"));
     await writeFile(path.join(root, "new file café.ts"), "export const fresh = true;\n");
 
@@ -88,7 +88,7 @@ describe("loadPlanningWorkspace", () => {
     expect(status.get("src/auth/session.ts")).toMatchObject({ index: "M", worktree: "M" });
     expect(status.get("README.md")).toMatchObject({ index: "M", worktree: " " });
     expect(status.get("src/auth/TODO.md")).toMatchObject({ index: " ", worktree: "D" });
-    expect(status.get("src/auth/RENAMED SPEC.md")).toMatchObject({
+    expect(status.get("src/auth/SPEC-renamed.md")).toMatchObject({
       index: "R",
       originalPath: "src/auth/SPEC.md",
     });
@@ -99,7 +99,7 @@ describe("loadPlanningWorkspace", () => {
       expect.objectContaining({ path: "README.md", status: "modified" }),
       expect.objectContaining({ path: "src/auth/TODO.md", status: "deleted" }),
       expect.objectContaining({
-        path: "src/auth/RENAMED SPEC.md",
+        path: "src/auth/SPEC-renamed.md",
         previousPath: "src/auth/SPEC.md",
         status: "renamed",
       }),
