@@ -322,6 +322,8 @@ export type TaskIdentityMatch = {
   state: "matched" | "added" | "removed" | "ambiguous";
   previousKey?: string;
   currentKey?: string;
+  previousKeys?: string[];
+  currentKeys?: string[];
   reason: "structural-key" | "unique-text" | "unique-requirements" | "new-task" | "removed-task" | "duplicate-or-competing-match";
 };
 
@@ -351,12 +353,12 @@ export function remapTaskIdentity(
   const matches: TaskIdentityMatch[] = [];
 
   const pushAmbiguous = (oldIndices: number[], newIndices: number[]) => {
-    for (const oldIndex of oldIndices) {
-      matches.push({ state: "ambiguous", previousKey: previousTasks[oldIndex]!.key, reason: "duplicate-or-competing-match" });
-    }
-    for (const newIndex of newIndices) {
-      matches.push({ state: "ambiguous", currentKey: currentTasks[newIndex]!.key, reason: "duplicate-or-competing-match" });
-    }
+    matches.push({
+      state: "ambiguous",
+      previousKeys: oldIndices.map((index) => previousTasks[index]!.key),
+      currentKeys: newIndices.map((index) => currentTasks[index]!.key),
+      reason: "duplicate-or-competing-match",
+    });
   };
 
   const groupBy = (tasks: TodoTask[], indices: number[], key: (task: TodoTask) => string) => {
@@ -428,7 +430,7 @@ export function remapTaskIdentity(
   // Same task text can survive a heading move. Scope identity to the owning
   // TODO document; never transfer state across different TODO documents.
   if (previous.path === current.path) {
-    matchUnique((task) => task.text.trim().toLocaleLowerCase(), "unique-text");
+    matchUnique((task) => task.text.trim().replace(/\\s+/gu, " ").toLowerCase(), "unique-text");
     // A unique requirement set can preserve identity across a task-text edit.
     // Shared requirement sets are common, so only a one-to-one match is safe.
     matchUnique((task) => taskRequirementSignature(task), "unique-requirements");
