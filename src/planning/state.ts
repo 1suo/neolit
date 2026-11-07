@@ -50,7 +50,7 @@ function criterionRef(specPath: string, id: string): string {
 }
 
 function hasBlocker(task: ResolvedTask): boolean {
-  return task.description.some((line) => /^\s*(?:blocked|blocker):\s*\S/iu.test(line));
+  return task.description.some((line) => /^\s*(?:[-*+]\s*)?(?:blocked|blocker):\s*\S/iu.test(line));
 }
 
 function validEvidence(
