@@ -209,7 +209,7 @@ The Git-native simplification rewrite is specified in [`REWRITE-SPEC.md`](./REWR
 
 ## Planning documents (rewrite foundation)
 
-The first Git-native rewrite core is available as a deterministic Markdown/Git-diff parser. It extracts stable SPEC requirement IDs, TODO task references and source ranges, reports unresolved links, parses Git diff paths/hunks, and associates changed files with explicitly referenced TODO file paths. It does not perform filesystem discovery or invoke Git; hosts provide document contents and diff text. See [`src/planning/README.md`](./src/planning/README.md) and the target [`REWRITE-SPEC.md`](./REWRITE-SPEC.md).
+The Git-native rewrite foundation now includes a deterministic Markdown parser and a read-only Node workspace loader. It follows linked README documents, resolves TODO tasks to SPEC requirements, reads Git status/diffs, and associates changed paths with explicitly referenced tasks. It does not apply patches, stage files, commit, or communicate with agents. See [`src/planning/README.md`](./src/planning/README.md), [`src/planning/workspace-README.md`](./src/planning/workspace-README.md), and the target [`REWRITE-SPEC.md`](./REWRITE-SPEC.md).
 
 ## Development
 
