@@ -59,7 +59,8 @@ describe("loadPlanningWorkspace", () => {
     expect(workspace.git.head).toBe("");
     expect(workspace.git.changedFiles.map((file) => file.path).sort()).toEqual(["README.md", "first.ts"]);
   });
-\n  it("keeps repository reads read-only", async () => {
+
+  it("keeps repository reads read-only", async () => {
     const root = await fixture();
     const before = await readFile(path.join(root, "src/auth/session.ts"), "utf8");
     await loadPlanningWorkspace(root);
