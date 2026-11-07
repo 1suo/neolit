@@ -68,4 +68,43 @@ describe("loadPlanningWorkspace", () => {
     const status = await execFileAsync("git", ["status", "--porcelain"], { cwd: root });
     expect(status.stdout).toBe("");
   });
+  it("preserves staged, unstaged, deleted, renamed, and untracked Git status", async () => {
+    const root = await fixture();
+
+    await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => 'staged';\n");
+    await execFileAsync("git", ["add", "src/auth/session.ts"], { cwd: root });
+    await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => 'unstaged too';\n");
+
+    await writeFile(path.join(root, "README.md"), "# Project changed\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: root });
+
+    await execFileAsync("git", ["mv", "src/auth/SPEC.md", "src/auth/RENAMED SPEC.md"], { cwd: root });
+    await rm(path.join(root, "src/auth/TODO.md"));
+    await writeFile(path.join(root, "new file café.ts"), "export const fresh = true;\n");
+
+    const workspace = await loadPlanningWorkspace(root);
+    const status = new Map(workspace.git.status.map((entry) => [entry.path, entry]));
+
+    expect(status.get("src/auth/session.ts")).toMatchObject({ index: "M", worktree: "M" });
+    expect(status.get("README.md")).toMatchObject({ index: "M", worktree: " " });
+    expect(status.get("src/auth/TODO.md")).toMatchObject({ index: " ", worktree: "D" });
+    expect(status.get("src/auth/RENAMED SPEC.md")).toMatchObject({
+      index: "R",
+      originalPath: "src/auth/SPEC.md",
+    });
+    expect(status.get("new file café.ts")).toMatchObject({ index: "?", worktree: "?" });
+
+    expect(workspace.git.changedFiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "src/auth/session.ts", status: "modified" }),
+      expect.objectContaining({ path: "README.md", status: "modified" }),
+      expect.objectContaining({ path: "src/auth/TODO.md", status: "deleted" }),
+      expect.objectContaining({
+        path: "src/auth/RENAMED SPEC.md",
+        previousPath: "src/auth/SPEC.md",
+        status: "renamed",
+      }),
+      expect.objectContaining({ path: "new file café.ts", status: "added", hunks: [] }),
+    ]));
+  });
+
 });
