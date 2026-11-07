@@ -82,6 +82,7 @@ describe("diff context", () => {
       currentBaseCommit: "abc123",
       currentDiffText: diff,
       selectedDiffText: "@@ -0,0 +1,2 @@\n+export const value = 1;",
+      selectedLinesText: "export const value = 1;",
       relatedTasks: [{
         todoPath: todo.path,
         task: todo.tasks[0]!,
@@ -94,6 +95,7 @@ describe("diff context", () => {
     expect(result.packet).toContain("Diff side: working-tree");
     expect(result.packet).toContain("src/new.ts hunk old no lines, new 1-2");
     expect(result.packet).toContain("+export const value = 1;");
+    expect(result.packet).toContain("Selected source lines:\n~~~text\nexport const value = 1;");
     expect(result.packet).not.toContain("+export const next = 2;");
     expect(result.packet).toContain("src/new/TODO.md:1: Implement value");
     expect(result.packet).toContain("src/new/SPEC.md#R-01: Export the value.");
