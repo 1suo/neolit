@@ -67,6 +67,7 @@ export type TaskDiffAssociation = {
 };
 
 const REQUIREMENT = /^\s*[-*+]\s+\*\*(R-\d{2,})\*\*\s+(.+?)\s*$/u;
+const ACCEPTANCE_CRITERION = /^\s*[-*+]\s+\*\*(AC-\d{2,})\*\*\s+(.+?)\s*$/u;
 const HEADING = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/u;
 const TASK = /^(\s*)[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/u;
 const SPEC_REF = /([^\s`<>]+\.md)#(R-\d{2,}(?:\s*,\s*R-\d{2,})*)/gu;
@@ -115,7 +116,7 @@ export function parseSpecDocument(documentPath: string, content: string): SpecDo
         text: criterion[2]!,
         headingPath: [...headings],
         range: { startLine: index + 1, endLine: index + 1 },
-        requirementIds: [...new Set([...criterion[2]!.matchAll(/\\bR-\\d{2,}\\b/gu)].map((item) => item[0]))],
+        requirementIds: [...new Set([...criterion[2]!.matchAll(/\bR-\\d{2,}\b/gu)].map((item) => item[0]))],
       });
     }
   }
