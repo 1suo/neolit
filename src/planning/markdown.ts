@@ -24,7 +24,7 @@ export type TodoTask = {
 };
 export type TodoDocument = { path: string; tasks: TodoTask[] };
 export type PlanningDiagnostic = {
-  code: "missing-spec" | "missing-requirement" | "task-without-spec";
+  code: "missing-spec" | "missing-requirement" | "duplicate-requirement" | "task-without-spec";
   message: string;
   todoPath: string;
   taskKey?: string;
@@ -216,14 +216,16 @@ export function resolvePlanningDocuments(input: {
           continue;
         }
         for (const id of reference.ids) {
-          const requirement = spec.requirements.find((candidate) => candidate.id === id);
-          if (requirement) {
-            resolvedRequirements.push(requirement);
+          const matches = spec.requirements.filter((candidate) => candidate.id === id);
+          if (matches.length === 1) {
+            resolvedRequirements.push(matches[0]!);
           } else {
             unresolvedReferences.push({ path: reference.path, ids: [id] });
             diagnostics.push({
-              code: "missing-requirement",
-              message: `Requirement ${id} not found in ${reference.path}`,
+              code: matches.length === 0 ? "missing-requirement" : "duplicate-requirement",
+              message: matches.length === 0
+                ? `Requirement ${id} not found in ${reference.path}`
+                : `Requirement ${id} is defined more than once in ${reference.path}`,
               todoPath: todo.path,
               taskKey: task.key,
               line: task.range.startLine,
