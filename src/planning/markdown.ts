@@ -33,7 +33,7 @@ export type PlanningDiagnostic = {
 export type ResolvedTask = TodoTask & {
   resolvedRequirements: SpecRequirement[];
   unresolvedReferences: SpecReference[];
-  state: "planned" | "implemented" | "unmapped";
+  state: "planned" | "unmapped";
 };
 export type DiffHunk = {
   oldStart: number;
@@ -294,7 +294,7 @@ export function mapDiffToTasks(
     const matching = tasks.filter((task) => task.filePaths.some((filePath) =>
       filePath === file.path || filePath === file.previousPath,
     ));
-    const unresolved = matching.some((task) => task.unresolvedReferences.length > 0);
+    const unresolved = matching.some((task) => task.state === "unmapped");
     return {
       path: file.path,
       granularity: "file",
