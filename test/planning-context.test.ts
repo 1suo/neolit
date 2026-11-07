@@ -156,15 +156,25 @@ describe("diff context", () => {
         maxDiffChars: 20,
         maxSelectedLinesChars: 12,
         maxRelatedTasks: 1,
-        maxRelatedChars: 40,
+        maxRelatedChars: 200,
       },
     });
     expect(result.status).toBe("ready");
     if (result.status !== "ready") return;
     expect(result.packet).toContain("[ diff truncated ]");
     expect(result.packet).toContain("[ selected lines truncated ]");
-    expect(result.packet).toContain("[ related plan truncated ]");
     expect(result.packet).toContain("1 additional related tasks omitted");
+
+    const truncatedPlan = buildDiffQuestionPacket({
+      question: "Explain this change",
+      anchor,
+      currentBaseCommit: "abc123",
+      currentDiffText: diff,
+      relatedTasks: [{ todoPath: "src/TODO.md", task: { ...task, text: "long task description ".repeat(10) }, requirements: [] }],
+      limits: { maxRelatedChars: 20 },
+    });
+    expect(truncatedPlan.status).toBe("ready");
+    if (truncatedPlan.status === "ready") expect(truncatedPlan.packet).toContain("[ related plan truncated ]");
     expect(() => buildDiffQuestionPacket({
       question: "x".repeat(101),
       anchor,
