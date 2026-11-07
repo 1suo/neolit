@@ -46,7 +46,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Added AC-ID parsing and read-only task/requirement projections for planned/in-progress/implemented/verified/blocked/unmapped/unplanned. Verification requires a non-empty command/result, passing result, explicit criterion/task linkage, and exact base/diff identity. Workspace and unit fixtures cover checkbox independence, partial/full path evidence, blockers, unmapped references, all-criteria verification, and stale/failed checks. Keep open until focused tests execute and editor display is verified.
 - [ ] Invalidate and refresh derived views on filesystem and Git changes
   - SPEC: `REWRITE-SPEC.md#R-38`, `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`
-  - Description: Watch relevant files for responsiveness, but re-read Git before presenting consequential state.
+  - Description: The Neovim prototype now refreshes on in-repository BufWritePost/FileChangedShellPost and FocusGained, cancels superseded refresh jobs, and invalidates callbacks on close. Manual refresh remains available. Keep open until tests cover refresh races and external Git changes; every contextual handoff still re-reads Git.
 
 ## Phase 4 — contextual agent questions
 
