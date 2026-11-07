@@ -53,8 +53,8 @@ describe("loadPlanningWorkspace", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "neolit-unborn-"));
     roots.push(root);
     await execFileAsync("git", ["init", "-q"], { cwd: root });
-    await writeFile(path.join(root, "README.md"), "# Empty project\\n");
-    await writeFile(path.join(root, "first.ts"), "export const first = true;\\n");
+    await writeFile(path.join(root, "README.md"), "# Empty project\n");
+    await writeFile(path.join(root, "first.ts"), "export const first = true;\n");
     const workspace = await loadPlanningWorkspace(root);
     expect(workspace.git.head).toBe("");
     expect(workspace.git.changedFiles.map((file) => file.path).sort()).toEqual(["README.md", "first.ts"]);
