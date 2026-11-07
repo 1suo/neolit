@@ -39,7 +39,7 @@ export type PlanningDiagnostic = {
   line?: number;
 };
 export type ResolvedTask = TodoTask & {
-  resolvedRequirements: SpecRequirement[];
+  resolvedRequirements: Array<SpecRequirement & { specPath: string }>;
   unresolvedReferences: SpecReference[];
   resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string }>;
   state: "planned" | "unmapped";
@@ -214,7 +214,7 @@ export function resolvePlanningDocuments(input: {
 
   for (const todo of input.todos) {
     for (const task of todo.tasks) {
-      const resolvedRequirements: SpecRequirement[] = [];
+      const resolvedRequirements: Array<SpecRequirement & { specPath: string }> = [];
       const resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string }> = [];
       const unresolvedReferences: SpecReference[] = [];
       if (task.specReferences.length === 0) {
@@ -243,7 +243,7 @@ export function resolvePlanningDocuments(input: {
         for (const id of reference.ids) {
           const matches = spec.requirements.filter((candidate) => candidate.id === id);
           if (matches.length === 1) {
-            resolvedRequirements.push(matches[0]!);
+            resolvedRequirements.push({ ...matches[0]!, specPath: reference.path });
             for (const criterion of spec.acceptanceCriteria.filter((item) => item.requirementIds.includes(id))) {
               if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === criterion.id)) {
                 resolvedAcceptanceCriteria.push({ ...criterion, specPath: reference.path });
