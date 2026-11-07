@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import { identifyDiff } from "./context.js";
+import { derivePlanningStates } from "./state.js";
 import { promisify } from "node:util";
 import {
   mapDiffToTasks,
@@ -40,7 +42,9 @@ export type PlanningWorkspace = {
     changedFiles: ChangedFile[];
     associations: TaskDiffAssociation[];
     diff: string;
+    diffIdentity: string;
   };
+  derived: ReturnType<typeof derivePlanningStates>;
 };
 
 function repoPath(root: string, candidate: string): string | undefined {
@@ -162,11 +166,38 @@ export async function loadPlanningWorkspace(directory: string): Promise<Planning
   const changedFiles = parseUnifiedDiff(diff);
   const known = new Set(changedFiles.map((file) => file.path));
 
+  const untrackedIdentities = await Promise.all(status
+    .filter((entry) => entry.index === "?" && entry.worktree === "?")
+    .map(async (entry) => {
+      try {
+        const contents = await readFile(path.join(root, entry.path));
+        return [entry.path, identifyDiff(contents.toString("base64"))].join(":");
+      } catch {
+        return [entry.path, "unavailable"].join(":");
+      }
+    }));
+
   for (const entry of status) {
     if (entry.index === "?" && entry.worktree === "?" && !known.has(entry.path)) {
       changedFiles.push({ path: entry.path, status: "added", hunks: [] });
     }
   }
+
+  const associations = mapDiffToTasks(changedFiles, resolved.tasks);
+  const diffIdentity = identifyDiff(JSON.stringify([
+    head.trim(),
+    diff,
+    statusOutput,
+    untrackedIdentities,
+  ]));
+  const derived = derivePlanningStates({
+    specs,
+    tasks: resolved.tasks,
+    changedFiles,
+    associations,
+    baseCommit: head.trim(),
+    diffIdentity,
+  });
 
   return {
     root,
@@ -175,13 +206,15 @@ export async function loadPlanningWorkspace(directory: string): Promise<Planning
     todos,
     tasks: resolved.tasks,
     diagnostics: resolved.diagnostics,
+    derived,
     git: {
       branch: branch.trim(),
       head: head.trim(),
       status,
       changedFiles,
-      associations: mapDiffToTasks(changedFiles, resolved.tasks),
+      associations,
       diff,
+      diffIdentity,
     },
   };
 }
