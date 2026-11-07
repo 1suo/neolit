@@ -11,10 +11,10 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Define conservative task identity and remapping behavior
   - SPEC: `REWRITE-SPEC.md#R-20`, `REWRITE-SPEC.md#R-21`
   - Description: Added disposable task keys and conservative remapping for edits, heading moves, and unique requirement references. Duplicate/competing matches remain explicitly ambiguous. Tests cover heading moves, text edits, unique requirement signatures, additions/removals across TODO files, duplicate identities, and competing requirement signatures. Keep open until the focused test suite is executed.
-- [ ] Add repository instruction and reusable workflow skill for the new contract
+- [x] Add repository instruction and reusable workflow skill for the new contract
   - SPEC: `REWRITE-SPEC.md#R-02`, `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-11`, `REWRITE-SPEC.md#R-47`
   - File: `AGENTS.md`
-  - Description: Replace planned-diff-specific workflow instructions with README → SPEC → TODO → review → implement → verify → README reconciliation. Keep AGENTS.md concise; put templates/procedure in a reusable Skill.
+  - Description: Replaced planned-diff-specific agent workflow with a concise README → SPEC → TODO → inspect → implement → verify → reconcile process. Added an optional reusable Skill with detailed context, task-template, testing, and commit procedures; AGENTS.md remains sufficient for agents that do not load Skills.
 
 ## Phase 2 — deterministic documentation core
 
