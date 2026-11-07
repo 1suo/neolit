@@ -32,7 +32,7 @@ export type TodoTask = {
 };
 export type TodoDocument = { path: string; tasks: TodoTask[] };
 export type PlanningDiagnostic = {
-  code: "missing-spec" | "missing-requirement" | "duplicate-requirement" | "task-without-spec";
+  code: "missing-spec" | "missing-requirement" | "duplicate-requirement" | "missing-acceptance-criterion" | "duplicate-acceptance-criterion" | "task-without-spec";
   message: string;
   todoPath: string;
   taskKey?: string;
@@ -217,10 +217,13 @@ export function resolvePlanningDocuments(input: {
       const resolvedRequirements: Array<SpecRequirement & { specPath: string }> = [];
       const resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string }> = [];
       const unresolvedReferences: SpecReference[] = [];
-      if (task.specReferences.length === 0) {
+      const hasRequirementReference = task.specReferences.some((reference) =>
+        reference.ids.some((id) => id.startsWith("R-")),
+      );
+      if (!hasRequirementReference) {
         diagnostics.push({
           code: "task-without-spec",
-          message: "TODO task does not reference a SPEC requirement.",
+          message: "TODO task does not reference a SPEC requirement ID.",
           todoPath: todo.path,
           taskKey: task.key,
           line: task.range.startLine,
@@ -241,6 +244,27 @@ export function resolvePlanningDocuments(input: {
           continue;
         }
         for (const id of reference.ids) {
+          if (id.startsWith("AC-")) {
+            const criteria = spec.acceptanceCriteria.filter((candidate) => candidate.id === id);
+            if (criteria.length === 1) {
+              if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === id)) {
+                resolvedAcceptanceCriteria.push({ ...criteria[0]!, specPath: reference.path });
+              }
+            } else {
+              unresolvedReferences.push({ path: reference.path, ids: [id] });
+              diagnostics.push({
+                code: criteria.length === 0 ? "missing-acceptance-criterion" : "duplicate-acceptance-criterion",
+                message: criteria.length === 0
+                  ? `Acceptance criterion ${id} not found in ${reference.path}`
+                  : `Acceptance criterion ${id} is defined more than once in ${reference.path}`,
+                todoPath: todo.path,
+                taskKey: task.key,
+                line: task.range.startLine,
+              });
+            }
+            continue;
+          }
+
           const matches = spec.requirements.filter((candidate) => candidate.id === id);
           if (matches.length === 1) {
             resolvedRequirements.push({ ...matches[0]!, specPath: reference.path });
