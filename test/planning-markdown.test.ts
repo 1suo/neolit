@@ -194,8 +194,10 @@ describe("planning Markdown", () => {
     ].join("\n"));
 
     const result = remapTaskIdentity(previous, current);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ state: "ambiguous", reason: "duplicate-or-competing-match" });
+    expect(result).toHaveLength(4);
+    expect(result.every((item) => item.state === "ambiguous" && item.reason === "duplicate-or-competing-match")).toBe(true);
+    expect(result.filter((item) => item.previousKey)).toHaveLength(2);
+    expect(result.filter((item) => item.currentKey)).toHaveLength(2);
   });
 
 });
