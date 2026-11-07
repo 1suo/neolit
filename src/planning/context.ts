@@ -144,8 +144,8 @@ export function buildDiffQuestionPacket(input: {
       `Base commit: ${anchor.baseCommit}`,
       `Diff identity (sha256): ${anchor.diffIdentity}`,
       ...(anchor.blobOid ? [`Blob identity: ${anchor.blobOid}`] : []),
-    ].join("\\n"),
-    `~~~diff\\n${input.selectedDiffText ?? input.currentDiffText}\\n~~~`,
+    ].join("\n"),
+    `~~~diff\n${input.selectedDiffText ?? input.currentDiffText}\n~~~`,
   ];
 
   if (input.relatedTasks?.length) {
@@ -155,8 +155,8 @@ export function buildDiffQuestionPacket(input: {
         `  - ${specPath}#${requirement.id}: ${requirement.text}`,
       ),
     ]);
-    sections.push(`Related plan:\\n${plan.join("\\n")}`);
+    sections.push(`Related plan:\n${plan.join("\n")}`);
   }
 
-  return { status: "ready", packet: sections.join("\\n\\n") };
+  return { status: "ready", packet: sections.join("\n\n") };
 }
