@@ -350,6 +350,15 @@ export function remapTaskIdentity(
   const currentMatched = new Set<number>();
   const matches: TaskIdentityMatch[] = [];
 
+  const pushAmbiguous = (oldIndices: number[], newIndices: number[]) => {
+    for (const oldIndex of oldIndices) {
+      matches.push({ state: "ambiguous", previousKey: previousTasks[oldIndex]!.key, reason: "duplicate-or-competing-match" });
+    }
+    for (const newIndex of newIndices) {
+      matches.push({ state: "ambiguous", currentKey: currentTasks[newIndex]!.key, reason: "duplicate-or-competing-match" });
+    }
+  };
+
   const groupBy = (tasks: TodoTask[], indices: number[], key: (task: TodoTask) => string) => {
     const groups = new Map<string, number[]>();
     for (const index of indices) {
@@ -384,12 +393,7 @@ export function remapTaskIdentity(
     } else {
       for (const oldIndex of oldIndices) previousMatched.add(oldIndex);
       for (const newIndex of newIndices) currentMatched.add(newIndex);
-      matches.push({
-        state: "ambiguous",
-        previousKey: oldIndices.length === 1 ? previousTasks[oldIndices[0]!]!.key : undefined,
-        currentKey: newIndices.length === 1 ? currentTasks[newIndices[0]!]!.key : undefined,
-        reason: "duplicate-or-competing-match",
-      });
+      pushAmbiguous(oldIndices, newIndices);
     }
   }
 
@@ -416,12 +420,7 @@ export function remapTaskIdentity(
       } else {
         for (const oldIndex of oldIndices) previousMatched.add(oldIndex);
         for (const newIndex of newIndices) currentMatched.add(newIndex);
-        matches.push({
-          state: "ambiguous",
-          previousKey: oldIndices.length === 1 ? previousTasks[oldIndices[0]!]!.key : undefined,
-          currentKey: newIndices.length === 1 ? currentTasks[newIndices[0]!]!.key : undefined,
-          reason: "duplicate-or-competing-match",
-        });
+        pushAmbiguous(oldIndices, newIndices);
       }
     }
   };
