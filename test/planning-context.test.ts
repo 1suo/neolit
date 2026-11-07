@@ -122,4 +122,56 @@ describe("diff context", () => {
       selectedDiffText: "not in the current diff",
     })).toEqual({ status: "stale", reason: "diff-changed" });
   });
+  it("bounds diff, selected-line, and related-plan context", () => {
+    const diff = "@@ -1 +1 @@\n" + "+".repeat(80);
+    const anchor = createDiffAnchor({
+      path: "src/new.ts",
+      side: "working-tree",
+      baseCommit: "abc123",
+      diffText: diff,
+    });
+    const task = {
+      key: "src/TODO.md::Implement",
+      text: "Implement refresh",
+      checked: false,
+      headingPath: ["Tasks"],
+      range: { startLine: 3, endLine: 5 },
+      specReferences: [],
+      filePaths: [],
+      description: [],
+    };
+    const result = buildDiffQuestionPacket({
+      question: "Explain this change",
+      anchor,
+      currentBaseCommit: "abc123",
+      currentDiffText: diff,
+      selectedDiffText: diff,
+      selectedLinesText: "selected line content ".repeat(5),
+      relatedTasks: [
+        { todoPath: "src/TODO.md", task, requirements: [] },
+        { todoPath: "src/OTHER.md", task: { ...task, text: "Second task" }, requirements: [] },
+      ],
+      limits: {
+        maxQuestionChars: 100,
+        maxDiffChars: 20,
+        maxSelectedLinesChars: 12,
+        maxRelatedTasks: 1,
+        maxRelatedChars: 40,
+      },
+    });
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") return;
+    expect(result.packet).toContain("[ diff truncated ]");
+    expect(result.packet).toContain("[ selected lines truncated ]");
+    expect(result.packet).toContain("[ related plan truncated ]");
+    expect(result.packet).toContain("1 additional related tasks omitted");
+    expect(() => buildDiffQuestionPacket({
+      question: "x".repeat(101),
+      anchor,
+      currentBaseCommit: "abc123",
+      currentDiffText: diff,
+      limits: { maxQuestionChars: 100 },
+    })).toThrow(/exceeds 100 characters/u);
+  });
+
 });
