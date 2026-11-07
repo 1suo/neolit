@@ -293,7 +293,7 @@ export function resolvePlanningDocuments(input: {
         resolvedRequirements,
         resolvedAcceptanceCriteria,
         unresolvedReferences,
-        state: unresolvedReferences.length > 0 || task.specReferences.length === 0 ? "unmapped" : "planned",
+        state: unresolvedReferences.length > 0 || !hasRequirementReference ? "unmapped" : "planned",
       });
     }
   }
