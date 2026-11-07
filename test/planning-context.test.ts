@@ -44,7 +44,7 @@ describe("diff context", () => {
       baseCommit: "abc",
       diffText: diff,
       lineRange: { startLine: 5, endLine: 4 },
-    })).toThrow(/line range/u);
+    })).toThrow(/Line range/u);
   });
 
   it("detects stale base, diff, and blob identities", () => {
