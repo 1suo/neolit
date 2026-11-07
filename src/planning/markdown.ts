@@ -429,7 +429,7 @@ export function remapTaskIdentity(
   // Same task text can survive a heading move. Scope identity to the owning
   // TODO document; never transfer state across different TODO documents.
   if (previous.path === current.path) {
-    matchUnique((task) => task.text.trim().replace(/\\s+/gu, " ").toLowerCase(), "unique-text");
+    matchUnique((task) => task.text.trim().replace(/\s+/gu, " ").toLowerCase(), "unique-text");
     // A unique requirement set can preserve identity across a task-text edit.
     // Shared requirement sets are common, so only a one-to-one match is safe.
     matchUnique((task) => taskRequirementSignature(task), "unique-requirements");
