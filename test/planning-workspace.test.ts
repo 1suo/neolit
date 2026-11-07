@@ -108,7 +108,13 @@ describe("loadPlanningWorkspace", () => {
         previousPath: "src/auth/SPEC.md",
         status: "renamed",
       }),
-      expect.objectContaining({ path: "new file café.ts", status: "added", hunks: [] }),
+      expect.objectContaining({
+        path: "new file café.ts",
+        status: "added",
+        untracked: true,
+        rawDiff: expect.stringContaining("+export const fresh = true;"),
+        hunks: [expect.objectContaining({ oldLines: 0, newLines: 1 })],
+      }),
     ]));
   });
 
