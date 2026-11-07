@@ -211,6 +211,8 @@ The Git-native simplification rewrite is specified in [`REWRITE-SPEC.md`](./REWR
 
 The Git-native rewrite foundation now includes a deterministic Markdown parser and a read-only Node workspace loader. It follows linked README documents, resolves TODO tasks to SPEC requirements, reads Git status/diffs, and associates changed paths with explicitly referenced tasks. It does not apply patches, stage files, commit, or communicate with agents. See [`src/planning/README.md`](./src/planning/README.md), [`src/planning/README.md`](./src/planning/README.md), and the target [`REWRITE-SPEC.md`](./REWRITE-SPEC.md).
 
+Current planned-diff implementation gaps remain tracked separately in [`TODO-augment.md`](./TODO-augment.md) and [`SOTA-GAPS.md`](./SOTA-GAPS.md); these are not the rewrite implementation ledger.
+
 ## Development
 
 ```sh
