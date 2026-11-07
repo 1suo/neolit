@@ -151,12 +151,20 @@ export function derivePlanningStates(input: {
         task.resolvedRequirements.some((item) => item.specPath === spec.path && item.id === requirement.id),
       );
       const taskKeys = taskMatches.map((task) => task.key);
-      const acceptanceCriteria = spec.acceptanceCriteria
-        .filter((criterion) => criterion.requirementIds.includes(requirement.id))
-        .map((criterion) => {
+      const criteriaByRef = new Map<string, { ref: string; verified: boolean }>();
+      for (const task of taskMatches) {
+        const taskRequirements = task.resolvedRequirements.filter((item) => item.specPath === spec.path);
+        for (const criterion of task.resolvedAcceptanceCriteria) {
+          const linkedById = criterion.requirementIds.includes(requirement.id);
+          const linkedBySingleRequirement = criterion.requirementIds.length === 0
+            && taskRequirements.length === 1
+            && taskRequirements[0]!.id === requirement.id;
+          if (criterion.specPath !== spec.path || (!linkedById && !linkedBySingleRequirement)) continue;
           const ref = criterionRef(spec.path, criterion.id);
-          return { ref, verified: criterionVerified(ref, evidence) };
-        });
+          criteriaByRef.set(ref, { ref, verified: criterionVerified(ref, evidence) });
+        }
+      }
+      const acceptanceCriteria = [...criteriaByRef.values()];
 
       let state: DerivedRequirementState = "unplanned";
       if (taskMatches.length > 0) {
