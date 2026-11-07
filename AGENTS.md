@@ -1,201 +1,93 @@
 # AGENTS.md
 
-This repository operates in strict documentation-first mode. Its structure and
-documentation are part of the product. Keep code, tests, and the documents that
-explain their contracts in sync.
+Neolit is a documentation- and Git-native repository companion. Keep repository
+instructions useful to ordinary coding agents; do not require a Neolit-owned
+agent runtime, chat, session, patch store, or model protocol.
 
-## Start with the contract
+## Canonical project documents
 
-Before changing code, read `README.md` and the smallest relevant canonical
-document:
+Read the root README first, then the smallest relevant canonical docs:
 
-| Concern | Canonical document |
+| Purpose | Canonical source |
 |---|---|
-| Shipped package, public seam, design principles, and repository map | `README.md` |
-| Shipped planned-diff core architecture and invariants | `src/augment/README.md` |
-| Desired normative planned-diff behavior | `src/augment/SPEC.md` |
-| Shipped graph topology, protocol methods, and failure mechanics | `src/augmentd/README.md` |
-| Standalone TUI layout, keymap, and model runtime | `src/tui/README.md` |
-| Script ownership and generated documentation | `scripts/README.md` (when a `scripts/` directory exists) |
-| Git-native rewrite target and implementation ledger | `REWRITE-SPEC.md` and `TODO-rewrite.md` |
-| Git-native Markdown parser and read-only workspace adapter | `src/planning/README.md` |
-| Known gaps in the current planned-diff product | `TODO-augment.md` and `SOTA-GAPS.md` |
+| Current shipped product, public seam, repository map | README.md |
+| Git-native target behavior and invariants | REWRITE-SPEC.md |
+| Ordered implementation gaps | TODO-rewrite.md |
+| Shared Markdown/Git core contract | src/planning/README.md |
+| Current legacy planned-diff implementation | src/augment/README.md, src/augment/SPEC.md |
+| Legacy daemon and TUI behavior | src/augmentd/README.md, src/tui/README.md |
+| Legacy planned-diff gaps during migration | TODO-augment.md, SOTA-GAPS.md |
 
-Follow links from those documents only as far as the changed concern requires.
-Keep the three documentation layers distinct:
+The rewrite spec is the target for new Git-native work. Legacy docs remain
+authoritative only for maintaining the legacy implementation until it is
+retired. Do not infer the new architecture from the legacy SPEC.
 
-- **README: what exists.** A README describes behavior implemented by current
-  code and protected by current tests. Do not put aspirations there.
-- **SPEC: what must eventually be true.** A SPEC defines desired invariants and
-  acceptance criteria. It may intentionally lead the implementation.
-- **TODO: the known gap.** A TODO records concrete work required to move current
-  behavior toward the specification.
+## Documentation contract
 
-When implementation and a README disagree, correct the README or code in the
-same change. When implementation differs from the SPEC, do not falsify either
-document to make them agree: record or update the gap in the appropriate TODO.
-Change the SPEC only when the desired contract itself changes.
+Keep three layers distinct:
 
-## Documentation topology (C4)
+- **README — what exists now.** Describe behavior implemented and validated by
+  current code. Do not write future behavior as if shipped.
+- **SPEC — what must be true.** State observable behavior, invariants, edge
+  cases, and acceptance criteria using stable requirement IDs.
+- **TODO — what remains.** Each actionable task must link to exact SPEC
+  requirement IDs and name concrete files or components. Update the task ledger
+  when work lands; never mark work complete before its validation passes.
 
-C4 levels describe documentation scope, not runtime architecture. Use the
-smallest level that accurately owns a contract:
+Use the smallest documentation owner. Keep one canonical explanation for each
+contract and link to it rather than duplicating it. Update the nearest component
+README when its API, data flow, or extension points change; update the root
+README only when the public product or onboarding changes.
 
-- **System — always:** the root `README.md` explains the project purpose,
-  public seam, technology and repository conventions, major containers or
-  components, and critical project-wide flows.
-- **Container — optional:** add a README only for a separately deployable unit
-  that runs independently. Do not treat an ordinary source directory as a
-  container.
-- **Component — required for non-obvious functional units:** a nearby README
-  explains the component's responsibility, architecture, dependencies, data
-  flow, extension points, and validation.
-- **Code — optional:** document a subcomponent only when several files share a
-  complex local contract that is not clear from the component README and code.
+## Required workflow
 
-When creating or changing a README:
+1. **Read:** root README, relevant SPEC requirement(s), matching TODO task(s),
+   and the nearest component README. Follow only the links needed to understand
+   the affected behavior.
+2. **Inspect:** check Git status and the exact current diff before editing.
+   Preserve unrelated user changes. Use exact file/line/hunk context when the
+   target is ambiguous; ask one focused question rather than guessing.
+3. **Plan:** identify the observable acceptance criteria and the smallest
+   vertical slice. Do not add an agent session, prompt router, shadow plan,
+   patch model, or workflow stage unless the SPEC explicitly requires it.
+4. **Implement:** change production code, tests, and types together. Prefer
+   deterministic parsing, Git evidence, and host-native editor/agent APIs.
+5. **Verify:** run the narrowest relevant tests, then npm run check; run
+   npm run build when validating published output or host integration. Tests
+   must exercise behavior and fail if the regression returns.
+6. **Reconcile:** update the owning README with current facts and the TODO with
+   the remaining gap. Change the SPEC only when the desired contract itself
+   changes.
+7. **Commit safely:** inspect git status --short, stage only task-owned
+   files, and commit completed work with a conventional prefix. Do not amend,
+   rewrite, push, or discard user changes unless explicitly requested.
 
-1. Determine its C4 level and exact ownership boundary.
-2. Read the actual code and identify only the entry points, dependencies, data
-   structures, flows, patterns, and unusual decisions needed to maintain it.
-3. Write concise, current facts. Do not guess, add placeholders, reproduce
-   obvious file structure, or duplicate a canonical contract.
-4. Link the parent, related components, and project-wide flows where the
-   relationship matters.
+## Implementation rules
 
-## Keep the codebase legible while it grows
+- The Git-native core is deterministic and has no LLM, chat, session, provider,
+  or agent-protocol dependency.
+- Git and repository files are the source of truth. Never invent a synthetic
+  diff or treat a TODO checkbox as implementation/verification evidence.
+- File-path associations are file-level evidence, not proof that every hunk
+  fulfills a task. Surface ambiguity and unplanned changes instead of guessing.
+- Verification must identify the command/check, observed result, base commit,
+  and exact diff identity. Stale evidence does not verify current changes.
+- Context anchors must retain path, side, line/hunk range, base identity, and
+  diff identity. Refresh or warn if the anchor becomes stale.
+- Do not stage, commit, push, reset, clean, apply, or discard implicitly.
+- Keep exploration, retries, file reads, and model-assisted work bounded.
+- Avoid speculative abstractions and unrelated refactors.
 
-- The current shipped planned-diff implementation lives under `src/augment/`
-  with host surfaces under `src/augmentd/` and `src/tui/`. The Git-native
-  rewrite foundation lives under `src/planning/`; keep its parsing and
-  traceability logic deterministic and independent of host I/O.
-- Put tests under `test/` and name them after the behavior or regression they
-  protect.
-- Put deterministic maintenance scripts under `scripts/` and expose recurring
-  checks through `package.json`.
-- When a new directory or subsystem develops a non-obvious local contract, add
-  a nearby `README.md`. Explain its responsibility, boundaries, data flow, and
-  validation command. Do not create READMEs for directories whose contents are
-  already obvious.
-- Update a local README when its subsystem changes. Update the root README only
-  when the public purpose, conceptual invariants, repository map, or onboarding
-  path changes.
-- Update the corresponding TODO when implementation closes, changes, or reveals
-  a known SPEC gap. Do not describe completed behavior as pending.
-- Keep one canonical explanation for each contract. Other documents should link
-  to it instead of copying it.
-- Keep generated documentation generated. When a generated document exists,
-  its generator stays the single source: run the generator to update the
-  document and its check (if any) to verify it. Never edit generated output
-  by hand.
+## Tests and validation
 
-## Engineering rules
+Use the repository's existing test conventions. Prefer exact semantic outcomes
+and stable IDs over large snapshots. Do not hide failures with broad catches or
+assertions that cannot fail based on production behavior.
 
-- State risky assumptions before making changes.
-- Prefer the smallest implementation that satisfies the requested behavior.
-- Change only files and code directly required by the task.
-- Follow existing structures, helpers, names, and conventions.
-- Do not add speculative abstractions or future-proofing without a measured
-  need.
-- Preserve unrelated user changes in a dirty worktree.
-- Do not use destructive Git commands unless the user explicitly requests them.
-- Preserve public contracts unless the task explicitly authorizes a breaking
-  release. When a contract changes, update its types, implementation, examples,
-  and tests together.
-- Models propose semantic changes; deterministic controller code validates,
-  merges, derives lifecycle state, and decides completion. Do not move controller
-  authority into prompts.
-- Keep every exploration and retry mechanism deterministically bounded.
-- Add telemetry before adding optimization machinery, and require measured
-  evidence that the machinery improves its target.
+Run:
+- npx vitest run test/<relevant-file>.test.ts
+- npm run check
+- npm run build (when validating published output or host integration)
 
-## Task workflow
-
-### Phase 0: verify documentation
-
-Before implementation, verify that the System README and the nearest relevant
-Component README exist and contain enough accurate architecture, contracts,
-flows, and links to proceed without guessing. Create or correct the owning
-documentation before, or together with, implementation.
-
-### Phase 1: assemble context
-
-Read the canonical README/SPEC/TODO documents and only the directly relevant
-code. Follow links far enough to understand every contract consumed or changed
-by the task. If code and documentation disagree, resolve the discrepancy rather
-than silently choosing one.
-
-### Phase 2: implement completely
-
-Implement the full requested outcome without placeholders or speculative scope.
-Handle the relevant edge cases, change only task-owned code, follow existing
-patterns, and continue until implementation, documentation, and validation are
-complete or a concrete blocker is reported.
-
-### Phase 3: synchronize documentation
-
-Update the owning README whenever implementation changes architecture, public
-contracts, data flow, extension points, or unusual behavior. Update the relevant
-TODO when a known SPEC gap is closed, changed, or newly discovered. Do not alter
-another agent's notes or claim unfinished work as complete.
-
-### Phase 4: commit safely
-
-Completed work must be committed unless the user explicitly asks for an
-uncommitted handoff. Before staging, inspect `git status --short`, preserve
-unrelated work, and stage only task-owned files.
-
-1. Commit implementation and tests first with an appropriate conventional
-   prefix such as `feat:`, `fix:`, `refactor:`, or `test:`.
-2. Documentation and task-ledger changes may accompany the implementation when
-   inseparable, or use a separate `docs:` commit when that keeps ownership
-   clearer.
-3. If the repository has a designated integration branch, use that branch and
-   its documented worktree/merge protocol; do not invent a replacement branch
-   convention.
-4. Use an isolated Git worktree when parallel agents or overlapping tasks could
-   interfere. A dedicated worktree is unnecessary for read-only review or an
-   explicitly shared single-user change.
-5. Do not amend, rewrite, revert, or otherwise alter existing history unless the
-   user explicitly requests it.
-
-At handoff, report commit hashes, validation performed, and remaining untracked
-or unstaged files. Push only when requested or required by the surrounding
-workflow.
-
-## Tests
-
-Tests should demonstrate behavior, not restate constants or manually construct
-the conclusion they claim to prove.
-
-- Exercise pure reducer invariants directly when reviewing deterministic state
-  transformations.
-- Exercise the compiled graph for routing, batching, retry, checkpoint, and
-  terminal-state claims.
-- Build fixtures through current public constructors where practical. If a test
-  creates internal state directly, keep it on the current checkpoint version
-  and explain any intentionally unreachable state.
-- Every regression test must fail when the regression is reintroduced.
-- Prefer exact semantic outcomes and stable identifiers over snapshots of large
-  prompts or state objects.
-- Keep generated/property tests deterministic and report the failing seed.
-- Do not hide failures with broad `catch` handlers or assertions that cannot
-  fail based on production behavior.
-
-## Validation
-
-Run the narrowest relevant check while developing, then the repository gate
-before handoff when practical:
-
-```sh
-npx vitest run test/<relevant-file>.test.ts
-npm run check
-```
-
-`npm run check` performs TypeScript validation, the complete Vitest suite, and
-the generated role-graph consistency check. Run `npm run build` when validating
-published output or packaging behavior.
-
-At handoff, report what changed, which validation ran, and any known gap or
-environmental blocker. Do not claim completion while the documented contract or
-official validation is knowingly stale.
+Report the validation actually performed and any environmental blocker. Never
+claim tests passed if they were not run.
