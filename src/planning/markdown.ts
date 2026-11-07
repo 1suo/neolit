@@ -7,9 +7,17 @@ export type SpecRequirement = {
   headingPath: string[];
   range: SourceRange;
 };
+export type SpecAcceptanceCriterion = {
+  id: string;
+  text: string;
+  headingPath: string[];
+  range: SourceRange;
+  requirementIds: string[];
+};
 export type SpecDocument = {
   path: string;
   requirements: SpecRequirement[];
+  acceptanceCriteria: SpecAcceptanceCriterion[];
 };
 export type SpecReference = { path: string; ids: string[] };
 export type TodoTask = {
@@ -33,6 +41,7 @@ export type PlanningDiagnostic = {
 export type ResolvedTask = TodoTask & {
   resolvedRequirements: SpecRequirement[];
   unresolvedReferences: SpecReference[];
+  resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string }>;
   state: "planned" | "unmapped";
 };
 export type DiffHunk = {
@@ -78,6 +87,7 @@ function resolveReference(todoPath: string, specPath: string): string {
 export function parseSpecDocument(documentPath: string, content: string): SpecDocument {
   const headings: string[] = [];
   const requirements: SpecRequirement[] = [];
+  const acceptanceCriteria: SpecAcceptanceCriterion[] = [];
   const lines = content.split(/\r?\n/u);
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -89,16 +99,28 @@ export function parseSpecDocument(documentPath: string, content: string): SpecDo
       continue;
     }
     const match = REQUIREMENT.exec(line);
-    if (!match) continue;
-    requirements.push({
-      id: match[1]!,
-      text: match[2]!,
-      headingPath: [...headings],
-      range: { startLine: index + 1, endLine: index + 1 },
-    });
+    if (match) {
+      requirements.push({
+        id: match[1]!,
+        text: match[2]!,
+        headingPath: [...headings],
+        range: { startLine: index + 1, endLine: index + 1 },
+      });
+      continue;
+    }
+    const criterion = ACCEPTANCE_CRITERION.exec(line);
+    if (criterion) {
+      acceptanceCriteria.push({
+        id: criterion[1]!,
+        text: criterion[2]!,
+        headingPath: [...headings],
+        range: { startLine: index + 1, endLine: index + 1 },
+        requirementIds: [...new Set([...criterion[2]!.matchAll(/\\bR-\\d{2,}\\b/gu)].map((item) => item[0]))],
+      });
+    }
   }
 
-  return { path: normalizeRepoPath(documentPath), requirements };
+  return { path: normalizeRepoPath(documentPath), requirements, acceptanceCriteria };
 }
 
 export function parseTodoDocument(documentPath: string, content: string): TodoDocument {
@@ -192,6 +214,7 @@ export function resolvePlanningDocuments(input: {
   for (const todo of input.todos) {
     for (const task of todo.tasks) {
       const resolvedRequirements: SpecRequirement[] = [];
+      const resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string }> = [];
       const unresolvedReferences: SpecReference[] = [];
       if (task.specReferences.length === 0) {
         diagnostics.push({
@@ -220,6 +243,11 @@ export function resolvePlanningDocuments(input: {
           const matches = spec.requirements.filter((candidate) => candidate.id === id);
           if (matches.length === 1) {
             resolvedRequirements.push(matches[0]!);
+            for (const criterion of spec.acceptanceCriteria.filter((item) => item.requirementIds.includes(id))) {
+              if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === criterion.id)) {
+                resolvedAcceptanceCriteria.push({ ...criterion, specPath: reference.path });
+              }
+            }
           } else {
             unresolvedReferences.push({ path: reference.path, ids: [id] });
             diagnostics.push({
@@ -238,6 +266,7 @@ export function resolvePlanningDocuments(input: {
       tasks.push({
         ...task,
         resolvedRequirements,
+        resolvedAcceptanceCriteria,
         unresolvedReferences,
         state: unresolvedReferences.length > 0 || task.specReferences.length === 0 ? "unmapped" : "planned",
       });
