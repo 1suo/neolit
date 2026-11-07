@@ -57,7 +57,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Build compact contextual question packets
   - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
   - File: `src/planning/context.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added a shared packet builder that validates the current base/diff identity, includes only selected diff text, and appends related TODO/SPEC context. The Neovim prototype still builds packets in Lua; wire it to the shared builder (or prove equivalent behavior) and add a line-range selection path.
+  - Description: Added a shared packet builder that validates the current base/diff identity, includes only selected diff text, and appends related TODO/SPEC context. The Neovim prototype now supports `<leader>nx` on a diff-buffer line or visual line range, includes exact selected lines plus file diff/base/diff identity, rejects unsaved working buffers, and refreshes on stale HEAD/diff. It still builds packets in Lua; wire it to the shared builder (or prove equivalent behavior) and add headless host coverage.
 - [ ] Add existing-agent handoff with copyable fallback
   - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-49`, `REWRITE-SPEC.md#R-50`
   - Description: Use a supported host API/session integration only when available. Otherwise expose a copyable context prompt and native navigation; do not add a Neolit chat/session layer.
