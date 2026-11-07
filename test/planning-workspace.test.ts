@@ -40,6 +40,8 @@ describe("loadPlanningWorkspace", () => {
     expect(workspace.readmes).toEqual(["README.md", "src/auth/README.md"]);
     expect(workspace.tasks).toHaveLength(1);
     expect(workspace.tasks[0]!.resolvedRequirements.map((item) => item.id)).toEqual(["R-01"]);
+    expect(workspace.derived.tasks[workspace.tasks[0]!.key]!.state).toBe("implemented");
+    expect(workspace.git.diffIdentity).toMatch(/^[a-f0-9]{64}$/u);
     expect(workspace.git.changedFiles.map((item) => item.path).sort()).toEqual(["src/auth/session.ts", "unplanned.ts"]);
     expect(workspace.git.associations.find((item) => item.path === "src/auth/session.ts")).toMatchObject({
       requirementIds: ["R-01"],
@@ -58,6 +60,9 @@ describe("loadPlanningWorkspace", () => {
     const workspace = await loadPlanningWorkspace(root);
     expect(workspace.git.head).toBe("");
     expect(workspace.git.changedFiles.map((file) => file.path).sort()).toEqual(["README.md", "first.ts"]);
+    await writeFile(path.join(root, "first.ts"), "export const first = false;\n");
+    const changedAgain = await loadPlanningWorkspace(root);
+    expect(changedAgain.git.diffIdentity).not.toBe(workspace.git.diffIdentity);
   });
 
   it("keeps repository reads read-only", async () => {
