@@ -21,6 +21,7 @@ async function fixture() {
   await writeFile(path.join(root, "src/auth/SPEC.md"), "# Auth\n\n## Requirements\n- **R-01** Refresh sessions.\n");
   await writeFile(path.join(root, "src/auth/TODO.md"), "# Auth tasks\n\n- [ ] Implement refresh\n  - SPEC: `SPEC.md#R-01`\n  - File: `src/auth/session.ts`\n");
   await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => true;\n");
+  await writeFile(path.join(root, "src/auth/unusual name café.ts"), "export const unusual = 1;\n");
   await execFileAsync("git", ["add", "."], { cwd: root });
   await execFileAsync("git", ["commit", "-qm", "fixture"], { cwd: root });
   return root;
@@ -89,6 +90,7 @@ describe("loadPlanningWorkspace", () => {
     const root = await fixture();
 
     await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => 'staged';\n");
+    await writeFile(path.join(root, "src/auth/unusual name café.ts"), "export const unusual = 2;\n");
     await execFileAsync("git", ["add", "src/auth/session.ts"], { cwd: root });
     await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => 'unstaged too';\n");
 
@@ -103,6 +105,7 @@ describe("loadPlanningWorkspace", () => {
     const status = new Map(workspace.git.status.map((entry) => [entry.path, entry]));
 
     expect(status.get("src/auth/session.ts")).toMatchObject({ index: "M", worktree: "M" });
+    expect(status.get("src/auth/unusual name café.ts")).toMatchObject({ index: " ", worktree: "M" });
     expect(status.get("README.md")).toMatchObject({ index: "M", worktree: " " });
     expect(status.get("src/auth/TODO.md")).toMatchObject({ index: " ", worktree: "D" });
     expect(status.get("src/auth/SPEC-renamed.md")).toMatchObject({
@@ -113,6 +116,11 @@ describe("loadPlanningWorkspace", () => {
 
     expect(workspace.git.changedFiles).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: "src/auth/session.ts", status: "modified" }),
+      expect.objectContaining({
+        path: "src/auth/unusual name café.ts",
+        status: "modified",
+        rawDiff: expect.stringContaining("+export const unusual = 2;"),
+      }),
       expect.objectContaining({ path: "README.md", status: "modified" }),
       expect.objectContaining({ path: "src/auth/TODO.md", status: "deleted" }),
       expect.objectContaining({
