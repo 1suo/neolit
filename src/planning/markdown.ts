@@ -321,7 +321,7 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
       finish();
       const match = /^diff --git a\/(.+) b\/(.+)$/u.exec(line);
       if (match) {
-        current = { path: normalizeRepoPath(match[2]!), previousPath: normalizeRepoPath(match[1]!), status: "modified", hunks: [] };
+        current = { path: normalizeRepoPath(match[2]!), status: "modified", hunks: [] };
         currentLines.push(line);
       }
       continue;
