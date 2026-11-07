@@ -20,7 +20,8 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [ ] Discover linked README/SPEC/TODO documents without imposing a new repository layout
   - SPEC: `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-12`
-  - Description: Follow Markdown links from the root README and relevant component READMEs; support linked variants such as `TODO-augment.md`.
+  - File: `src/planning/workspace.ts`, `src/planning/workspace.test.ts`
+  - Description: Implemented root-README graph traversal and linked SPEC/TODO discovery, including linked variants. Tests are written but not yet executed; validate against real repository link patterns before closing.
 - [ ] Parse SPEC requirements, acceptance criteria, TODO tasks, nested descriptions, and file references
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-16`, `REWRITE-SPEC.md#R-17`
   - Description: Preserve source ranges for navigation while treating stable IDs—not line numbers—as identity.
@@ -35,7 +36,8 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [ ] Index Git status and actual diff metadata for the selected comparison base
   - SPEC: `REWRITE-SPEC.md#R-33`, `REWRITE-SPEC.md#R-34`, `REWRITE-SPEC.md#R-37`, `REWRITE-SPEC.md#R-38`
-  - Description: Cover staged, unstaged, untracked, deleted, renamed, and committed changes; make the comparison base explicit.
+  - File: `src/planning/workspace.ts`, `src/planning/workspace.test.ts`
+  - Description: Initial read-only HEAD-to-working-tree/index diff and porcelain status loader implemented, including untracked path enumeration. Expand tests for staged, unstaged, deleted, renamed, and unusual paths; expose comparison-base selection later.
 - [ ] Parse diff hunks and map changed paths/hunks to TODO tasks and SPEC requirements
   - SPEC: `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-04`, `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`
   - Description: Start with explicit task file references and conservative path/hunk evidence. Surface ambiguity and unplanned changes instead of guessing.
@@ -62,8 +64,8 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [ ] Prototype the full task → requirement → diff → contextual question flow in Neovim
   - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
-  - File: `1suo/neolit.nvim` (separate repository; coordinate its implementation TODO with this task)
-  - Description: Use extmarks/signs, native buffers/diffs, picker/quickfix navigation, and a compact details surface. Keep the normal repository tree and native agent chat.
+  - File: `1suo/neolit.nvim` (separate repository, branch `rewrite/planning-workspace`)
+  - Description: Initial `:NeolitPlan` companion view is implemented: linked tasks/requirements, changed file/hunk navigation, diff-syntax buffers, and clipboard context packets. It is intentionally separate from the legacy `:Neolit` controller. Still needs local Neovim smoke tests and refinement into native explorer decorations/details UI.
 - [ ] Implement the shared VS Code adapter
   - SPEC: `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`
   - Description: Use TreeView, FileDecorationProvider, native diff/editor commands, and the shared core; do not duplicate parsing or state derivation.
