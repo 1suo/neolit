@@ -24,7 +24,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Implemented root-README graph traversal and linked SPEC/TODO discovery, including linked variants. Tests are written but not yet executed; validate against real repository link patterns before closing.
 - [ ] Parse SPEC requirements, acceptance criteria, TODO tasks, nested descriptions, and file references
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-16`, `REWRITE-SPEC.md#R-17`
-  - Description: Preserve source ranges for navigation while treating stable IDs—not line numbers—as identity.
+  - Description: Added `R-NN` requirements, `AC-NN` criteria with explicit requirement links, TODO task metadata, optional direct AC references, and source ranges. Keep open until tests cover repository-specific Markdown variants and are executed.
 - [ ] Build TODO-to-SPEC traceability and diagnostics
   - SPEC: `REWRITE-SPEC.md#R-18`, `REWRITE-SPEC.md#R-19`, `REWRITE-SPEC.md#R-29`
   - Description: Resolve every task's SPEC references, report missing/ambiguous targets, and never interpret checkbox state as implementation or verification evidence.
