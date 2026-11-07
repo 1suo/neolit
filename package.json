@@ -23,8 +23,7 @@
     "src/augment/SPEC.md",
     "src/augmentd/README.md",
     "src/tui/README.md",
-    "src/planning/README.md",
-    "src/planning/workspace-README.md"
+    "src/planning/README.md"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
