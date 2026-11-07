@@ -284,4 +284,29 @@ describe("planning Markdown", () => {
     expect(resolved.tasks[0]!.resolvedAcceptanceCriteria.map((item) => item.id)).toEqual(["AC-01", "AC-02"]);
   });
 
+  it("resolves direct acceptance-criterion references without treating them as requirements", () => {
+    const spec = parseSpecDocument(specPath, [
+      "- **R-01** Refresh sessions.",
+      "- **AC-04** The session refresh is observable.",
+    ].join("\n"));
+    const todo = parseTodoDocument(todoPath, [
+      "- [ ] Implement observable refresh",
+      "  - SPEC: `SPEC.md#R-01, AC-04`",
+      "- [ ] Criterion-only task",
+      "  - SPEC: `SPEC.md#AC-04`",
+      "- [ ] Missing criterion",
+      "  - SPEC: `SPEC.md#R-01, AC-99`",
+    ].join("\n"));
+    const result = resolvePlanningDocuments({ specs: [spec], todos: [todo] });
+
+    expect(result.tasks[0]!.resolvedRequirements.map((item) => item.id)).toEqual(["R-01"]);
+    expect(result.tasks[0]!.resolvedAcceptanceCriteria.map((item) => item.id)).toEqual(["AC-04"]);
+    expect(result.tasks[1]!.state).toBe("unmapped");
+    expect(result.tasks[2]!.state).toBe("unmapped");
+    expect(result.diagnostics.map((item) => item.code)).toEqual([
+      "task-without-spec",
+      "missing-acceptance-criterion",
+    ]);
+  });
+
 });
