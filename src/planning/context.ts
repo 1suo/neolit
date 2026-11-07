@@ -192,7 +192,8 @@ export function buildDiffQuestionPacket(input: {
       ),
     ]);
     if (input.relatedTasks.length > selectedTasks.length) {
-      plan.push(`- ... ${input.relatedTasks.length - selectedTasks.length} additional related tasks omitted`);
+      const omitted = input.relatedTasks.length - selectedTasks.length;
+      plan.push(`- ... ${omitted} additional related task${omitted === 1 ? "" : "s"} omitted`);
     }
     sections.push(`Related plan:\n${boundedText(plan.join("\n"), limits.maxRelatedChars, "related plan")}`);
   }
