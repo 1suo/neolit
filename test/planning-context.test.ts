@@ -36,7 +36,7 @@ describe("diff context", () => {
   });
 
   it("rejects absolute and parent-traversal paths and invalid ranges", () => {
-    expect(() => createDiffAnchor({ path: "../secret.ts", side: "working-tree", baseCommit: "abc", diffText: diff })).toThrow(/repository-relative/u);
+    expect(() => createDiffAnchor({ path: "../secret.ts", side: "working-tree", baseCommit: "abc", diffText: diff })).toThrow(/repository root/u);
     expect(() => createDiffAnchor({ path: "/tmp/secret.ts", side: "working-tree", baseCommit: "abc", diffText: diff })).toThrow(/repository-relative/u);
     expect(() => createDiffAnchor({
       path: "src/file.ts",
