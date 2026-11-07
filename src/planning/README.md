@@ -6,7 +6,7 @@ This component parses the repository's ordinary Markdown planning documents and 
 
 - `parseSpecDocument(path, content)` extracts stable `R-NN` requirement IDs and `AC-NN` acceptance criteria, their explicit `R-NN` links, heading paths, and source line ranges.
 - `parseTodoDocument(path, content)` extracts Markdown checkbox tasks, `SPEC:` references, optional `File:` hints, descriptions, and source ranges.
-- `resolvePlanningDocuments({ specs, todos })` resolves each task's requirement references, attaches acceptance criteria that explicitly name those requirements, and returns diagnostics for missing SPEC documents, missing requirement IDs, and tasks without references.
+- `resolvePlanningDocuments({ specs, todos })` resolves each task's requirement references, attaches acceptance criteria that explicitly name a requirement or are directly referenced by the task, and returns diagnostics for missing SPEC documents, missing requirement IDs, and tasks without references.
 - `parseUnifiedDiff(diff)` extracts changed paths and hunk line ranges from ordinary Git unified diff output.
 - `mapDiffToTasks(files, tasks)` associates changed paths with TODO tasks using exact file-path matches. Associations are explicitly file-level; no claim is made that every hunk fulfills the task.
 - `derivePlanningStates(input)` projects task and requirement states from Git path associations and verification evidence bound to the exact base commit and diff identity. TODO checkbox values are never treated as implementation or verification proof.
@@ -30,7 +30,7 @@ SPEC paths are resolved relative to the TODO document. Every task needs at least
 
 ## Boundaries
 
-This module consumes file contents and diff text supplied by its host. It does not discover files, invoke Git, watch the filesystem, infer semantic hunk coverage, or communicate with an agent. Hosts supply the current diff/base/blob identities and remain responsible for sending a ready packet to the existing agent. Those are separate host responsibilities.
+The Markdown parser and state/context helpers are deterministic and I/O-free. The workspace adapter is the read-only host boundary that discovers linked documents and invokes Git. Neither layer communicates with an agent or writes repository state; hosts send a ready context packet to the existing agent.
 
 ## Validation
 
@@ -41,4 +41,4 @@ npm run check
 
 ## Workspace adapter
 
-`workspace.ts` exports `loadPlanningWorkspace(directory, { verificationEvidence? })`. It follows relative Markdown links from the root README to linked component READMEs and their SPEC/TODO documents, parses them, then reads the current branch, HEAD, porcelain status, and `git diff HEAD`. Untracked files receive actual `git diff --no-index` hunks and raw diff text. Workspace diff identity covers HEAD, tracked diff, porcelain status, and hashes of untracked file contents. Derived task/requirement states are returned alongside the raw evidence. The adapter does not write files or alter the index/history. The adapter is read-only and does not stage, apply, commit, or modify repository files. Its Git comparison is currently HEAD against the combined index and working tree; comparison-base selection and expanded status fixtures remain pending.
+`workspace.ts` exports `loadPlanningWorkspace(directory, { verificationEvidence? })`. It follows relative Markdown links from the root README to linked component READMEs and their SPEC/TODO documents, parses them, then reads the current branch, HEAD, porcelain status, and `git diff HEAD`. Untracked files receive actual `git diff --no-index` hunks and raw diff text. Workspace diff identity covers HEAD, tracked diff, porcelain status, and hashes of untracked file contents. Derived task/requirement states are returned alongside the raw evidence. The adapter does not write files or alter the index/history. The adapter is read-only and does not stage, apply, commit, or modify repository files. Its Git comparison is currently HEAD against the combined index and working tree; comparison-base selection remains pending; expanded status fixtures are added but still need to be executed.
