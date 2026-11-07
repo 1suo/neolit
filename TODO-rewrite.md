@@ -52,12 +52,12 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [ ] Define stable file, hunk, and line-range context anchors
   - SPEC: `REWRITE-SPEC.md#R-36`, `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-45`
-  - File: `src/planning/markdown.ts`, `src/planning/workspace.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: The prototype retains exact per-file raw diffs and sends path, HEAD identity, diff side, and hunk line ranges. The Neovim handoff rejects changed HEAD/diff anchors and asks the user to refresh. Blob identity and explicit line-selection anchors remain future work.
+  - File: `src/planning/context.ts`, `src/planning/workspace.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: Added shared anchors with repository-relative paths, base/working-tree side, optional line/hunk ranges, base commit, SHA-256 diff identity, and optional blob identity. Added fail-closed stale checks and tests for base/diff/blob changes. The Neovim prototype independently rejects stale HEAD/diff context. Keep open until host handoff consumes the shared API and focused tests execute.
 - [ ] Build compact contextual question packets
   - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
-  - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: The Neovim prototype prompts for a question and copies it with the selected file/hunk diff or TODO/SPEC source anchor, plus linked task/requirement text where available. It uses the existing agent chat via clipboard rather than a new chat surface.
+  - File: `src/planning/context.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: Added a shared packet builder that validates the current base/diff identity, includes only selected diff text, and appends related TODO/SPEC context. The Neovim prototype still builds packets in Lua; wire it to the shared builder (or prove equivalent behavior) and add a line-range selection path.
 - [ ] Add existing-agent handoff with copyable fallback
   - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-49`, `REWRITE-SPEC.md#R-50`
   - Description: Use a supported host API/session integration only when available. Otherwise expose a copyable context prompt and native navigation; do not add a Neolit chat/session layer.
