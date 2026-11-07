@@ -205,6 +205,8 @@ layout, and interaction conventions are canonical in
 The former LangGraph/OpenCode solution graph lives in the sibling
 [`opencode-langgraph`](https://github.com/1suo/opencode-langgraph) repository.
 
+The Git-native simplification rewrite is specified in [`REWRITE-SPEC.md`](./REWRITE-SPEC.md), with its requirement-linked implementation ledger in [`TODO-rewrite.md`](./TODO-rewrite.md). These documents describe the target architecture; the existing planned-diff implementation remains the current shipped behavior until the rewrite is implemented.
+
 ## Development
 
 ```sh
