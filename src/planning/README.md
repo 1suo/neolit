@@ -32,7 +32,7 @@ This module consumes file contents and diff text supplied by its host. It does n
 ## Validation
 
 ```sh
-npx vitest run test/planning-markdown.test.ts
+npx vitest run test/planning-markdown.test.ts test/planning-workspace.test.ts
 npm run check
 ```
 
