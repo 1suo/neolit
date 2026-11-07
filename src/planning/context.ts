@@ -25,7 +25,7 @@ export type RelatedTaskContext = {
 
 function validateRepoPath(value: string): string {
   const normalized = value.replaceAll("\\", "/");
-  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:\\//u.test(normalized)) {
+  if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:/u.test(normalized)) {
     throw new TypeError("Diff anchor path must be repository-relative.");
   }
   const segments = normalized.split("/");
@@ -64,12 +64,17 @@ export function createDiffAnchor(input: {
     throw new TypeError("Diff anchor requires an explicit base commit.");
   }
   if (input.lineRange) validateRange(input.lineRange, "Line range");
-  if (input.hunk) {
-    validateRange(
-      { startLine: input.side === "base" ? input.hunk.oldStart : input.hunk.newStart,
-        endLine: (input.side === "base" ? input.hunk.oldStart + input.hunk.oldLines : input.hunk.newStart + input.hunk.newLines) - 1 },
-      "Hunk range",
-    );
+  if (input.hunk && (
+    !Number.isInteger(input.hunk.oldStart)
+    || !Number.isInteger(input.hunk.oldLines)
+    || !Number.isInteger(input.hunk.newStart)
+    || !Number.isInteger(input.hunk.newLines)
+    || input.hunk.oldStart < 0
+    || input.hunk.oldLines < 0
+    || input.hunk.newStart < 0
+    || input.hunk.newLines < 0
+  )) {
+    throw new RangeError("Hunk coordinates must be non-negative integers.");
   }
   return {
     path: validateRepoPath(input.path),
@@ -89,7 +94,7 @@ export function checkDiffAnchorCurrent(
 ): DiffAnchorCurrentness {
   if (anchor.baseCommit !== current.baseCommit) return { current: false, reason: "base-changed" };
   if (anchor.diffIdentity !== identifyDiff(current.diffText)) return { current: false, reason: "diff-changed" };
-  if (anchor.blobOid && current.blobOid && anchor.blobOid !== current.blobOid) {
+  if (anchor.blobOid && anchor.blobOid !== current.blobOid) {
     return { current: false, reason: "blob-changed" };
   }
   return { current: true };
@@ -121,6 +126,9 @@ export function buildDiffQuestionPacket(input: {
     ...(input.currentBlobOid ? { blobOid: input.currentBlobOid } : {}),
   });
   if (!currentness.current) return { status: "stale", reason: currentness.reason };
+  if (input.selectedDiffText && !input.currentDiffText.includes(input.selectedDiffText)) {
+    return { status: "stale", reason: "diff-changed" };
+  }
 
   const anchor = input.anchor;
   const location = anchor.lineRange
