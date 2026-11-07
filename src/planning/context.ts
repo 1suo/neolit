@@ -104,6 +104,27 @@ export type DiffQuestionPacketResult =
   | { status: "ready"; packet: string }
   | { status: "stale"; reason: "base-changed" | "diff-changed" | "blob-changed" };
 
+export type DiffQuestionPacketLimits = {
+  maxQuestionChars?: number;
+  maxDiffChars?: number;
+  maxSelectedLinesChars?: number;
+  maxRelatedTasks?: number;
+  maxRelatedChars?: number;
+};
+
+const DEFAULT_PACKET_LIMITS: Required<DiffQuestionPacketLimits> = {
+  maxQuestionChars: 2_000,
+  maxDiffChars: 24_000,
+  maxSelectedLinesChars: 8_000,
+  maxRelatedTasks: 8,
+  maxRelatedChars: 8_000,
+};
+
+function boundedText(value: string, maxChars: number, label: string): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n...[ ${label} truncated ]`;
+}
+
 /**
  * Build a compact, copyable question packet. The full file diff is used only
  * to validate freshness; selectedDiffText may contain just the chosen hunk.
@@ -117,9 +138,19 @@ export function buildDiffQuestionPacket(input: {
   selectedDiffText?: string;
   selectedLinesText?: string;
   relatedTasks?: RelatedTaskContext[];
+  limits?: DiffQuestionPacketLimits;
 }): DiffQuestionPacketResult {
   const question = input.question.trim();
   if (!question) throw new TypeError("A contextual question is required.");
+  const limits = { ...DEFAULT_PACKET_LIMITS, ...input.limits };
+  for (const [name, value] of Object.entries(limits)) {
+    if (!Number.isInteger(value) || value < 1 || value > 100_000) {
+      throw new RangeError(`Context packet limit ${name} must be an integer from 1 to 100000.`);
+    }
+  }
+  if (question.length > limits.maxQuestionChars) {
+    throw new RangeError(`Contextual question exceeds ${limits.maxQuestionChars} characters.`);
+  }
 
   const currentness = checkDiffAnchorCurrent(input.anchor, {
     baseCommit: input.currentBaseCommit,
@@ -146,20 +177,24 @@ export function buildDiffQuestionPacket(input: {
       `Diff identity (sha256): ${anchor.diffIdentity}`,
       ...(anchor.blobOid ? [`Blob identity: ${anchor.blobOid}`] : []),
     ].join("\n"),
-    `~~~diff\n${input.selectedDiffText ?? input.currentDiffText}\n~~~`,
+    `~~~diff\n${boundedText(input.selectedDiffText ?? input.currentDiffText, limits.maxDiffChars, "diff")}\n~~~`,
   ];
   if (input.selectedLinesText !== undefined) {
-    sections.push(`Selected source lines:\n~~~text\n${input.selectedLinesText}\n~~~`);
+    sections.push(`Selected source lines:\n~~~text\n${boundedText(input.selectedLinesText, limits.maxSelectedLinesChars, "selected lines")}\n~~~`);
   }
 
   if (input.relatedTasks?.length) {
-    const plan = input.relatedTasks.flatMap(({ todoPath, task, requirements }) => [
+    const selectedTasks = input.relatedTasks.slice(0, limits.maxRelatedTasks);
+    const plan = selectedTasks.flatMap(({ todoPath, task, requirements }) => [
       `- TODO ${todoPath}:${task.range.startLine}: ${task.text}`,
       ...requirements.map(({ specPath, requirement }) =>
         `  - ${specPath}#${requirement.id}: ${requirement.text}`,
       ),
     ]);
-    sections.push(`Related plan:\n${plan.join("\n")}`);
+    if (input.relatedTasks.length > selectedTasks.length) {
+      plan.push(`- ... ${input.relatedTasks.length - selectedTasks.length} additional related tasks omitted`);
+    }
+    sections.push(`Related plan:\n${boundedText(plan.join("\n"), limits.maxRelatedChars, "related plan")}`);
   }
 
   return { status: "ready", packet: sections.join("\n\n") };
