@@ -201,3 +201,38 @@ describe("planning Markdown", () => {
   });
 
 });
+  it("reports additions and removals instead of transferring identity across TODO files", () => {
+    const previous = parseTodoDocument(todoPath, [
+      "- [ ] Old task",
+      "  - SPEC: `SPEC.md#R-01`",
+    ].join("\n"));
+    const moved = parseTodoDocument("src/auth/OTHER-TODO.md", [
+      "- [ ] Old task",
+      "  - SPEC: `SPEC.md#R-01`",
+    ].join("\n"));
+
+    expect(remapTaskIdentity(previous, moved)).toEqual([
+      expect.objectContaining({ state: "removed", previousKey: previous.tasks[0]!.key }),
+      expect.objectContaining({ state: "added", currentKey: moved.tasks[0]!.key }),
+    ]);
+  });
+
+  it("marks shared requirement signatures ambiguous when task text also changed", () => {
+    const previous = parseTodoDocument(todoPath, [
+      "- [ ] Implement first path",
+      "  - SPEC: `SPEC.md#R-01`",
+      "- [ ] Implement second path",
+      "  - SPEC: `SPEC.md#R-01`",
+    ].join("\n"));
+    const current = parseTodoDocument(todoPath, [
+      "- [ ] Build first path",
+      "  - SPEC: `SPEC.md#R-01`",
+      "- [ ] Build second path",
+      "  - SPEC: `SPEC.md#R-01`",
+    ].join("\n"));
+
+    const result = remapTaskIdentity(previous, current);
+    expect(result).toHaveLength(4);
+    expect(result.every((item) => item.state === "ambiguous")).toBe(true);
+  });
+
