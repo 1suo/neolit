@@ -1,7 +1,7 @@
 {
   "name": "neolit",
   "version": "0.6.25",
-  "description": "Planned-diff augmentation core and host-neutral JSON-RPC server",
+  "description": "Git-native planning and diff traceability core",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,7 +22,9 @@
     "src/augment/README.md",
     "src/augment/SPEC.md",
     "src/augmentd/README.md",
-    "src/tui/README.md"
+    "src/tui/README.md",
+    "src/planning/README.md",
+    "src/planning/workspace-README.md"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
@@ -33,12 +35,12 @@
   },
   "keywords": [
     "augmentation",
-    "planned-diff",
-    "csp",
-    "wfc",
-    "cegar",
     "lod",
-    "development-tools"
+    "git",
+    "planning",
+    "diff",
+    "traceability",
+    "coding-agents"
   ],
   "author": "1suo",
   "license": "MIT",
