@@ -48,7 +48,18 @@ describe("loadPlanningWorkspace", () => {
     expect(workspace.git.associations.find((item) => item.path === "unplanned.ts")).toMatchObject({ state: "unplanned" });
   });
 
-  it("keeps repository reads read-only", async () => {
+
+  it("opens an unborn repository and reports untracked files", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "neolit-unborn-"));
+    roots.push(root);
+    await execFileAsync("git", ["init", "-q"], { cwd: root });
+    await writeFile(path.join(root, "README.md"), "# Empty project\\n");
+    await writeFile(path.join(root, "first.ts"), "export const first = true;\\n");
+    const workspace = await loadPlanningWorkspace(root);
+    expect(workspace.git.head).toBe("");
+    expect(workspace.git.changedFiles.map((file) => file.path).sort()).toEqual(["README.md", "first.ts"]);
+  });
+\n  it("keeps repository reads read-only", async () => {
     const root = await fixture();
     const before = await readFile(path.join(root, "src/auth/session.ts"), "utf8");
     await loadPlanningWorkspace(root);
