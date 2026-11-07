@@ -171,7 +171,7 @@ export async function loadPlanningWorkspace(
     git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
   ]);
   const diff = head.trim()
-    ? await git(root, ["diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--"])
+    ? await git(root, ["-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--"])
     : "";
 
   const documents = await discoverDocuments(root);
