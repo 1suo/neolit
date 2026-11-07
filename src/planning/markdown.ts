@@ -47,6 +47,7 @@ export type ChangedFile = {
   status: "added" | "modified" | "deleted" | "renamed";
   previousPath?: string;
   hunks: DiffHunk[];
+  rawDiff?: string;
 };
 export type TaskDiffAssociation = {
   path: string;
@@ -249,20 +250,29 @@ export function resolvePlanningDocuments(input: {
 export function parseUnifiedDiff(diff: string): ChangedFile[] {
   const files: ChangedFile[] = [];
   let current: ChangedFile | undefined;
+  let currentLines: string[] = [];
 
   const finish = () => {
-    if (current) files.push(current);
+    if (current) {
+      current.rawDiff = currentLines.join("\n");
+      files.push(current);
+    }
     current = undefined;
+    currentLines = [];
   };
 
   for (const line of diff.split(/\r?\n/u)) {
     if (line.startsWith("diff --git ")) {
       finish();
       const match = /^diff --git a\/(.+) b\/(.+)$/u.exec(line);
-      if (match) current = { path: normalizeRepoPath(match[2]!), previousPath: normalizeRepoPath(match[1]!), status: "modified", hunks: [] };
+      if (match) {
+        current = { path: normalizeRepoPath(match[2]!), previousPath: normalizeRepoPath(match[1]!), status: "modified", hunks: [] };
+        currentLines.push(line);
+      }
       continue;
     }
     if (!current) continue;
+    currentLines.push(line);
     if (line.startsWith("new file mode ")) current.status = "added";
     else if (line.startsWith("deleted file mode ")) current.status = "deleted";
     else if (line.startsWith("rename from ")) {
