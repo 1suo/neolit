@@ -37,7 +37,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Index Git status and actual diff metadata for the selected comparison base
   - SPEC: `REWRITE-SPEC.md#R-33`, `REWRITE-SPEC.md#R-34`, `REWRITE-SPEC.md#R-37`, `REWRITE-SPEC.md#R-38`
   - File: `src/planning/workspace.ts`, `test/planning-workspace.test.ts`
-  - Description: Initial read-only HEAD-to-working-tree/index diff and porcelain status loader implemented, including untracked path enumeration. Expand tests for staged, unstaged, deleted, renamed, and unusual paths; expose comparison-base selection later.
+  - Description: Initial read-only HEAD-to-working-tree/index diff and porcelain status loader implemented, including untracked path enumeration. Added a fixture covering staged-only, staged+unstaged, deleted, renamed, and untracked Unicode/space-containing paths. Keep open until the focused workspace tests execute; expose comparison-base selection later.
 - [ ] Parse diff hunks and map changed paths/hunks to TODO tasks and SPEC requirements
   - SPEC: `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-04`, `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`
   - Description: Start with explicit task file references and conservative path/hunk evidence. Surface ambiguity and unplanned changes instead of guessing.
