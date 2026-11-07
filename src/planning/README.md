@@ -38,4 +38,4 @@ npm run check
 
 ## Workspace adapter
 
-`workspace.ts` exports `loadPlanningWorkspace(directory)`. It follows relative Markdown links from the root README to linked component READMEs and their SPEC/TODO documents, parses them, then reads the current branch, HEAD, porcelain status, and `git diff HEAD`. Untracked paths are included in changed-file navigation without inventing diff hunks. The adapter does not write files or alter the index/history. See the [workspace behavior and boundaries](./workspace-README.md).
+`workspace.ts` exports `loadPlanningWorkspace(directory)`. It follows relative Markdown links from the root README to linked component READMEs and their SPEC/TODO documents, parses them, then reads the current branch, HEAD, porcelain status, and `git diff HEAD`. Untracked paths are included in changed-file navigation without inventing diff hunks. The adapter does not write files or alter the index/history. The adapter is read-only and does not stage, apply, commit, or modify repository files. Its Git comparison is currently HEAD against the combined index and working tree; comparison-base selection and expanded status fixtures remain pending.
