@@ -39,6 +39,10 @@ contract and link to it rather than duplicating it. Update the nearest component
 README when its API, data flow, or extension points change; update the root
 README only when the public product or onboarding changes.
 
+Detailed templates and procedures are available in
+.agents/skills/neolit-doc-workflow/SKILL.md. The workflow below is complete on
+its own; the Skill is optional.
+
 ## Required workflow
 
 1. **Read:** root README, relevant SPEC requirement(s), matching TODO task(s),
