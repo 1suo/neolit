@@ -10,7 +10,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Implemented the pure SPEC/TODO parser, source ranges, reference resolution diagnostics, Git diff hunk parsing, and conservative file-path associations. Keep this task open until the test suite has been executed and the parser contract is validated.
 - [ ] Define conservative task identity and remapping behavior
   - SPEC: `REWRITE-SPEC.md#R-20`, `REWRITE-SPEC.md#R-21`
-  - Description: Derive disposable task keys from document structure and test edits, moves, duplicate text, and ambiguous matches.
+  - Description: Added disposable task keys and conservative remapping for edits, heading moves, and unique requirement references. Duplicate/competing matches remain explicitly ambiguous. Tests cover these cases; keep open until the focused test suite is executed.
 - [ ] Add repository instruction and reusable workflow skill for the new contract
   - SPEC: `REWRITE-SPEC.md#R-02`, `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-11`, `REWRITE-SPEC.md#R-47`
   - File: `AGENTS.md`
