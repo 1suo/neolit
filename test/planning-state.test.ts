@@ -131,4 +131,18 @@ describe("derived planning states", () => {
     ];
     expect(projection(changed, evidence).tasks[refresh.key]!.state).toBe("implemented");
   });
+  it("derives blocked state from an explicit failed check blocker", () => {
+    const login = resolved.tasks[1]!;
+    const evidence: VerificationEvidence[] = [{
+      command: "npm test -- login",
+      result: "BLOCKED: authentication provider is unavailable",
+      passed: false,
+      baseCommit: "base-123",
+      diffIdentity: "diff-123",
+      taskKeys: [login.key],
+    }];
+    const result = projection(["src/auth/login.ts"], evidence);
+    expect(result.tasks[login.key]!.state).toBe("blocked");
+  });
+
 });
