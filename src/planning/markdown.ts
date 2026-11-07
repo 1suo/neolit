@@ -116,7 +116,7 @@ export function parseSpecDocument(documentPath: string, content: string): SpecDo
         text: criterion[2]!,
         headingPath: [...headings],
         range: { startLine: index + 1, endLine: index + 1 },
-        requirementIds: [...new Set([...criterion[2]!.matchAll(/\bR-\\d{2,}\b/gu)].map((item) => item[0]))],
+        requirementIds: [...new Set([...criterion[2]!.matchAll(/\bR-\d{2,}\b/gu)].map((item) => item[0]))],
       });
     }
   }
