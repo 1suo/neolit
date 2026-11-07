@@ -163,7 +163,7 @@ describe("diff context", () => {
     if (result.status !== "ready") return;
     expect(result.packet).toContain("[ diff truncated ]");
     expect(result.packet).toContain("[ selected lines truncated ]");
-    expect(result.packet).toContain("1 additional related tasks omitted");
+    expect(result.packet).toContain("1 additional related task omitted");
 
     const truncatedPlan = buildDiffQuestionPacket({
       question: "Explain this change",
