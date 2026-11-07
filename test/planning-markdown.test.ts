@@ -113,6 +113,7 @@ describe("planning Markdown", () => {
     ].join("\n"));
     expect(files).toHaveLength(2);
     expect(files[0]!.hunks[0]).toMatchObject({ oldStart: 10, oldLines: 2, newStart: 10, newLines: 3, header: "function refresh()" });
+    expect(files[0]!.rawDiff).toContain("+ return refreshToken(token);");
     expect(mapDiffToTasks(files, resolved.tasks)).toEqual([
       {
         path: "src/auth/session.ts",
