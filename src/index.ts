@@ -10,3 +10,4 @@ export * from "./tui/controller.js";
 export * from "./tui/opencode-runtime.js";
 export * from "./planning/markdown.js";
 export * from "./planning/workspace.js";
+export * from "./planning/context.js";
