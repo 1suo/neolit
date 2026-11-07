@@ -17,7 +17,8 @@ document:
 | Shipped graph topology, protocol methods, and failure mechanics | `src/augmentd/README.md` |
 | Standalone TUI layout, keymap, and model runtime | `src/tui/README.md` |
 | Script ownership and generated documentation | `scripts/README.md` (when a `scripts/` directory exists) |
-| Known gaps between shipped and desired behavior | `TODO-augment.md` and `SOTA-GAPS.md` |
+| Git-native rewrite target and implementation ledger | `REWRITE-SPEC.md` and `TODO-rewrite.md` |
+| Known gaps in the current planned-diff product | `TODO-augment.md` and `SOTA-GAPS.md` |
 
 Follow links from those documents only as far as the changed concern requires.
 Keep the three documentation layers distinct:
@@ -63,9 +64,10 @@ When creating or changing a README:
 
 ## Keep the codebase legible while it grows
 
-- Put domain behavior under `src/augment/` (planned-diff core) and its host
-  surfaces under `src/augmentd/` and `src/tui/`; keep generic connector and
-  runtime contracts in the top-level `src/` modules.
+- The current shipped planned-diff implementation lives under `src/augment/`
+  with host surfaces under `src/augmentd/` and `src/tui/`. The Git-native
+  rewrite foundation lives under `src/planning/`; keep its parsing and
+  traceability logic deterministic and independent of host I/O.
 - Put tests under `test/` and name them after the behavior or regression they
   protect.
 - Put deterministic maintenance scripts under `scripts/` and expose recurring
