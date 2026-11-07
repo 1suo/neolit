@@ -21,12 +21,12 @@ A TODO task uses ordinary checkbox syntax and nested metadata:
 
 ```md
 - [ ] Implement session refresh
-  - SPEC: `src/auth/SPEC.md#R-01, R-02`
+  - SPEC: `src/auth/SPEC.md#R-01, R-02, AC-01`
   - File: `src/auth/session.ts`
   - Description: Refresh the session and retry once.
 ```
 
-SPEC paths are resolved relative to the TODO document. Requirement IDs—not line numbers—are the cross-document identity. Source line ranges are navigation hints. Task keys are disposable projections of the owning TODO path, heading path, and task text; callers must use `remapTaskIdentity` when comparing document revisions rather than assuming a key survives edits.
+SPEC paths are resolved relative to the TODO document. Every task needs at least one `R-NN` reference; optional `AC-NN` references attach acceptance criteria directly when they are not already linked by mentioning an `R-NN` in the criterion text. Requirement IDs—not line numbers—are the cross-document identity. Source line ranges are navigation hints. Task keys are disposable projections of the owning TODO path, heading path, and task text; callers must use `remapTaskIdentity` when comparing document revisions rather than assuming a key survives edits.
 
 ## Boundaries
 
