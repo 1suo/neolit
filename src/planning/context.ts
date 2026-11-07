@@ -115,6 +115,7 @@ export function buildDiffQuestionPacket(input: {
   currentDiffText: string;
   currentBlobOid?: string;
   selectedDiffText?: string;
+  selectedLinesText?: string;
   relatedTasks?: RelatedTaskContext[];
 }): DiffQuestionPacketResult {
   const question = input.question.trim();
@@ -147,6 +148,9 @@ export function buildDiffQuestionPacket(input: {
     ].join("\n"),
     `~~~diff\n${input.selectedDiffText ?? input.currentDiffText}\n~~~`,
   ];
+  if (input.selectedLinesText !== undefined) {
+    sections.push(`Selected source lines:\n~~~text\n${input.selectedLinesText}\n~~~`);
+  }
 
   if (input.relatedTasks?.length) {
     const plan = input.relatedTasks.flatMap(({ todoPath, task, requirements }) => [
