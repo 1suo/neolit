@@ -9,6 +9,7 @@ This component parses the repository's ordinary Markdown planning documents and 
 - `resolvePlanningDocuments({ specs, todos })` resolves each task's references and returns explicit diagnostics for missing SPEC documents, missing requirement IDs, and tasks without references.
 - `parseUnifiedDiff(diff)` extracts changed paths and hunk line ranges from ordinary Git unified diff output.
 - `mapDiffToTasks(files, tasks)` associates changed paths with TODO tasks using exact file-path matches. Associations are explicitly file-level; no claim is made that every hunk fulfills the task.
+- `createDiffAnchor(input)`, `checkDiffAnchorCurrent(anchor, current)`, and `buildDiffQuestionPacket(input)` create path/side/line-or-hunk anchors tied to a base commit and SHA-256 diff identity, reject stale anchors, and build a compact packet with selected diff text and related plan context.
 - `remapTaskIdentity(previous, current)` conservatively relates tasks across revisions of the same TODO document. It prefers unique structural keys, then unique task text, then unique SPEC-reference sets; duplicate/competing candidates are returned as one ambiguous candidate group with all previous/current task keys. It never transfers identity across TODO documents or resolves ties by line order.
 
 ## Markdown contract
@@ -28,12 +29,12 @@ SPEC paths are resolved relative to the TODO document. Requirement IDs—not lin
 
 ## Boundaries
 
-This module consumes file contents and diff text supplied by its host. It does not discover files, invoke Git, watch the filesystem, infer semantic hunk coverage, or communicate with an agent. Those are separate host responsibilities.
+This module consumes file contents and diff text supplied by its host. It does not discover files, invoke Git, watch the filesystem, infer semantic hunk coverage, or communicate with an agent. Hosts supply the current diff/base/blob identities and remain responsible for sending a ready packet to the existing agent. Those are separate host responsibilities.
 
 ## Validation
 
 ```sh
-npx vitest run test/planning-markdown.test.ts test/planning-workspace.test.ts
+npx vitest run test/planning-markdown.test.ts test/planning-workspace.test.ts test/planning-context.test.ts
 npm run check
 ```
 
