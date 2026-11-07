@@ -241,4 +241,26 @@ describe("planning Markdown", () => {
       currentKeys: current.tasks.map((task) => task.key),
     });
   });
+  it("preserves structural identity when only the checkbox changes", () => {
+    const previous = parseTodoDocument(todoPath, [
+      "## Work",
+      "- [ ] Implement refresh",
+      "  - SPEC: `SPEC.md#R-01`",
+    ].join("\n"));
+    const current = parseTodoDocument(todoPath, [
+      "## Work",
+      "- [x] Implement refresh",
+      "  - SPEC: `SPEC.md#R-01`",
+    ].join("\n"));
+
+    expect(remapTaskIdentity(previous, current)).toEqual([
+      expect.objectContaining({
+        state: "matched",
+        reason: "structural-key",
+        previousKey: previous.tasks[0]!.key,
+        currentKey: current.tasks[0]!.key,
+      }),
+    ]);
+  });
+
 });
