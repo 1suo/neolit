@@ -270,7 +270,19 @@ export function resolvePlanningDocuments(input: {
           if (matches.length === 1) {
             resolvedRequirements.push({ ...matches[0]!, specPath: reference.path });
             for (const criterion of spec.acceptanceCriteria.filter((item) => item.requirementIds.includes(id))) {
-              if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === criterion.id)) {
+              const duplicates = spec.acceptanceCriteria.filter((item) => item.id === criterion.id).length;
+              if (duplicates > 1) {
+                if (!unresolvedReferences.some((item) => item.path === reference.path && item.ids.includes(criterion.id))) {
+                  unresolvedReferences.push({ path: reference.path, ids: [criterion.id] });
+                  diagnostics.push({
+                    code: "duplicate-acceptance-criterion",
+                    message: `Acceptance criterion ${criterion.id} is defined more than once in ${reference.path}`,
+                    todoPath: todo.path,
+                    taskKey: task.key,
+                    line: task.range.startLine,
+                  });
+                }
+              } else if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === criterion.id)) {
                 resolvedAcceptanceCriteria.push({ ...criterion, specPath: reference.path });
               }
             }
