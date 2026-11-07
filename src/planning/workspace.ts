@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { identifyDiff } from "./context.js";
-import { derivePlanningStates } from "./state.js";
+import { derivePlanningStates, type VerificationEvidence } from "./state.js";
 import { promisify } from "node:util";
 import {
   mapDiffToTasks,
@@ -160,7 +160,10 @@ async function gitNoIndexDiff(root: string, file: string): Promise<string> {
   }
 }
 
-export async function loadPlanningWorkspace(directory: string): Promise<PlanningWorkspace> {
+export async function loadPlanningWorkspace(
+  directory: string,
+  options: { verificationEvidence?: VerificationEvidence[] } = {},
+): Promise<PlanningWorkspace> {
   const root = await realpath(directory);
   const [branch, head, statusOutput] = await Promise.all([
     git(root, ["branch", "--show-current"]),
@@ -218,6 +221,7 @@ export async function loadPlanningWorkspace(directory: string): Promise<Planning
     tasks: resolved.tasks,
     changedFiles,
     associations,
+    verificationEvidence: options.verificationEvidence,
     baseCommit: head.trim(),
     diffIdentity,
   });
