@@ -82,7 +82,11 @@ function stateForTask(
   criterionCoverage: Array<{ ref: string; verified: boolean }>,
 ): DerivedTaskState {
   if (task.state === "unmapped") return "unmapped";
-  if (hasBlocker(task)) return "blocked";
+  if (
+    hasBlocker(task)
+    || evidence.some((item) => !item.passed && item.taskKeys?.includes(task.key)
+      && /^\\s*(?:blocked|blocker):\\s*\\S/iu.test(item.result))
+  ) return "blocked";
 
   let state: DerivedTaskState;
   if (changedPaths.length === 0) {
