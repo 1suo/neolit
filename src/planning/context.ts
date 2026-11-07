@@ -134,7 +134,7 @@ export function buildDiffQuestionPacket(input: {
   const location = anchor.lineRange
     ? ` lines ${anchor.lineRange.startLine}-${anchor.lineRange.endLine}`
     : anchor.hunk
-      ? ` hunk old ${anchor.hunk.oldStart}-${anchor.hunk.oldStart + anchor.hunk.oldLines - 1}, new ${anchor.hunk.newStart}-${anchor.hunk.newStart + anchor.hunk.newLines - 1}`
+      ? ` hunk old ${anchor.hunk.oldLines === 0 ? "no lines" : `${anchor.hunk.oldStart}-${anchor.hunk.oldStart + anchor.hunk.oldLines - 1}`}, new ${anchor.hunk.newLines === 0 ? "no lines" : `${anchor.hunk.newStart}-${anchor.hunk.newStart + anchor.hunk.newLines - 1}`}`
       : "";
   const sections = [
     `Question: ${question}`,
