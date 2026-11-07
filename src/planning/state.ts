@@ -85,7 +85,7 @@ function stateForTask(
   if (
     hasBlocker(task)
     || evidence.some((item) => !item.passed && item.taskKeys?.includes(task.key)
-      && /^\\s*(?:blocked|blocker):\\s*\\S/iu.test(item.result))
+      && /^\s*(?:blocked|blocker):\s*\S/iu.test(item.result))
   ) return "blocked";
 
   let state: DerivedTaskState;
