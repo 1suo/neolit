@@ -55,6 +55,7 @@ export type ChangedFile = {
   path: string;
   status: "added" | "modified" | "deleted" | "renamed";
   previousPath?: string;
+  untracked?: boolean;
   hunks: DiffHunk[];
   rawDiff?: string;
 };
