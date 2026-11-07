@@ -1,6 +1,6 @@
 # Planning document core
 
-This component parses the repository's ordinary Markdown planning documents and connects them to actual Git diff metadata. It is deliberately deterministic and has no filesystem, Git process, editor, model, or database dependency.
+This component parses the repository's ordinary Markdown planning documents and connects them to actual Git diff metadata. The Markdown parser is deterministic and I/O-free; the workspace adapter is a read-only Node host boundary for filesystem discovery and Git commands.
 
 ## Public API
 
@@ -35,3 +35,7 @@ This module consumes file contents and diff text supplied by its host. It does n
 npx vitest run test/planning-markdown.test.ts
 npm run check
 ```
+
+## Workspace adapter
+
+`workspace.ts` exports `loadPlanningWorkspace(directory)`. It follows relative Markdown links from the root README to linked component READMEs and their SPEC/TODO documents, parses them, then reads the current branch, HEAD, porcelain status, and `git diff HEAD`. Untracked paths are included in changed-file navigation without inventing diff hunks. The adapter does not write files or alter the index/history. See the [workspace behavior and boundaries](./workspace-README.md).
