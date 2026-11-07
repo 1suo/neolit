@@ -77,6 +77,7 @@ function stateForTask(
   task: ResolvedTask,
   changedPaths: string[],
   expectedPaths: string[],
+  coveredExpectedPaths: string[],
   evidence: VerificationEvidence[],
   criterionCoverage: Array<{ ref: string; verified: boolean }>,
 ): DerivedTaskState {
@@ -88,7 +89,7 @@ function stateForTask(
     state = "planned";
   } else if (
     expectedPaths.length > 0
-    && expectedPaths.every((expected) => changedPaths.some((changed) => changed === expected))
+    && coveredExpectedPaths.length === expectedPaths.length
   ) {
     state = "implemented";
   } else {
@@ -124,13 +125,16 @@ export function derivePlanningStates(input: {
     const associations = input.associations.filter((item) => item.taskKeys.includes(task.key));
     const changedPaths = [...new Set(associations.map((item) => item.path))];
     const expectedPaths = [...new Set(task.filePaths)];
+    const coveredExpectedPaths = expectedPaths.filter((expected) =>
+      input.changedFiles.some((file) => file.path === expected || file.previousPath === expected),
+    );
     const criterionCoverage = task.resolvedAcceptanceCriteria.map((criterion) => {
       const ref = criterionRef(criterion.specPath, criterion.id);
       return { ref, verified: criterionVerified(ref, evidence) };
     });
     taskProjections[task.key] = {
       taskKey: task.key,
-      state: stateForTask(task, changedPaths, expectedPaths, evidence, criterionCoverage),
+      state: stateForTask(task, changedPaths, expectedPaths, coveredExpectedPaths, evidence, criterionCoverage),
       changedPaths,
       acceptanceCriteria: criterionCoverage,
     };
