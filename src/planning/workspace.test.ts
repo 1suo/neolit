@@ -1,0 +1,59 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { afterEach, describe, expect, it } from "vitest";
+import { loadPlanningWorkspace } from "../src/planning/workspace.js";
+
+const execFileAsync = promisify(execFile);
+const roots: string[] = [];
+
+async function fixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "neolit-planning-"));
+  roots.push(root);
+  await execFileAsync("git", ["init", "-q"], { cwd: root });
+  await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+  await execFileAsync("git", ["config", "user.name", "Planning Test"], { cwd: root });
+  await mkdir(path.join(root, "src", "auth"), { recursive: true });
+  await writeFile(path.join(root, "README.md"), "# Project\n\n[Auth](src/auth/README.md)\n");
+  await writeFile(path.join(root, "src/auth/README.md"), "# Auth\n\n[SPEC](SPEC.md) [TODO](TODO.md)\n");
+  await writeFile(path.join(root, "src/auth/SPEC.md"), "# Auth\n\n## Requirements\n- **R-01** Refresh sessions.\n");
+  await writeFile(path.join(root, "src/auth/TODO.md"), "# Auth tasks\n\n- [ ] Implement refresh\n  - SPEC: `SPEC.md#R-01`\n  - File: `src/auth/session.ts`\n");
+  await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => true;\n");
+  await execFileAsync("git", ["add", "."], { cwd: root });
+  await execFileAsync("git", ["commit", "-qm", "fixture"], { cwd: root });
+  return root;
+}
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe("loadPlanningWorkspace", () => {
+  it("follows linked README documents and joins TODO requirements to real Git changes", async () => {
+    const root = await fixture();
+    await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => false;\n");
+    await writeFile(path.join(root, "unplanned.ts"), "export const extra = true;\n");
+
+    const workspace = await loadPlanningWorkspace(root);
+    expect(workspace.readmes).toEqual(["README.md", "src/auth/README.md"]);
+    expect(workspace.tasks).toHaveLength(1);
+    expect(workspace.tasks[0]!.resolvedRequirements.map((item) => item.id)).toEqual(["R-01"]);
+    expect(workspace.git.changedFiles.map((item) => item.path).sort()).toEqual(["src/auth/session.ts", "unplanned.ts"]);
+    expect(workspace.git.associations.find((item) => item.path === "src/auth/session.ts")).toMatchObject({
+      requirementIds: ["R-01"],
+      state: "planned",
+    });
+    expect(workspace.git.associations.find((item) => item.path === "unplanned.ts")).toMatchObject({ state: "unplanned" });
+  });
+
+  it("keeps repository reads read-only", async () => {
+    const root = await fixture();
+    const before = await readFile(path.join(root, "src/auth/session.ts"), "utf8");
+    await loadPlanningWorkspace(root);
+    expect(await readFile(path.join(root, "src/auth/session.ts"), "utf8")).toBe(before);
+    const status = await execFileAsync("git", ["status", "--porcelain"], { cwd: root });
+    expect(status.stdout).toBe("");
+  });
+});
