@@ -316,3 +316,134 @@ export function mapDiffToTasks(
     };
   });
 }
+
+
+export type TaskIdentityMatch = {
+  state: "matched" | "added" | "removed" | "ambiguous";
+  previousKey?: string;
+  currentKey?: string;
+  reason: "structural-key" | "unique-text" | "unique-requirements" | "new-task" | "removed-task" | "duplicate-or-competing-match";
+};
+
+function taskRequirementSignature(task: TodoTask): string {
+  return task.specReferences
+    .map((reference) => `${reference.path}#${[...reference.ids].sort().join(",")}`)
+    .sort()
+    .join("|");
+}
+
+/**
+ * Conservatively relates tasks across two versions of one TODO document.
+ *
+ * Exact structural keys win only when unique on both sides. Remaining tasks
+ * may be matched by unique text, or by a unique SPEC-reference set when the
+ * task text was edited. Any competing candidate is reported as ambiguous;
+ * this function never chooses by array order or line proximity.
+ */
+export function remapTaskIdentity(
+  previous: TodoDocument,
+  current: TodoDocument,
+): TaskIdentityMatch[] {
+  const previousTasks = previous.tasks;
+  const currentTasks = current.tasks;
+  const previousMatched = new Set<number>();
+  const currentMatched = new Set<number>();
+  const matches: TaskIdentityMatch[] = [];
+
+  const groupBy = (tasks: TodoTask[], indices: number[], key: (task: TodoTask) => string) => {
+    const groups = new Map<string, number[]>();
+    for (const index of indices) {
+      const value = key(tasks[index]!);
+      if (!value) continue;
+      const group = groups.get(value) ?? [];
+      group.push(index);
+      groups.set(value, group);
+    }
+    return groups;
+  };
+
+  const availablePrevious = () => previousTasks.map((_, index) => index).filter((index) => !previousMatched.has(index));
+  const availableCurrent = () => currentTasks.map((_, index) => index).filter((index) => !currentMatched.has(index));
+
+  const exactPrevious = groupBy(previousTasks, availablePrevious(), (task) => task.key);
+  const exactCurrent = groupBy(currentTasks, availableCurrent(), (task) => task.key);
+  for (const [key, oldIndices] of exactPrevious) {
+    const newIndices = exactCurrent.get(key);
+    if (!newIndices) continue;
+    if (oldIndices.length === 1 && newIndices.length === 1) {
+      const oldIndex = oldIndices[0]!;
+      const newIndex = newIndices[0]!;
+      previousMatched.add(oldIndex);
+      currentMatched.add(newIndex);
+      matches.push({
+        state: "matched",
+        previousKey: previousTasks[oldIndex]!.key,
+        currentKey: currentTasks[newIndex]!.key,
+        reason: "structural-key",
+      });
+    } else {
+      for (const oldIndex of oldIndices) previousMatched.add(oldIndex);
+      for (const newIndex of newIndices) currentMatched.add(newIndex);
+      matches.push({
+        state: "ambiguous",
+        previousKey: oldIndices.length === 1 ? previousTasks[oldIndices[0]!]!.key : undefined,
+        currentKey: newIndices.length === 1 ? currentTasks[newIndices[0]!]!.key : undefined,
+        reason: "duplicate-or-competing-match",
+      });
+    }
+  }
+
+  const matchUnique = (
+    key: (task: TodoTask) => string,
+    reason: "unique-text" | "unique-requirements",
+  ) => {
+    const oldGroups = groupBy(previousTasks, availablePrevious(), key);
+    const newGroups = groupBy(currentTasks, availableCurrent(), key);
+    for (const [signature, oldIndices] of oldGroups) {
+      const newIndices = newGroups.get(signature);
+      if (!newIndices) continue;
+      if (oldIndices.length === 1 && newIndices.length === 1) {
+        const oldIndex = oldIndices[0]!;
+        const newIndex = newIndices[0]!;
+        previousMatched.add(oldIndex);
+        currentMatched.add(newIndex);
+        matches.push({
+          state: "matched",
+          previousKey: previousTasks[oldIndex]!.key,
+          currentKey: currentTasks[newIndex]!.key,
+          reason,
+        });
+      } else {
+        for (const oldIndex of oldIndices) previousMatched.add(oldIndex);
+        for (const newIndex of newIndices) currentMatched.add(newIndex);
+        matches.push({
+          state: "ambiguous",
+          previousKey: oldIndices.length === 1 ? previousTasks[oldIndices[0]!]!.key : undefined,
+          currentKey: newIndices.length === 1 ? currentTasks[newIndices[0]!]!.key : undefined,
+          reason: "duplicate-or-competing-match",
+        });
+      }
+    }
+  };
+
+  // Same task text can survive a heading move. Scope identity to the owning
+  // TODO document; never transfer state across different TODO documents.
+  if (previous.path === current.path) {
+    matchUnique((task) => task.text.trim().toLocaleLowerCase(), "unique-text");
+    // A unique requirement set can preserve identity across a task-text edit.
+    // Shared requirement sets are common, so only a one-to-one match is safe.
+    matchUnique((task) => taskRequirementSignature(task), "unique-requirements");
+  }
+
+  for (let index = 0; index < previousTasks.length; index += 1) {
+    if (!previousMatched.has(index)) {
+      matches.push({ state: "removed", previousKey: previousTasks[index]!.key, reason: "removed-task" });
+    }
+  }
+  for (let index = 0; index < currentTasks.length; index += 1) {
+    if (!currentMatched.has(index)) {
+      matches.push({ state: "added", currentKey: currentTasks[index]!.key, reason: "new-task" });
+    }
+  }
+  return matches;
+}
