@@ -53,7 +53,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Define stable file, hunk, and line-range context anchors
   - SPEC: `REWRITE-SPEC.md#R-36`, `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-45`
   - File: `src/planning/context.ts`, `src/planning/workspace.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added shared anchors with repository-relative paths, base/working-tree side, optional line/hunk ranges, base commit, SHA-256 diff identity, and optional blob identity. Added fail-closed stale checks and tests for base/diff/blob changes. The Neovim prototype independently rejects stale HEAD/diff context. Keep open until host handoff consumes the shared API and focused tests execute.
+  - Description: Added shared anchors with repository-relative paths, base/working-tree side, optional line/hunk ranges, base commit, SHA-256 diff identity, and optional blob identity. Added fail-closed stale checks and tests for base/diff/blob changes. The Neovim line-range handoff now consumes the shared builder; file/hunk handoff compares the refreshed Git diff against the captured raw diff. Keep open until focused core and plugin tests execute.
 - [ ] Build compact contextual question packets
   - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
   - File: `src/planning/context.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
@@ -67,7 +67,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Prototype the full task → requirement → diff → contextual question flow in Neovim
   - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
   - File: `1suo/neolit.nvim` (separate repository, branch `rewrite/planning-workspace`)
-  - Description: Initial `:NeolitPlan` companion view is implemented: linked tasks/requirements, changed file/hunk navigation, diff-syntax buffers, and clipboard context packets. It is intentionally separate from the legacy `:Neolit` controller. Still needs local Neovim smoke tests and refinement into native explorer decorations/details UI.
+  - Description: Initial `:NeolitPlan` companion view is implemented: linked tasks/requirements with derived states, changed file/hunk navigation, diff-syntax buffers, exact line-range context, and clipboard handoff through the shared core. A headless smoke test covers the vertical slice but has not been run. It is intentionally separate from the legacy `:Neolit` controller; native explorer decorations/details UI remain future refinement.
 - [ ] Implement the shared VS Code adapter
   - SPEC: `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`
   - Description: Use TreeView, FileDecorationProvider, native diff/editor commands, and the shared core; do not duplicate parsing or state derivation.
