@@ -263,4 +263,25 @@ describe("planning Markdown", () => {
     ]);
   });
 
+  it("links acceptance criteria to each explicitly referenced requirement", () => {
+    const spec = parseSpecDocument(specPath, [
+      "# Authentication",
+      "## Requirements",
+      "- **R-01** Refresh expired sessions.",
+      "- **R-02** Reject invalid credentials.",
+      "## Acceptance criteria",
+      "- **AC-01** R-01 retries the original request once.",
+      "- **AC-02** R-02 returns the typed authentication error.",
+    ].join("\n"));
+    const todo = parseTodoDocument(todoPath, [
+      "- [ ] Implement authentication behavior",
+      "  - SPEC: `SPEC.md#R-01, R-02`",
+    ].join("\n"));
+    const resolved = resolvePlanningDocuments({ specs: [spec], todos: [todo] });
+
+    expect(spec.acceptanceCriteria.map((item) => item.id)).toEqual(["AC-01", "AC-02"]);
+    expect(spec.acceptanceCriteria.map((item) => item.requirementIds)).toEqual([["R-01"], ["R-02"]]);
+    expect(resolved.tasks[0]!.resolvedAcceptanceCriteria.map((item) => item.id)).toEqual(["AC-01", "AC-02"]);
+  });
+
 });
