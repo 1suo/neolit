@@ -203,7 +203,6 @@ describe("planning Markdown", () => {
     });
   });
 
-});
   it("reports additions and removals instead of transferring identity across TODO files", () => {
     const previous = parseTodoDocument(todoPath, [
       "- [ ] Old task",
@@ -242,4 +241,4 @@ describe("planning Markdown", () => {
       currentKeys: current.tasks.map((task) => task.key),
     });
   });
-
+});
