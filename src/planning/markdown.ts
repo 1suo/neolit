@@ -328,10 +328,9 @@ export type TaskIdentityMatch = {
 };
 
 function taskRequirementSignature(task: TodoTask): string {
-  return task.specReferences
-    .map((reference) => `${reference.path}#${[...reference.ids].sort().join(",")}`)
-    .sort()
-    .join("|");
+  return [...new Set(task.specReferences.flatMap((reference) =>
+    reference.ids.map((id) => `${reference.path}#${id}`),
+  ))].sort().join("|");
 }
 
 /**
