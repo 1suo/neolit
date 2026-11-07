@@ -73,18 +73,19 @@ describe("planning Markdown", () => {
     const todo = parseTodoDocument(todoPath, [
       "- [ ] Ambiguous requirement",
       "  - SPEC: `SPEC.md#R-01`",
-    ].join("\\n"));
+    ].join("\n"));
     const result = resolvePlanningDocuments({
       specs: [parseSpecDocument(specPath, [
         "- **R-01** First definition.",
         "- **R-01** Duplicate definition.",
-      ].join("\\n"))],
+      ].join("\n"))],
       todos: [todo],
     });
     expect(result.diagnostics.map((item) => item.code)).toEqual(["duplicate-requirement"]);
     expect(result.tasks[0]!.state).toBe("unmapped");
   });
-\n  it("maps actual unified diff paths to TODO tasks without claiming hunk-level proof", () => {
+
+  it("maps actual unified diff paths to TODO tasks without claiming hunk-level proof", () => {
     const todo = parseTodoDocument(todoPath, [
       "- [ ] Implement refresh",
       "  - SPEC: `SPEC.md#R-01`",
