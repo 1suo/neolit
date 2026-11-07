@@ -9,7 +9,7 @@ This component parses the repository's ordinary Markdown planning documents and 
 - `resolvePlanningDocuments({ specs, todos })` resolves each task's references and returns explicit diagnostics for missing SPEC documents, missing requirement IDs, and tasks without references.
 - `parseUnifiedDiff(diff)` extracts changed paths and hunk line ranges from ordinary Git unified diff output.
 - `mapDiffToTasks(files, tasks)` associates changed paths with TODO tasks using exact file-path matches. Associations are explicitly file-level; no claim is made that every hunk fulfills the task.
-- `remapTaskIdentity(previous, current)` conservatively relates tasks across revisions of the same TODO document. It prefers unique structural keys, then unique task text, then unique SPEC-reference sets; duplicate/competing candidates are returned as ambiguous with their individual task keys. It never transfers identity across TODO documents or resolves ties by line order.
+- `remapTaskIdentity(previous, current)` conservatively relates tasks across revisions of the same TODO document. It prefers unique structural keys, then unique task text, then unique SPEC-reference sets; duplicate/competing candidates are returned as one ambiguous candidate group with all previous/current task keys. It never transfers identity across TODO documents or resolves ties by line order.
 
 ## Markdown contract
 
