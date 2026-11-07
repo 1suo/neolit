@@ -143,12 +143,14 @@ async function git(root: string, args: string[]): Promise<string> {
 
 export async function loadPlanningWorkspace(directory: string): Promise<PlanningWorkspace> {
   const root = await realpath(directory);
-  const [branch, head, statusOutput, diff] = await Promise.all([
+  const [branch, head, statusOutput] = await Promise.all([
     git(root, ["branch", "--show-current"]),
-    git(root, ["rev-parse", "HEAD"]),
+    git(root, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
     git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    git(root, ["diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--"]),
   ]);
+  const diff = head.trim()
+    ? await git(root, ["diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--"])
+    : "";
 
   const documents = await discoverDocuments(root);
   const [specs, todos] = await Promise.all([
