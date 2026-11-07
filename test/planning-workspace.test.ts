@@ -48,6 +48,18 @@ describe("loadPlanningWorkspace", () => {
       state: "planned",
     });
     expect(workspace.git.associations.find((item) => item.path === "unplanned.ts")).toMatchObject({ state: "unplanned" });
+
+    const verified = await loadPlanningWorkspace(root, {
+      verificationEvidence: [{
+        command: "npm test -- refresh",
+        result: "passed",
+        passed: true,
+        baseCommit: workspace.git.head,
+        diffIdentity: workspace.git.diffIdentity,
+        taskKeys: [workspace.tasks[0]!.key],
+      }],
+    });
+    expect(verified.derived.tasks[workspace.tasks[0]!.key]!.state).toBe("verified");
   });
 
 
