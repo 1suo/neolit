@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mapDiffToTasks,
+  remapTaskIdentity,
   parseSpecDocument,
   parseTodoDocument,
   parseUnifiedDiff,
@@ -153,4 +154,49 @@ describe("planning Markdown", () => {
       taskKeys: [todo.tasks[0]!.key],
     });
   });
+
+  it("remaps tasks conservatively across edits and heading moves", () => {
+    const previous = parseTodoDocument(todoPath, [
+      "# Authentication",
+      "## Sessions",
+      "- [ ] Implement refresh",
+      "  - SPEC: `SPEC.md#R-01`",
+      "- [ ] Reject invalid credentials",
+      "  - SPEC: `SPEC.md#R-02`",
+    ].join("\n"));
+    const current = parseTodoDocument(todoPath, [
+      "# Authentication",
+      "## Session lifecycle",
+      "- [x] Implement session refresh",
+      "  - SPEC: `SPEC.md#R-01`",
+      "- [ ] Reject invalid credentials",
+      "  - SPEC: `SPEC.md#R-02`",
+    ].join("\n"));
+
+    expect(remapTaskIdentity(previous, current)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ state: "matched", reason: "unique-requirements" }),
+      expect.objectContaining({ state: "matched", reason: "unique-text" }),
+    ]));
+  });
+
+  it("does not guess between duplicate task identities", () => {
+    const previous = parseTodoDocument(todoPath, [
+      "- [ ] Add validation",
+      "  - SPEC: `SPEC.md#R-01`",
+      "- [ ] Add validation",
+      "  - SPEC: `SPEC.md#R-01`",
+    ].join("\n"));
+    const current = parseTodoDocument(todoPath, [
+      "- [ ] Add validation",
+      "  - SPEC: `SPEC.md#R-01`",
+      "- [ ] Add validation",
+      "  - SPEC: `SPEC.md#R-01`",
+    ].join("\n"));
+
+    expect(remapTaskIdentity(previous, current)).toEqual([
+      expect.objectContaining({ state: "ambiguous", reason: "duplicate-or-competing-match" }),
+      expect.objectContaining({ state: "ambiguous", reason: "duplicate-or-competing-match" }),
+    ]);
+  });
+
 });
