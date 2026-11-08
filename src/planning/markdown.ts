@@ -270,7 +270,9 @@ export function resolvePlanningDocuments(input: {
 
           const matches = spec.requirements.filter((candidate) => candidate.id === id);
           if (matches.length === 1) {
-            resolvedRequirements.push({ ...matches[0]!, specPath: reference.path });
+            if (!resolvedRequirements.some((item) => item.specPath === reference.path && item.id === id)) {
+              resolvedRequirements.push({ ...matches[0]!, specPath: reference.path });
+            }
             for (const criterion of spec.acceptanceCriteria.filter((item) => item.requirementIds.includes(id))) {
               const duplicates = spec.acceptanceCriteria.filter((item) => item.id === criterion.id).length;
               if (duplicates > 1) {
