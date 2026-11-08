@@ -113,7 +113,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Include resolved task and SPEC context in task/requirement questions
   - SPEC: `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-43`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Task and planned-file questions now include their descriptions, file hints, resolved requirements, linked acceptance criteria, and unresolved references. Requirement questions include every explicitly linked TODO task and its resolved SPEC context. These copyable packets are capped at 16,000 characters; no agent session is created or contacted.
+  - Description: Task and planned-file questions now include their descriptions, file hints, resolved requirements, linked acceptance criteria, and unresolved references. Requirement questions include every explicitly linked TODO task and its resolved SPEC context. These copyable packets are capped at 16,000 characters and use real line breaks; no agent session is created or contacted.
 
 - [x] Implement copyable contextual handoff to the existing agent
   - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-50`
@@ -132,7 +132,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Add a focused Neovim details surface for selected planning rows
   - SPEC: `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-63`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added a native floating details window for changed files, hunks, individual changed lines, TODO tasks, SPEC requirements, and diagnostics. The diff tree now keeps hunk candidate labels compact and requirement rows to stable IDs/state; full descriptions, candidate task/requirement details, derived requirement states, and linked acceptance criteria are shown on demand with `K`. Selecting a task highlights its associated file/hunk candidates and linked requirements; selecting a requirement highlights its linked tasks and their mapped changes. This is an implementation record, not a host-runtime validation claim.
+  - Description: Added a native floating details window for changed files, hunks, individual changed lines, TODO tasks, SPEC requirements, and diagnostics. The diff tree now keeps hunk candidate labels compact and requirement rows to stable IDs/state; full descriptions, candidate task/requirement details, derived requirement states, resolved requirements, acceptance criteria (including criteria linked through TODO references), and unresolved references are shown on demand with `K`. Selecting a task highlights its associated file/hunk candidates and linked requirements; selecting a requirement highlights its linked tasks and their mapped changes. This is an implementation record, not a host-runtime validation claim.
   
 - [ ] Validate the vertical slice in the supported Neovim host
   - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
