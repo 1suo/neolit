@@ -55,7 +55,7 @@ if (args.includes("--mcp")) {
   });
   await runStdioMcpServer({
     ...(peer ? { peer } : { server: ownedServer }),
-    // The optional repository directory only enables git apply diagnostics.
+    // The optional repository directory scopes durable state and enables Git apply/verify plus repository overlays.
     preflight: directory ? (patches) => preflightPatches(directory, patches) : undefined,
   });
   peer?.close();
@@ -65,5 +65,6 @@ if (args.includes("--mcp")) {
     persistencePath,
     applyPatches: directory ? (diffs) => applyPlannedDiffsTransaction(directory, diffs) : undefined,
     verifyPatches: directory ? (diffs) => verifyAppliedDiffs(directory, diffs) : undefined,
+    initialConstraints: directory ? () => loadRepositoryOverlays(directory) : undefined,
   });
 }
