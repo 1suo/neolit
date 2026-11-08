@@ -863,6 +863,61 @@ export function refineNode(task: PlanTask, input: RefineNodeInput): PlanTask {
   return next;
 }
 
+export interface SetDiffLifecycleInput {
+  taskId: string;
+  expectedRevision: PlanRevision;
+  diffIds: PlanDiffId[];
+  lifecycle: "applied" | "verified" | "failed";
+  detail?: string;
+  paths?: string[];
+}
+
+/** Record host apply and verification results as revisioned core state. */
+export function setDiffLifecycle(task: PlanTask, input: SetDiffLifecycleInput): PlanTask {
+  const next = clone(requireTask(task, input.taskId));
+  requireRevision(next, input.expectedRevision);
+  const ids = [...new Set(input.diffIds)];
+  if (!ids.length) throw new PlanStateError("At least one planned diff is required.", "invalid");
+  if (input.lifecycle === "failed" && !input.detail?.trim()) throw new PlanStateError("A failed verification requires its diagnostic.", "invalid");
+  if (input.lifecycle === "verified" && !input.detail?.trim()) throw new PlanStateError("A successful verification requires a summary.", "invalid");
+  const diffs = ids.map((id) => {
+    const diff = next.diffs[id];
+    if (!diff) throw new PlanStateError(`Unknown planned diff: ${id}`, "unknown-diff");
+    const node = requireNode(next, diff.nodeId);
+    if (node.status === "stale") throw new PlanStateError(`Cannot change apply lifecycle for stale node ${node.id}.`, "node-state");
+    const current = diff.lifecycle ?? "drafted";
+    if (input.lifecycle === "applied" && current !== "drafted" && current !== "failed") {
+      throw new PlanStateError(`Diff ${id} cannot be applied from lifecycle ${current}.`, "node-state");
+    }
+    if ((input.lifecycle === "verified" || input.lifecycle === "failed") && current !== "applied") {
+      throw new PlanStateError(`Diff ${id} must be applied before verification (current: ${current}).`, "node-state");
+    }
+    return diff;
+  });
+  for (const diff of diffs) {
+    diff.lifecycle = input.lifecycle;
+    if (input.lifecycle === "applied") {
+      diff.verification = undefined;
+      diff.failedCheck = undefined;
+    } else if (input.lifecycle === "verified") {
+      diff.verification = input.detail!.trim();
+      diff.failedCheck = undefined;
+    } else {
+      diff.verification = input.detail!.trim();
+      diff.failedCheck = input.detail!.trim();
+    }
+  }
+  next.revision = nextRevision(next);
+  if (input.lifecycle === "applied") {
+    emit(next, { type: "patch-applied", revision: next.revision, diffIds: ids, paths: [...new Set(input.paths ?? diffs.map((diff) => diff.path).filter(Boolean))] });
+  } else if (input.lifecycle === "verified") {
+    emit(next, { type: "patch-verified", revision: next.revision, diffIds: ids, summary: input.detail!.trim() });
+  } else {
+    emit(next, { type: "patch-verification-failed", revision: next.revision, diffIds: ids, summary: input.detail!.trim() });
+  }
+  return next;
+}
+
 export interface ReplacePatchInput {
   taskId: string;
   expectedRevision: PlanRevision;
@@ -883,6 +938,8 @@ export function replacePatch(task: PlanTask, input: ReplacePatchInput): PlanTask
   requirePatchPathsChangeable(next, node, input.patch);
   diff.patch = input.patch;
   diff.kind = classifyPatchKind(input.patch);
+  diff.lifecycle = "drafted";
+  diff.verification = undefined;
   diff.failedCheck = input.failedCheck;
   next.revision = nextRevision(next);
   emit(next, { type: "patch-attached", revision: next.revision, nodeId: node.id, diffId: diff.id });
@@ -899,7 +956,7 @@ export function attachPatch(task: PlanTask, input: AttachPatchInput): PlanTask {
   if (node.path) requireChangeablePath(next, node.path);
   const paths = requirePatchPathsChangeable(next, node, input.patch);
   const id = nextId("diff:", Object.keys(next.diffs));
-  const diff: PlannedDiff = { id, nodeId: node.id, path: node.path ?? (paths.length === 1 ? paths[0]! : ""), patch: input.patch, kind: classifyPatchKind(input.patch), basisRevision: next.basisRevision };
+  const diff: PlannedDiff = { id, nodeId: node.id, path: node.path ?? (paths.length === 1 ? paths[0]! : ""), patch: input.patch, kind: classifyPatchKind(input.patch), basisRevision: next.basisRevision, lifecycle: "drafted" };
   next.diffs[id] = diff;
   node.diffIds.push(id);
   next.revision = nextRevision(next);
