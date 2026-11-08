@@ -137,6 +137,11 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
   - Description: Task- and requirement-linked hunk rows now resolve their zero-based hunk index to the exact parsed Git hunk for preview, Enter navigation, and literal copy. Candidate task and fully qualified SPEC references are shown alongside each hunk's attribution state and reason. Enter on a task opens its TODO source; `za` remains the explicit expansion action.
 
+- [x] Distinguish file-hint candidates from confirmed hunk evidence in Neovim
+  - SPEC: `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`, `REWRITE-SPEC.md#R-33`
+  - File: `1suo/neolit.nvim/lua/neolit/planning.lua`, `1suo/neolit.nvim/README.md`
+  - Description: Unique `File:` hints are displayed as candidates, not confirmed mappings. The tree uses `?` for no task hint, `~` for candidate/ambiguous hints, and `D` for planning-document changes; it no longer shows a misleading mapped checkmark for path-only evidence.
+
 - [ ] Validate the vertical slice in the supported Neovim host
   - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
