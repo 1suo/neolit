@@ -486,6 +486,44 @@ export function mapDiffToTasks(
 }
 
 
+export type TaskHunkAssociation = {
+  path: string;
+  hunkIndex: number;
+  hunk: DiffHunk;
+  granularity: "hunk";
+  candidateTaskKeys: string[];
+  candidateRequirementIds: string[];
+  state: "unplanned" | "unresolved" | "documentation";
+  reason: "no-task-path-match" | "file-hint-is-not-hunk-evidence" | "documentation-change";
+};
+
+/**
+ * Expose each changed hunk independently without promoting file-level hints
+ * into claims that the hunk implements a task. Until explicit, reliable
+ * hunk evidence exists, matching tasks are candidates and the hunk stays
+ * unresolved. This preserves useful navigation without inventing attribution.
+ */
+export function mapDiffHunksToTasks(
+  changedFiles: ChangedFile[],
+  tasks: ResolvedTask[],
+): TaskHunkAssociation[] {
+  return changedFiles.flatMap((file) => {
+    const documentation = /(?:^|\\/)(?:README|(?:[^/]+-)?SPEC|TODO(?:-[^/]*)?)\\.md$/iu.test(file.path);
+    const matching = documentation ? [] : tasks.filter((task) => task.filePaths.some((filePath) =>
+      filePath === file.path || filePath === file.previousPath,
+    ));
+    return file.hunks.map((hunk, hunkIndex) => ({
+      path: file.path,
+      hunkIndex,
+      hunk,
+      granularity: "hunk" as const,
+      candidateTaskKeys: matching.map((task) => task.key),
+      candidateRequirementIds: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => requirement.id)))],
+      state: documentation ? "documentation" as const : matching.length === 0 ? "unplanned" as const : "unresolved" as const,
+      reason: documentation ? "documentation-change" as const : matching.length === 0 ? "no-task-path-match" as const : "file-hint-is-not-hunk-evidence" as const,
+    }));
+  });
+}
 export type TaskIdentityMatch = {
   state: "matched" | "added" | "removed" | "ambiguous";
   previousKey?: string;
