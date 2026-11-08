@@ -59,6 +59,52 @@ export function selectRelatedTaskContexts(input: {
     }));
 }
 
+export type TaskDocumentationContext = {
+  currentBehavior: Array<{ readmePath: string; content: string }>;
+  desiredBehavior: Array<{ specPath: string; requirements: SpecRequirement[]; acceptanceCriteria: SpecAcceptanceCriterion[] }>;
+  diagnostics: string[];
+};
+
+/** Resolve only the documentation relevant to one explicitly selected task. */
+export function selectTaskDocumentationContext(input: {
+  task: ResolvedTask;
+  readmes: Array<{ path: string; content: string }>;
+  maxReadmeChars?: number;
+}): TaskDocumentationContext {
+  const limit = input.maxReadmeChars ?? 12_000;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100_000) throw new RangeError("README context limit must be from 1 to 100000.");
+  const directories = [
+    ...input.task.filePaths.map((file) => file.replaceAll("\\", "/").split("/").slice(0, -1).join("/")),
+    ...input.task.specReferences.map((ref) => ref.path.split("/").slice(0, -1).join("/")),
+  ];
+  const candidates = input.readmes.flatMap((readme) => {
+    const dir = readme.path.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
+    const depths = directories.filter((related) => related === dir || related.startsWith(dir ? `${dir}/` : ""))
+      .map(() => dir ? dir.split("/").length : 0);
+    return depths.length ? [{ ...readme, depth: Math.max(...depths) }] : [];
+  });
+  const deepest = candidates.length ? Math.max(...candidates.map((item) => item.depth)) : -1;
+  const matches = deepest >= 0 ? candidates.filter((item) => item.depth === deepest) : input.readmes.filter((item) => item.path === "README.md");
+  const selected = [...new Map(matches.map((item) => [item.path, item])).values()];
+  const diagnostics: string[] = [];
+  if (selected.length > 1) diagnostics.push(`Multiple equally specific README documents match: ${selected.map((item) => item.path).join(", ")}.`);
+  if (selected.length === 0) diagnostics.push("No README matches the task's explicit file or SPEC locations.");
+  const currentBehavior = selected.map((item) => ({
+    readmePath: item.path,
+    content: item.content.length <= limit ? item.content : `${item.content.slice(0, limit - 24)}\n...[ README truncated ]`,
+  }));
+  const grouped = new Map<string, { specPath: string; requirements: SpecRequirement[]; acceptanceCriteria: SpecAcceptanceCriterion[] }>();
+  for (const item of input.task.resolvedRequirements) {
+    const group = grouped.get(item.specPath) ?? { specPath: item.specPath, requirements: [], acceptanceCriteria: [] };
+    group.requirements.push(item); grouped.set(item.specPath, group);
+  }
+  for (const item of input.task.resolvedAcceptanceCriteria) {
+    const group = grouped.get(item.specPath) ?? { specPath: item.specPath, requirements: [], acceptanceCriteria: [] };
+    group.acceptanceCriteria.push(item); grouped.set(item.specPath, group);
+  }
+  return { currentBehavior, desiredBehavior: [...grouped.values()], diagnostics };
+}
+
 function validateRepoPath(value: string): string {
   const normalized = value.replaceAll("\\", "/");
   if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:/u.test(normalized)) {
