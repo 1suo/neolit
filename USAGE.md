@@ -88,7 +88,7 @@ Open the planning workspace from the target Git repository:
 :Neolit
 ```
 
-` :NeolitPlan ` is an alias. The view is read-only.
+`:NeolitPlan` is an alias. The view is read-only.
 
 - Move to a TODO task or SPEC requirement and press `<CR>` to open its Markdown source.
 - Move to a planned file and press `<CR>` to open the file, or its actual Git diff when it has changes.
