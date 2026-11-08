@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { parseUnifiedDiff, type DiffHunk, type SourceRange, type SpecRequirement, type TodoTask } from "./markdown.js";
+import {
+  parseUnifiedDiff,
+  type DiffHunk,
+  type ResolvedTask,
+  type SourceRange,
+  type SpecAcceptanceCriterion,
+  type SpecRequirement,
+  type TodoTask,
+} from "./markdown.js";
 
 export type DiffSide = "base" | "working-tree";
 
@@ -21,7 +29,35 @@ export type RelatedTaskContext = {
   todoPath: string;
   task: TodoTask;
   requirements: Array<{ specPath: string; requirement: SpecRequirement }>;
+  acceptanceCriteria: Array<{ specPath: string; criterion: SpecAcceptanceCriterion }>;
 };
+
+/**
+ * Select only TODO tasks that explicitly name the anchored file. A rename
+ * matches either side of the path; shared file hints remain multiple
+ * candidates and are never silently reduced to one task.
+ */
+export function selectRelatedTaskContexts(input: {
+  path: string;
+  previousPath?: string;
+  tasks: ResolvedTask[];
+}): RelatedTaskContext[] {
+  const paths = new Set([input.path, ...(input.previousPath ? [input.previousPath] : [])]);
+  return input.tasks
+    .filter((task) => task.filePaths.some((filePath) => paths.has(filePath)))
+    .map((task) => ({
+      todoPath: task.key.slice(0, task.key.indexOf("::")),
+      task,
+      requirements: task.resolvedRequirements.map((requirement) => ({
+        specPath: requirement.specPath,
+        requirement,
+      })),
+      acceptanceCriteria: task.resolvedAcceptanceCriteria.map((criterion) => ({
+        specPath: criterion.specPath,
+        criterion,
+      })),
+    }));
+}
 
 function validateRepoPath(value: string): string {
   const normalized = value.replaceAll("\\", "/");
@@ -221,6 +257,11 @@ export function buildDiffQuestionPacket(input: {
       ...requirements.map(({ specPath, requirement }) =>
         `  - ${specPath}#${requirement.id}: ${requirement.text}`,
       ),
+      ...input.relatedTasks
+        .find((candidate) => candidate.task.key === task.key)!
+        .acceptanceCriteria.map(({ specPath, criterion }) =>
+          `  - ${specPath}#${criterion.id}: ${criterion.text}`,
+        ),
     ]);
     if (input.relatedTasks.length > selectedTasks.length) {
       const omitted = input.relatedTasks.length - selectedTasks.length;
