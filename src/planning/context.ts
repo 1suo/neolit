@@ -86,12 +86,12 @@ export function selectTaskDocumentationContext(input: {
   const deepest = candidates.length ? Math.max(...candidates.map((item) => item.depth)) : -1;
   const matches = deepest >= 0 ? candidates.filter((item) => item.depth === deepest) : input.readmes.filter((item) => item.path === "README.md");
   const selected = [...new Map(matches.map((item) => [item.path, item])).values()];
-  const diagnostics: string[] = [];
+  const diagnostics: string[] = input.task.unresolvedReferences.map((reference) => `Unresolved SPEC reference in ${reference.path}: ${reference.ids.join(", ")}.`);
   if (selected.length > 1) diagnostics.push(`Multiple equally specific README documents match: ${selected.map((item) => item.path).join(", ")}.`);
   if (selected.length === 0) diagnostics.push("No README matches the task's explicit file or SPEC locations.");
   const currentBehavior = selected.map((item) => ({
     readmePath: item.path,
-    content: item.content.length <= limit ? item.content : `${item.content.slice(0, limit - 24)}\n...[ README truncated ]`,
+    content: boundedText(item.content, limit, "README"),
   }));
   const grouped = new Map<string, { specPath: string; requirements: SpecRequirement[]; acceptanceCriteria: SpecAcceptanceCriterion[] }>();
   for (const item of input.task.resolvedRequirements) {
@@ -241,6 +241,7 @@ export function buildDiffQuestionPacket(input: {
   selectedDiffText?: string;
   selectedLinesText?: string;
   relatedTasks?: RelatedTaskContext[];
+  documentationContext?: TaskDocumentationContext;
   limits?: DiffQuestionPacketLimits;
 }): DiffQuestionPacketResult {
   const question = input.question.trim();
@@ -312,6 +313,20 @@ export function buildDiffQuestionPacket(input: {
       plan.push(`- ... ${omitted} additional related task${omitted === 1 ? "" : "s"} omitted`);
     }
     sections.push(`Related plan:\n${boundedText(plan.join("\n"), limits.maxRelatedChars, "related plan")}`);
+  }
+
+  if (input.documentationContext) {
+    const docs = input.documentationContext;
+    const current = docs.currentBehavior.map((item) => `### ${item.readmePath} (current shipped behavior)\n~~~markdown\n${item.content}\n~~~`);
+    const desired = docs.desiredBehavior.map((item) => [
+      `### ${item.specPath} (desired behavior)`,
+      ...item.requirements.map((requirement) => `- ${requirement.id}: ${requirement.text}`),
+      ...item.acceptanceCriteria.map((criterion) => `- ${criterion.id}: ${criterion.text}`),
+    ].join("\n"));
+    const diagnostics = docs.diagnostics.map((diagnostic) => `- ${diagnostic}`);
+    if (current.length) sections.push(`Current shipped behavior (README)\n${boundedText(current.join("\n\n"), limits.maxRelatedChars, "README context")}`);
+    if (desired.length) sections.push(`Desired behavior (SPEC)\n${boundedText(desired.join("\n\n"), limits.maxRelatedChars, "SPEC context")}`);
+    if (diagnostics.length) sections.push(`Documentation context diagnostics:\n${boundedText(diagnostics.join("\n"), limits.maxRelatedChars, "documentation diagnostics")}`);
   }
 
   return { status: "ready", packet: sections.join("\n\n") };
