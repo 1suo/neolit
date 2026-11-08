@@ -12,7 +12,7 @@ export interface RepositoryOverlay {
 
 const MAX_OVERLAYS = 32;
 const MAX_FILE_BYTES = 48_000;
-const RULE_LANGUAGE = /\b(?:must|must not|never|always|required|do not|don't|should|avoid|prefer|only|ensure|keep|preserve)\b/iu;
+const RULE_LANGUAGE = /\b(?:must|must not|never|always|required|do not|don't|should|avoid|prefer|only|ensure|keep|preserve|read|follow|write|put|correct|implement|commit|run|inspect|stage|add|link|state|verify)\b/iu;
 
 function trackedPaths(directory: string): string[] {
   try {
