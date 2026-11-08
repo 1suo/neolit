@@ -29,7 +29,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Implement linked README/SPEC/TODO document discovery
   - SPEC: `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-12`
   - File: `src/planning/workspace.ts`, `test/planning-workspace.test.ts`
-  - Description: Implemented root-README graph traversal and linked SPEC/TODO discovery, including linked variants. Implementation is complete; repository-specific behavior remains an explicit validation item.
+  - Description: Implemented root-README graph traversal and linked SPEC/TODO discovery, including linked variants, full/collapsed/shortcut reference-style links, and local Markdown autolinks. Implementation is complete; repository-specific behavior remains an explicit validation item.
 - [ ] Validate discovery against repository link patterns
   - SPEC: `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-12`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
