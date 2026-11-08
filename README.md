@@ -40,7 +40,42 @@ import {
 // import { ... } from "neolit/planning";
 ```
 
-Start with the [usage guide](./USAGE.md) for setup and the Neovim workflow. See [the planning core reference](./src/planning/README.md) for API details.
+## Getting started
+
+Build the shared core with Node.js 22.12 or newer:
+
+```sh
+npm install
+npm run build
+```
+
+The Neovim companion requires this checkout's generated `dist/index.js` and
+`dist/planning/` files. Install `1suo/neolit.nvim` with your plugin manager
+and point `neolit_dir` at this checkout:
+
+```lua
+{
+  "1suo/neolit.nvim",
+  opts = { neolit_dir = "/absolute/path/to/neolit" },
+  cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
+}
+```
+
+Run `:Neolit` from the target repository. Press `<CR>` on a task or
+requirement to open its Markdown source, on a planned file to open the file or
+its actual diff, and on a changed file/hunk to open a native diff against the
+configured comparison base. Press `x` on a task, requirement, file, or hunk
+to copy a bounded context packet; in a native diff, `<leader>nx` copies
+context for the current line or visual line selection. Paste the packet into
+your existing agent session yourself. Press `r` to refresh and `q` to close.
+
+Set `comparison_base` to another commit/ref when needed; it defaults to
+`HEAD`. The workspace is read-only. File hints are candidates, not proof of
+implementation, and TODO checkboxes are not verification evidence.
+
+See [the Neovim companion README](https://github.com/1suo/neolit.nvim) for
+configuration details and [the planning core reference](./src/planning/README.md)
+for the shared API.
 
 ## Editor integrations
 
