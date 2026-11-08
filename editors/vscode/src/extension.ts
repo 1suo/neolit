@@ -99,7 +99,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     item.contextValue = "hunk";
     item.iconPath = new vscode.ThemeIcon("diff");
     item.description = node.path;
-    item.command = { command: "neolit.openChangedFile", title: "Open changed file", arguments: [node] };
+    item.command = { command: "neolit.openHunkDiff", title: "Open native hunk diff", arguments: [node] };
     return item;
   }
   getChildren(node?: PlanNode): PlanNode[] {
