@@ -97,8 +97,11 @@ export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDi
     if (!target || target.split("/").includes("..") || path.isAbsolute(target)) throw new Error(`Unsafe patch path: ${target}`);
     let parent = path.dirname(target);
     while (parent !== ".") {
-      try { lstatSync(path.resolve(directory, parent)); }
-      catch (error) {
+      try {
+        const parentStat = lstatSync(path.resolve(directory, parent));
+        if (parentStat.isSymbolicLink()) throw new Error(`Patch path traverses a symlink directory: ${parent}`);
+        if (!parentStat.isDirectory()) throw new Error(`Patch parent is not a directory: ${parent}`);
+      } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") createdDirectories.add(parent);
         else throw error;
       }
