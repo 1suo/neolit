@@ -254,6 +254,7 @@ export async function loadPlanningWorkspace(
     tasks: resolved.tasks,
     changedFiles,
     associations,
+    hunkAssociations,
     verificationEvidence: options.verificationEvidence,
     baseCommit: base,
     diffIdentity,
