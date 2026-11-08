@@ -399,7 +399,21 @@ export class AugmentTuiController {
     this.directory = options.directory;
     this.branch = currentBranch(options.directory);
     this.runtime = options.runtime;
-    this.server = new AugmentServer({ runtime: options.runtime, applyPatches: (diffs) => applyPlannedDiffsTransaction(this.directory, diffs), verifyPatches: (diffs) => verifyAppliedDiffs(this.directory, diffs) });
+    this.server = new AugmentServer({
+      runtime: options.runtime,
+      applyPatches: (diffs) => {
+        const transaction = applyPlannedDiffsTransaction(this.directory, diffs);
+        this.repositoryWatcher?.rebaseline();
+        return {
+          paths: transaction.paths,
+          rollback: () => {
+            transaction.rollback();
+            this.repositoryWatcher?.rebaseline();
+          },
+        };
+      },
+      verifyPatches: (diffs) => verifyAppliedDiffs(this.directory, diffs),
+    });
     this.defaultLod = options.defaultLod ?? "file";
     const rounds = options.challengeRounds ?? Number(process.env.AUGMENT_CHALLENGE_ROUNDS);
     this.challengeRounds = Number.isInteger(rounds) && rounds >= 0 && rounds <= 2 ? rounds : undefined;
