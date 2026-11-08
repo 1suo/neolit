@@ -38,6 +38,7 @@ export type PlanningWorkspace = {
   git: {
     branch: string;
     head: string;
+    base: string;
     status: GitStatusEntry[];
     changedFiles: ChangedFile[];
     associations: TaskDiffAssociation[];
@@ -162,16 +163,24 @@ async function gitNoIndexDiff(root: string, file: string): Promise<string> {
 
 export async function loadPlanningWorkspace(
   directory: string,
-  options: { verificationEvidence?: VerificationEvidence[] } = {},
+  options: { verificationEvidence?: VerificationEvidence[]; comparisonBase?: string } = {},
 ): Promise<PlanningWorkspace> {
   const root = await realpath(directory);
-  const [branch, head, statusOutput] = await Promise.all([
+  const [branch, headOutput, statusOutput] = await Promise.all([
     git(root, ["branch", "--show-current"]),
     git(root, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
     git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
   ]);
-  const diff = head.trim()
-    ? await git(root, ["-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--"])
+  const head = headOutput.trim();
+  const requestedBase = options.comparisonBase?.trim() || "HEAD";
+  // Resolve user input to an immutable commit before using it in diff identity
+  // or displaying it. --end-of-options prevents a ref beginning with "-" from
+  // being interpreted as another rev-parse option.
+  const base = head
+    ? (await git(root, ["rev-parse", "--verify", "--end-of-options", `${requestedBase}^{commit}`])).trim()
+    : ""; 
+  const diff = base
+    ? await git(root, ["-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--find-renames", base, "--"])
     : "";
 
   const documents = await discoverDocuments(root);
@@ -211,7 +220,7 @@ export async function loadPlanningWorkspace(
 
   const associations = mapDiffToTasks(changedFiles, resolved.tasks);
   const diffIdentity = identifyDiff(JSON.stringify([
-    head.trim(),
+    base,
     diff,
     statusOutput,
     untrackedIdentities,
@@ -222,7 +231,7 @@ export async function loadPlanningWorkspace(
     changedFiles,
     associations,
     verificationEvidence: options.verificationEvidence,
-    baseCommit: head.trim(),
+    baseCommit: base,
     diffIdentity,
   });
 
@@ -236,7 +245,8 @@ export async function loadPlanningWorkspace(
     derived,
     git: {
       branch: branch.trim(),
-      head: head.trim(),
+      head,
+      base,
       status,
       changedFiles,
       associations,
