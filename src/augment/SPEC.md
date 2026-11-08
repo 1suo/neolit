@@ -16,18 +16,18 @@ A task has two modes: `change` and `explanation`. A change task uses candidate d
 4. A domain must be challenged before controller collapse.
 5. Every proposed candidate carries a 0–100 model confidence estimate. The estimate is presentation metadata only; it never eliminates or selects a candidate.
 6. If the challenge budget is exhausted after concrete omissions, the controller records `challengeExhausted`. This is not acceptance and not proof of coverage; it explicitly permits human collapse from the bounded domain while preserving the exhaustion record.
-6. Collapse selects one possible candidate, records the witness, and eliminates sibling candidates as superseded, not as forgotten prose.
-6. Refinement is legal only for a collapsed node.
-7. Child nodes must stay inside the parent path scope and collectively describe the parent's planned work.
-8. Candidate domains are local to one node. Refinement may create descendant work nodes, but it must not generate descendant candidate domains implicitly; a descendant receives candidates only when that node is explicitly crystallized.
-9. The filesystem tree projection must not display the touched paths of unchosen sibling candidates as though they were one plan. Before collapse, alternative paths remain alternative details; after collapse, only the selected candidate's paths project into the tree.
-10. A host may project the plan onto the complete repository file tree. Repository-only paths are visibly unchanged; planned, drafted, new, deleted, stale, and locked paths carry distinct state marks.
-11. A user may lock a repository file or directory for a task. Locked paths are controller authority: no candidate, refinement, or patch may modify a locked path or any descendant. Locks are task-local, inspectable, and reversible. Patch text is subject to the same authority as declared paths: a patch may touch only the file of its node (or, for a virtual node, paths the restriction plain allows).
-12. A planned patch belongs to one file/hunk node and one immutable basis revision. Its host lifecycle is `drafted`, `applied`, `verified`, or `failed`; legacy persisted drafts without a lifecycle are interpreted as `drafted`. `patch/apply` accepts a set of draft/failed diffs and invokes the host transactional applier; only after filesystem application succeeds does the reducer record `applied`. If durable task-state recording fails, the host transaction rolls the filesystem back. `patch/verify` invokes the host verifier and records either `verified` or `failed` with its diagnostic. Repairing/replacing a diff returns it to `drafted`.
-13. Real repository change marks the smallest overlapping planned subtree stale.
-14. A stale tree cannot be applied or represented as ready. Staleness ends only through an explicit refresh that returns each stale node to its last live lifecycle point; a refresh may re-anchor the task to a new basis revision while every existing diff keeps the basis revision it was drafted against.
-15. User prompts become typed constraints attached to a node or subtree; they are not conversation history.
-16. Every omission of a rejected candidate or path must remain inspectable.
+7. Collapse selects one possible candidate, records the witness, and eliminates sibling candidates as superseded, not as forgotten prose.
+8. Refinement is legal only for a collapsed node.
+9. Child nodes must stay inside the parent path scope and collectively describe the parent's planned work.
+10. Candidate domains are local to one node. Refinement may create descendant work nodes, but it must not generate descendant candidate domains implicitly; a descendant receives candidates only when that node is explicitly crystallized.
+11. The filesystem tree projection must not display the touched paths of unchosen sibling candidates as though they were one plan. Before collapse, alternative paths remain alternative details; after collapse, only the selected candidate's paths project into the tree.
+12. A host may project the plan onto the complete repository file tree. Repository-only paths are visibly unchanged; planned, drafted, new, deleted, stale, and locked paths carry distinct state marks.
+13. A user may lock a repository file or directory for a task. Locked paths are controller authority: no candidate, refinement, or patch may modify a locked path or any descendant. Locks are task-local, inspectable, and reversible. Patch text is subject to the same authority as declared paths: a patch may touch only the file of its node (or, for a virtual node, paths the restriction plain allows).
+14. A planned patch belongs to one file/hunk node and one immutable basis revision. Its host lifecycle is `drafted`, `applied`, `verified`, or `failed`; legacy persisted drafts without a lifecycle are interpreted as `drafted`. `patch/apply` accepts a set of draft/failed diffs and invokes the host transactional applier; only after filesystem application succeeds does the reducer record `applied`. If durable task-state recording fails, the host transaction rolls the filesystem back. `patch/verify` invokes the host verifier and records either `verified` or `failed` with its diagnostic. Repairing/replacing a diff returns it to `drafted`.
+15. Real repository change marks the smallest overlapping planned subtree stale.
+16. A stale tree cannot be applied or represented as ready. Staleness ends only through an explicit refresh that returns each stale node to its last live lifecycle point; a refresh may re-anchor the task to a new basis revision while every existing diff keeps the basis revision it was drafted against.
+17. User prompts become typed constraints attached to a node or subtree; they are not conversation history.
+18. Every omission of a rejected candidate or path must remain inspectable.
 
 ## Model operation contract
 
