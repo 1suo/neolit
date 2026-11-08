@@ -50,9 +50,11 @@ Ordered by user-visible impact; the owning record tracks each gap.
    that does not make the daemon's in-memory store durable
    ([TODO-augment.md](./TODO-augment.md)). Resumable planning across
    independent daemon instances and machines is still table stakes.
-2. **Verification-gated apply.** Apply/verify lifecycle is absent from core
-   state and there is no `patch/apply` over JSON-RPC with rollback; the TUI
-   applies host-side via a preflighted atomic `git apply` (`src/tui/apply.ts`),
+2. **Verification-gated apply.** The core now records `drafted` → `applied` →
+   `verified`/`failed`; JSON-RPC and MCP expose host-injected transactional
+   `patch/apply` and `patch/verify`, including filesystem rollback when apply
+   or durable state recording fails. The built-in verifier checks whitespace
+   and reverse-applies the full patch series in a disposable worktree.
    and check or test outcomes never gate plan completion.
 3. **Repository awareness.** The standalone TUI now polls tracked and non-ignored
    untracked paths plus HEAD, and turns external edits, creates, deletes, and
