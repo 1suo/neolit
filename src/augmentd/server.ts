@@ -345,6 +345,7 @@ export class AugmentServer {
           nodeId: typeof input.nodeId === "string" ? input.nodeId : undefined,
           path: typeof input.path === "string" ? input.path : undefined,
           text: string(input.text, "text"),
+          source: input.source === "repository" || input.source === "model" ? input.source : "user",
         });
         this.store(updated);
         return updated;
