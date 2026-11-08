@@ -162,18 +162,28 @@ export function verifyAppliedDiffs(directory: string, diffs: PlannedDiff[]): { p
   const patches = diffs.filter((diff) => diff.patch.trim().length > 0);
   if (!patches.length) return { passed: false, summary: "No applied patches were supplied for verification." };
   const staging = mkdtempSync(path.join(tmpdir(), "augment-verify-"));
+  const worktree = path.join(staging, "wt");
   try {
     const paths = [...new Set(patches.flatMap((diff) => patchPaths(diff.patch)))];
     git(directory, ["diff", "--check", "--", ...paths]);
-    for (const [index, diff] of patches.entries()) {
+    git(directory, ["worktree", "add", "--detach", "--quiet", worktree]);
+    mirrorPatchedPaths(directory, worktree, patches.map((diff) => diff.patch));
+    const files = patches.map((diff, index) => {
       const file = path.join(staging, `patch-${index}.diff`);
       writeFileSync(file, diff.patch.endsWith("\\n") ? diff.patch : `${diff.patch}\\n`, "utf8");
-      git(directory, ["apply", "--reverse", "--check", "--", file]);
+      return file;
+    });
+    // The original patches were applied in order; undo them in reverse order
+    // against a mirror of the current worktree to validate the whole series.
+    for (const file of [...files].reverse()) {
+      git(worktree, ["apply", "--reverse", "--check", "--whitespace=nowarn", file]);
+      git(worktree, ["apply", "--reverse", "--whitespace=nowarn", file]);
     }
-    return { passed: true, summary: `Verified ${patches.length} applied patch(es): reverse-applicable and clean under git diff --check.` };
+    return { passed: true, summary: `Verified ${patches.length} applied patch(es): the full patch series reverses cleanly and passes git diff --check.` };
   } catch (error) {
     return { passed: false, summary: error instanceof Error ? error.message : String(error) };
   } finally {
+    try { git(directory, ["worktree", "remove", "--force", worktree]); } catch { /* no worktree was created */ }
     rmSync(staging, { recursive: true, force: true });
   }
 }
