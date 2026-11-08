@@ -54,9 +54,11 @@ Ordered by user-visible impact; the owning record tracks each gap.
    state and there is no `patch/apply` over JSON-RPC with rollback; the TUI
    applies host-side via a preflighted atomic `git apply` (`src/tui/apply.ts`),
    and check or test outcomes never gate plan completion.
-3. **Repository awareness.** No watcher turns path or basis changes into
-   `node/stale` operations (staleness is marked manually), and there is no
-   path-aware filesystem indexing to prioritize context.
+3. **Repository awareness.** The standalone TUI now polls tracked and non-ignored
+   untracked paths plus HEAD, and turns external edits, creates, deletes, and
+   basis movement into `node/stale` operations. Changes queue behind active
+   controller work; Neolit-owned apply/commit operations re-baseline the watcher.
+   Path-aware filesystem indexing to prioritize context remains open.
 4. **Granular multi-client sync.** Change notifications carry only the task
    id and revision, so multi-client tree views must refetch; finer-grained
    notifications remain open, and coordination stops at per-task
