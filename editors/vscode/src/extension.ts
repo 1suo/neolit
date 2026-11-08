@@ -153,7 +153,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     }));
     const hunks: HunkNode[] = (workspace.derived.tasks[node.key]?.hunkReviews ?? []).map((review) => ({
       kind: "hunk", path: review.path, hunkIndex: review.hunkIndex,
-      label: `${review.state === "documentation" ? "DOC" : review.state === "unplanned" ? "?" : "~"} ${review.path} · hunk ${review.hunkIndex + 1}`,
+      label: `${review.state === "attributed" ? "DOC↳" : review.state === "documentation" ? "DOC" : review.state === "unplanned" ? "?" : "~"} ${review.path} · hunk ${review.hunkIndex + 1}`,
     }));
     return [...files, ...requirements, ...hunks];
   }
