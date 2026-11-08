@@ -593,6 +593,7 @@ export function mapDiffHunksToTasks(
         }
       }
       if (spec) {
+        const referencePath = spec.referencePath ?? spec.path;
         const matchedRequirements = spec.requirements.filter((requirement) => hunkAddsLineInRange(hunk, requirement.range));
         const matchedCriteria = spec.acceptanceCriteria.filter((criterion) => hunkAddsLineInRange(hunk, criterion.range));
         const criterionRequirementIds = matchedCriteria.flatMap((criterion) => {
@@ -604,16 +605,16 @@ export function mapDiffHunksToTasks(
           // A directly referenced AC without R-IDs joins to a task only when
           // that task has exactly one requirement in this SPEC document.
           const directTasks = tasks.filter((task) =>
-            task.resolvedAcceptanceCriteria.some((item) => item.specPath === spec.path && item.id === criterion.id),
+            task.resolvedAcceptanceCriteria.some((item) => item.specPath === referencePath && item.id === criterion.id),
           );
           return directTasks.flatMap((task) => {
-            const taskRequirements = task.resolvedRequirements.filter((item) => item.specPath === spec.path);
+            const taskRequirements = task.resolvedRequirements.filter((item) => item.specPath === referencePath);
             return taskRequirements.length === 1 ? [taskRequirements[0]!.id] : [];
           });
         });
         const requirementRefs = [...new Set([
-          ...matchedRequirements.map((requirement) => `${spec.path}#${requirement.id}`),
-          ...criterionRequirementIds.map((id) => `${spec.path}#${id}`),
+          ...matchedRequirements.map((requirement) => `${referencePath}#${requirement.id}`),
+          ...criterionRequirementIds.map((id) => `${referencePath}#${id}`),
         ])];
         if (requirementRefs.length > 0) {
           const matchingTasks = tasks.filter((task) => task.resolvedRequirements.some((requirement) =>
