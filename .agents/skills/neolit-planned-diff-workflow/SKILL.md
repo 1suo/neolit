@@ -20,8 +20,8 @@ Read the root `README.md`, then the smallest relevant documents:
   path index, overlays, agent sessions, and keymap.
 - `TODO-augment.md` and `SOTA-GAPS.md` for remaining implementation work
   and explicitly non-contract comparison gaps.
-- `neolit.nvim/README.md` and its Lua/host bridge when changing the Neovim
-  surface.
+- The Neovim plugin repository's root README and its Lua/host bridge when
+  changing the Neovim surface.
 
 README means shipped behavior; SPEC means normative behavior; TODO records
 implementation gaps. Never make those documents agree by hiding a real gap.
