@@ -249,7 +249,9 @@ export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view
   const marked = entry.path !== "." && (task
     ? task.lockedPaths.some((mark) => entry.path === mark || entry.path.startsWith(`${mark}/`))
     : pendingMarks.includes(entry.path));
-  const applied = diffs.filter((diff) => appliedDiffIds.includes(diff.id));
+  const applied = diffs.filter((diff) => appliedDiffIds.includes(diff.id) || ["applied", "verified", "failed"].includes(diff.lifecycle ?? ""));
+  const verified = diffs.filter((diff) => diff.lifecycle === "verified");
+  const verificationFailed = diffs.filter((diff) => diff.lifecycle === "failed");
 
   if (live?.active) return { indicator: live.spinner ?? "⠋", suffix: "", color: theme.warning };
   if (live?.failed) return { indicator: "×", suffix: "", color: theme.error };
@@ -259,7 +261,9 @@ export function entryState(task: PlanTask | undefined, row: PlannedTreeRow, view
     return { indicator: "?", suffix: explanations.length > 1 ? `${explanations.length}` : "", color: primary ? theme.warning : theme.accent };
   }
   if (blocked) return { indicator: "!", suffix: "", color: theme.error };
-  if (applied.length) return { indicator: "✓", suffix: applied.length < diffs.length ? `${applied.length}/${diffs.length}` : changeSuffix, color: theme.success };
+  if (verificationFailed.length) return { indicator: "!", suffix: "verify failed", color: theme.error };
+  if (verified.length === diffs.length && diffs.length) return { indicator: "✓", suffix: "verified", color: theme.success };
+  if (applied.length) return { indicator: "✓", suffix: applied.length < diffs.length ? `${applied.length}/${diffs.length} applied` : changeSuffix || "applied", color: theme.success };
   // Directory and root rows answer "is everything below crystallized and
   // developed?" — strictly additively: an open choice, drafted patches, and
   // their line counts keep their original rich rendering, and the
@@ -446,8 +450,17 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
   for (const note of notes) add(`  ${note.text}`, theme.warning);
 
   if (diffs.length) {
-    const appliedCount = diffs.filter((diff) => appliedDiffIds.includes(diff.id)).length;
-    const appliedSuffix = appliedCount === diffs.length ? " ✓" : appliedCount ? ` · ${appliedCount}/${diffs.length} ✓` : "";
+    const isApplied = (diff: PlannedDiff) => appliedDiffIds.includes(diff.id) || ["applied", "verified", "failed"].includes(diff.lifecycle ?? "");
+    const lifecycleLabel = (diff: PlannedDiff) => diff.lifecycle === "verified" ? " ✓ verified"
+      : diff.lifecycle === "failed" ? " ! verification failed"
+      : isApplied(diff) ? " ✓ applied" : "";
+    const appliedCount = diffs.filter(isApplied).length;
+    const verifiedCount = diffs.filter((diff) => diff.lifecycle === "verified").length;
+    const failedCount = diffs.filter((diff) => diff.lifecycle === "failed").length;
+    const appliedSuffix = failedCount ? ` · ${failedCount} verification failed`
+      : verifiedCount === diffs.length ? " ✓ verified"
+      : appliedCount === diffs.length ? " ✓ applied"
+      : appliedCount ? ` · ${appliedCount}/${diffs.length} applied` : "";
     // The body view is the default: the file's latest patch expands over
     // its whole body; rawDiffView asks for the classic unified patch, and a
     // patch that cannot expand (drifted basis) falls back to raw too.
@@ -464,7 +477,7 @@ export function detailLines(task: PlanTask | undefined, row: PlannedTreeRow | un
       label("CHANGES");
       add(changeSummary(diffs) + appliedSuffix, state.color, true);
       for (const diff of diffs.slice(0, 3)) {
-        add(`  ${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${appliedDiffIds.includes(diff.id) ? " ✓" : ""}`, diff.kind === "delete" ? theme.error : theme.success);
+        add(`  ${diffIndicator(diff.kind)} ${diff.path || diff.id} · ${diffLabel(diff.kind)}${lifecycleLabel(diff)}`, diff.kind === "delete" ? theme.error : theme.success);
         if (descriptionFor(diff)) add(`  ${descriptionFor(diff)}`, theme.text);
         const patchLines = diff.patch.split(/\r?\n/);
         for (const line of patchLines.slice(0, FOLDER_PATCH_PREVIEW)) add(`  ${line}`, diffColor(line));
