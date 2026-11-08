@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   buildDiffQuestionPacket,
   createDiffAnchor,
@@ -14,6 +16,28 @@ type RequirementNode = { kind: "requirement"; key: string; specPath: string; id:
 type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; label: string };
 type GroupNode = { kind: "group"; label: string };
 type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode;
+const execFileAsync = promisify(execFile);
+const BASE_SCHEME = "neolit-base";
+
+class BaseDocumentProvider implements vscode.TextDocumentContentProvider {
+  constructor(private readonly root: string, private readonly getWorkspace: () => PlanningWorkspace | undefined) {}
+  async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+    const relative = uri.path.replace(/^\\//u, "");
+    const workspace = this.getWorkspace();
+    if (!workspace || !relative || relative.split("/").some((part) => part === "..")) return "";
+    const file = workspace.git.changedFiles.find((item) => item.path === relative);
+    const sourcePath = file?.previousPath ?? relative;
+    try {
+      const { stdout } = await execFileAsync("git", ["show", `${workspace.git.base}:${sourcePath}`], {
+        cwd: this.root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+      });
+      return stdout;
+    } catch {
+      // Added/untracked files have no base-side content.
+      return "";
+    }
+  }
+}
 
 class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
   private readonly emitter = new vscode.EventEmitter<PlanNode | undefined>();
@@ -115,8 +139,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const root = folder.uri.fsPath;
   const tree = new PlanningTree();
   const decorations = new PlanningDecorationProvider();
+  const baseDocuments = new BaseDocumentProvider(root, () => current);
   const view = vscode.window.createTreeView("neolit.plan", { treeDataProvider: tree, showCollapseAll: true });
-  context.subscriptions.push(view, tree, decorations, vscode.window.registerFileDecorationProvider(decorations));
+  context.subscriptions.push(view, tree, decorations, vscode.window.registerFileDecorationProvider(decorations), vscode.workspace.registerTextDocumentContentProvider(BASE_SCHEME, baseDocuments));
   let current: PlanningWorkspace | undefined;
 
   const refresh = async () => {
@@ -142,6 +167,15 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!node || node.kind !== "hunk") return;
       const uri = vscode.Uri.joinPath(folder.uri, node.path);
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
+    }),
+    vscode.commands.registerCommand("neolit.openHunkDiff", async (node?: HunkNode) => {
+      if (!node || node.kind !== "hunk" || !current) return;
+      const file = current.git.changedFiles.find((item) => item.path === node.path);
+      const hunk = file?.hunks[node.hunkIndex];
+      if (!file || !hunk) return;
+      const working = vscode.Uri.joinPath(folder.uri, node.path);
+      const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${node.path}`, query: current.git.base });
+      await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${node.path} · ${current.git.base.slice(0, 8)}`);
     }),
     vscode.commands.registerCommand("neolit.copyHunkContext", async (node?: HunkNode) => {
       if (!node || node.kind !== "hunk" || !current) return;
