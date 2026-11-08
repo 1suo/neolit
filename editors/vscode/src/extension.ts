@@ -216,12 +216,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("neolit.openPlanFile", async (node?: PlanFileNode) => {
       if (!node || node.kind !== "file" || !current) return;
-      const changed = current.git.changedFiles.find((item) => item.path === node.path);
+      const changed = current.git.changedFiles.find((item) => item.path === node.path || item.previousPath === node.path);
       if (changed) {
-        const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${node.path}`, query: current.git.base });
-        const working = workspaceFileUri(folder, node.path);
+        const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${changed.path}`, query: current.git.base });
+        const working = workspaceFileUri(folder, changed.path);
         if (!working) return;
-        await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${node.path} · ${current.git.base.slice(0, 8)}`);
+        await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${changed.path} · ${current.git.base.slice(0, 8)}`);
         return;
       }
       const uri = workspaceFileUri(folder, node.path);
