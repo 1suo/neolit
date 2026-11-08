@@ -404,12 +404,12 @@ export class AugmentTuiController {
       runtime: options.runtime,
       applyPatches: (diffs) => {
         const transaction = applyPlannedDiffsTransaction(this.directory, diffs);
-        this.repositoryWatcher?.rebaseline();
+        this.repositoryWatcher?.rebaseline(transaction.paths);
         return {
           paths: transaction.paths,
           rollback: () => {
             transaction.rollback();
-            this.repositoryWatcher?.rebaseline();
+            this.repositoryWatcher?.rebaseline(transaction.paths);
           },
         };
       },
