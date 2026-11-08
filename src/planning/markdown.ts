@@ -316,6 +316,68 @@ export function resolvePlanningDocuments(input: {
   return { tasks, diagnostics };
 }
 
+function readGitPathToken(value: string, start: number): { path: string; end: number } | undefined {
+  if (value[start] === '"') {
+    let pathValue = "";
+    let index = start + 1;
+    while (index < value.length) {
+      const character = value[index]!;
+      if (character === '"') return { path: pathValue, end: index + 1 };
+      if (character !== "\\") {
+        pathValue += character;
+        index += 1;
+        continue;
+      }
+      index += 1;
+      if (index >= value.length) return undefined;
+      const escaped = value[index]!;
+      if (/[0-7]/u.test(escaped)) {
+        let octal = escaped;
+        index += 1;
+        while (index < value.length && octal.length < 3 && /[0-7]/u.test(value[index]!)) {
+          octal += value[index]!;
+          index += 1;
+        }
+        pathValue += String.fromCharCode(Number.parseInt(octal, 8));
+        continue;
+      }
+      const escapes: Record<string, string> = {
+        a: "\\a", b: "\\b", f: "\\f", n: "\\n", r: "\\r", t: "\\t", v: "\\v",
+        "\\\\": "\\\\", '"': '"',
+      };
+      pathValue += escapes[escaped] ?? escaped;
+      index += 1;
+    }
+    return undefined;
+  }
+
+  let end = start;
+  while (end < value.length && value[end] !== " ") end += 1;
+  return end === start ? undefined : { path: value.slice(start, end), end };
+}
+
+function gitPathFromHeader(line: string): { previousPath: string; path: string } | undefined {
+  const prefix = "diff --git ";
+  if (!line.startsWith(prefix)) return undefined;
+  const value = line.slice(prefix.length);
+  const first = readGitPathToken(value, 0);
+  if (!first || value[first.end] !== " ") return undefined;
+  let secondStart = first.end;
+  while (value[secondStart] === " ") secondStart += 1;
+  const second = readGitPathToken(value, secondStart);
+  if (!second || first.path.length < 2 || second.path.length < 2) return undefined;
+  return {
+    previousPath: normalizeRepoPath(first.path.slice(2)),
+    path: normalizeRepoPath(second.path.slice(2)),
+  };
+}
+
+function gitPathAfterPrefix(line: string, prefix: string): string | undefined {
+  if (!line.startsWith(prefix)) return undefined;
+  const parsed = readGitPathToken(line.slice(prefix.length), 0);
+  return parsed?.path ? normalizeRepoPath(parsed.path) : undefined;
+}
+
 export function parseUnifiedDiff(diff: string): ChangedFile[] {
   const files: ChangedFile[] = [];
   let current: ChangedFile | undefined;
@@ -335,9 +397,14 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
   for (const line of diff.split(/\r?\n/u)) {
     if (line.startsWith("diff --git ")) {
       finish();
-      const match = /^diff --git a\/(.+) b\/(.+)$/u.exec(line);
-      if (match) {
-        current = { path: normalizeRepoPath(match[2]!), status: "modified", hunks: [] };
+      const paths = gitPathFromHeader(line);
+      if (paths) {
+        current = {
+          path: paths.path,
+          ...(paths.previousPath !== paths.path ? { previousPath: paths.previousPath } : {}),
+          status: "modified",
+          hunks: [],
+        };
         currentLines.push(line);
       }
       continue;
@@ -347,10 +414,10 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
     if (line.startsWith("new file mode ")) current.status = "added";
     else if (line.startsWith("deleted file mode ")) current.status = "deleted";
     else if (line.startsWith("rename from ")) {
-      current.previousPath = normalizeRepoPath(line.slice("rename from ".length));
+      current.previousPath = gitPathAfterPrefix(line, "rename from ") ?? current.previousPath;
       current.status = "renamed";
     } else if (line.startsWith("rename to ")) {
-      current.path = normalizeRepoPath(line.slice("rename to ".length));
+      current.path = gitPathAfterPrefix(line, "rename to ") ?? current.path;
       current.status = "renamed";
     } else if (line.startsWith("--- /dev/null")) current.status = "added";
     else if (line.startsWith("+++ /dev/null")) current.status = "deleted";
