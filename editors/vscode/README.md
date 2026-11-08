@@ -17,6 +17,7 @@ Open the repository in VS Code and launch the extension from an Extension Develo
 
 - Task rows show the shared derived state and open the source TODO task.
 - Expanding a task shows its linked SPEC requirements and its candidate hunk reviews.
+- A separate **Git changes** group shows every parsed hunk, including unplanned and documentation changes that have no task candidate.
 - Hunk rows distinguish unresolved candidates (`~`), documentation changes (`DOC`), and unplanned changes (`?`). These are review annotations, not proof of implementation.
 - Opening a hunk navigates to the real changed file in the native editor.
 - **Copy Hunk Context** uses the shared stale-checked context packet builder and copies the result for pasting into the user's existing agent session.
