@@ -1254,8 +1254,6 @@ export class AugmentTuiController {
       });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.syncAppliedDiffIds(this.task);
-      this.repositoryWatcher?.rebaseline();
-      for (const diff of diffs) this.appliedDiffIds.add(diff.id);
       this.repository = repositoryTree(this.directory);
       this.refresh();
       this.message = `Applied ${diffs.length} drafted ${diffs.length === 1 ? "change" : "changes"} to the working tree. Nothing is committed.`;
