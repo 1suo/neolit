@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { patchPaths } from "../augment/state.js";
@@ -74,23 +74,87 @@ function mirrorPatchedPaths(directory: string, worktree: string, patches: string
   }
 }
 
-export function applyPlannedDiffs(directory: string, diffs: PlannedDiff[]): string[] {
+export interface PatchApplyTransaction {
+  paths: string[];
+  rollback(): void;
+}
+
+type FileSnapshot =
+  | { kind: "missing" }
+  | { kind: "file"; bytes: Buffer; mode: number }
+  | { kind: "symlink"; target: string };
+
+/** Apply a group of diffs with rollback if git or subsequent core persistence fails. */
+export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDiff[]): PatchApplyTransaction {
   const patches = diffs.filter((diff) => diff.patch.trim().length > 0);
   if (!patches.length) throw new Error("The selected path has no drafted patch content. Press D to draft it first.");
   const failure = preflightPatches(directory, patches.map((diff) => diff.patch));
   if (failure) throw new Error(failure);
+  const paths = [...new Set(patches.flatMap((diff) => patchPaths(diff.patch)))].sort();
+  const snapshots = new Map<string, FileSnapshot>();
+  for (const target of paths) {
+    if (!target || target.includes("..") || path.isAbsolute(target)) throw new Error(`Unsafe patch path: ${target}`);
+    const absolute = path.resolve(directory, target);
+    const relative = path.relative(path.resolve(directory), absolute);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`Patch path escapes repository: ${target}`);
+    try {
+      const stat = lstatSync(absolute);
+      if (stat.isSymbolicLink()) snapshots.set(target, { kind: "symlink", target: readlinkSync(absolute) });
+      else if (stat.isFile()) snapshots.set(target, { kind: "file", bytes: readFileSync(absolute), mode: stat.mode & 0o777 });
+      else throw new Error(`Patch target is not a regular file: ${target}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") snapshots.set(target, { kind: "missing" });
+      else throw error;
+    }
+  }
+
+  let rolledBack = false;
+  const rollback = (): void => {
+    if (rolledBack) return;
+    const failures: string[] = [];
+    for (const [target, snapshot] of [...snapshots].reverse()) {
+      const absolute = path.resolve(directory, target);
+      try {
+        rmSync(absolute, { recursive: true, force: true });
+        if (snapshot.kind === "file") {
+          mkdirSync(path.dirname(absolute), { recursive: true });
+          writeFileSync(absolute, snapshot.bytes, { mode: snapshot.mode });
+          chmodSync(absolute, snapshot.mode);
+        } else if (snapshot.kind === "symlink") {
+          mkdirSync(path.dirname(absolute), { recursive: true });
+          symlinkSync(snapshot.target, absolute);
+        }
+      } catch (error) {
+        failures.push(`${target}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    rolledBack = true;
+    if (failures.length) throw new Error(failures.join("; "));
+  };
+
   const staging = mkdtempSync(path.join(tmpdir(), "augment-apply-"));
   try {
     const files = patches.map((diff, index) => {
       const file = path.join(staging, `patch-${index}.diff`);
-      writeFileSync(file, diff.patch.endsWith("\n") ? diff.patch : `${diff.patch}\n`, "utf8");
+      writeFileSync(file, diff.patch.endsWith("\\n") ? diff.patch : `${diff.patch}\\n`, "utf8");
       return file;
     });
-    for (const file of files) git(directory, ["apply", "--whitespace=nowarn", file]);
-    return patches.map((diff) => diff.path || diff.id);
+    try {
+      for (const file of files) git(directory, ["apply", "--whitespace=nowarn", file]);
+    } catch (error) {
+      try { rollback(); } catch (rollbackError) {
+        throw new Error(`Patch apply failed: ${error instanceof Error ? error.message : String(error)}; rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
+      }
+      throw error;
+    }
+    return { paths: patches.map((diff) => diff.path || diff.id), rollback };
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
+}
+
+export function applyPlannedDiffs(directory: string, diffs: PlannedDiff[]): string[] {
+  return applyPlannedDiffsTransaction(directory, diffs).paths;
 }
 
 /**
