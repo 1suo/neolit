@@ -108,8 +108,16 @@ function linkedMarkdown(content: string): string[] {
   return [...new Set(result)];
 }
 
+function isArchiveDocument(file: string): boolean {
+  return file.toLowerCase().endsWith(".archive.md");
+}
+
+function archiveSibling(file: string): string {
+  return file.replace(/\\.md$/iu, ".archive.md");
+}
+
 function isPlanningDocument(file: string, kind: "SPEC" | "TODO"): boolean {
-  const name = path.posix.basename(file).toUpperCase();
+  const name = path.posix.basename(file).toUpperCase().replace(/\\.ARCHIVE\\.MD$/u, ".MD");
   return kind === "SPEC"
     ? name === "SPEC.MD" || name.endsWith("-SPEC.MD")
     : name === "TODO.MD" || name.startsWith("TODO-") && name.endsWith(".MD");
@@ -141,8 +149,20 @@ async function discoverDocuments(root: string): Promise<{ readmes: string[]; spe
         queue.push(resolved);
       } else if (isPlanningDocument(resolved, "SPEC")) {
         specs.add(resolved);
+        if (!isArchiveDocument(resolved)) {
+          const archive = repoPath(root, archiveSibling(resolved));
+          if (archive) {
+            try { await readRepoFile(root, archive); specs.add(archive); } catch { /* optional archive */ }
+          }
+        }
       } else if (isPlanningDocument(resolved, "TODO")) {
         todos.add(resolved);
+        if (!isArchiveDocument(resolved)) {
+          const archive = repoPath(root, archiveSibling(resolved));
+          if (archive) {
+            try { await readRepoFile(root, archive); todos.add(archive); } catch { /* optional archive */ }
+          }
+        }
       }
     }
   }
@@ -156,7 +176,10 @@ async function readDocuments(root: string, files: string[], kind: "SPEC" | "TODO
     content: await readRepoFile(root, file),
   })));
   return kind === "SPEC"
-    ? contents.map(({ file, content }) => parseSpecDocument(file, content))
+    ? contents.map(({ file, content }) => ({
+        ...parseSpecDocument(file, content),
+        ...(isArchiveDocument(file) ? { referencePath: file.replace(/\\.archive\\.md$/iu, ".md") } : {}),
+      }))
     : contents.map(({ file, content }) => parseTodoDocument(file, content));
 }
 
