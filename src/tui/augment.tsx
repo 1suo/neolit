@@ -297,6 +297,7 @@ export function AugmentTui(props: {
     else if (command === "n") beginInput("objective");
     else if (command === "d") run(props.controller.develop());
     else if (command === "a") run(props.controller.applySelected());
+    else if (command === "v") run(props.controller.verifySelected());
     else if (command === "c") run(props.controller.commitApplied());
     else if (command === "l") run(props.controller.toggleRestriction("lock"));
     else if (command === "w") run(props.controller.toggleRestriction("allow"));
