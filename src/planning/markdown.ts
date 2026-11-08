@@ -515,7 +515,7 @@ function hunkAddsLineInRange(hunk: DiffHunk, range: SourceRange): boolean {
 
 /**
  * File hints are candidates, never implementation proof. Positive attribution
- * is limited to documentation: the hunk's new-side lines overlap an exact
+ * is limited to documentation: the hunk's added source-line coordinates overlap an exact
  * parsed TODO task or SPEC requirement source range. Source-code hunks remain
  * unresolved until stronger deterministic evidence is available.
  */
