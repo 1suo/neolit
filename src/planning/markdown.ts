@@ -493,6 +493,7 @@ export type TaskHunkAssociation = {
   granularity: "hunk";
   candidateTaskKeys: string[];
   candidateRequirementIds: string[];
+  candidateRequirementRefs: string[];
   state: "unplanned" | "unresolved" | "documentation";
   reason: "no-task-path-match" | "file-hint-is-not-hunk-evidence" | "documentation-change";
 };
@@ -519,6 +520,7 @@ export function mapDiffHunksToTasks(
       granularity: "hunk" as const,
       candidateTaskKeys: matching.map((task) => task.key),
       candidateRequirementIds: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => requirement.id)))],
+      candidateRequirementRefs: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => `${requirement.specPath}#${requirement.id}`)))],
       state: documentation ? "documentation" as const : matching.length === 0 ? "unplanned" as const : "unresolved" as const,
       reason: documentation ? "documentation-change" as const : matching.length === 0 ? "no-task-path-match" as const : "file-hint-is-not-hunk-evidence" as const,
     }));
