@@ -139,9 +139,10 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - SPEC: `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-54`
   - File: `package.json`, `src/planning/index.ts`, `src/planning/README.md`
   - Description: Added the `neolit/planning` export and a planning-only public barrel, included the planning package files in publication, and documented the host-neutral API. New adapters can consume the deterministic core without importing the legacy kernel/TUI surface.
-- [ ] Retire legacy package exports/CLI commands and complete the Neovim host-contract migration
+- [x] Retire legacy package exports/CLI commands and complete the Neovim host-contract migration
   - SPEC: `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-59`, `REWRITE-SPEC.md#R-73`
-  - Description: Core package-root exports and the `augment`/`augmentd` binaries are retired. Remaining work is to migrate the Neovim plugin's default command, packaging, and host contract from the legacy controller to the Git-native companion; do not remove compatibility code until that migration is complete.
+  - File: `src/index.ts`, `package.json`, `package-lock.json`, `1suo/neolit.nvim/lua/neolit/init.lua`, `1suo/neolit.nvim/lua/neolit/planning.lua`, `1suo/neolit.nvim/README.md`
+  - Description: The package root now exposes only the planning API; legacy CLI binaries and runtime dependencies are removed. The Neovim plugin now opens the Git-native workspace from both `:Neolit` and `:NeolitPlan`, and its former JSON-RPC/TUI host, configuration, and tests are retired. The plugin keeps only the shared-core planning view, local config, and its planning fixture. Host execution/packaging validation remains open in the paired Phase 5 validation task.
 - [x] Preserve repository documents and isolate legacy task handling
   - SPEC: `REWRITE-SPEC.md#R-71`, `REWRITE-SPEC.md#R-72`
   - File: `src/planning/workspace.ts`, `src/planning/README.md`, `1suo/neolit.nvim/lua/neolit/planning.lua`
