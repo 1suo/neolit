@@ -75,7 +75,7 @@
         },
         {
           "command": "neolit.openChangedFile",
-          "when": "view == neolit.plan && viewItem == hunk",
+          "when": "view == neolit.plan && (viewItem == hunk || viewItem == changedFile)",
           "group": "inline"
         },
         {
