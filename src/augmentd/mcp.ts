@@ -599,10 +599,11 @@ export class McpAugmentServer {
     if (!Array.isArray(diffIds) || !diffIds.length || diffIds.some((id) => typeof id !== "string" || !id.trim())) {
       throw new ProtocolError(-32602, "diffIds must be a non-empty array of diff ids");
     }
-    const updated = await this.native("patch/apply", { ...base, diffIds: [...new Set(diffIds)] }) as PlanTask;
+    const uniqueDiffIds = [...new Set(diffIds as string[])];
+    const updated = await this.native("patch/apply", { ...base, diffIds: uniqueDiffIds }) as PlanTask;
     return {
-      text: `Applied ${diffIds.length} diff(s) to the repository (revision ${updated.revision}). Verify with verify_patches.`,
-      structured: { taskId: updated.id, revision: updated.revision, diffIds, paths: [...new Set(diffIds.map((id) => updated.diffs[String(id)]?.path).filter(Boolean))], lifecycle: "applied" },
+      text: `Applied ${uniqueDiffIds.length} diff(s) to the repository (revision ${updated.revision}). Verify with verify_patches.`,
+      structured: { taskId: updated.id, revision: updated.revision, diffIds: uniqueDiffIds, paths: [...new Set(uniqueDiffIds.map((id) => updated.diffs[id]?.path).filter(Boolean))], lifecycle: "applied" },
     };
   }
 
@@ -612,9 +613,10 @@ export class McpAugmentServer {
     if (!Array.isArray(diffIds) || !diffIds.length || diffIds.some((id) => typeof id !== "string" || !id.trim())) {
       throw new ProtocolError(-32602, "diffIds must be a non-empty array of diff ids");
     }
-    const updated = await this.native("patch/verify", { ...base, diffIds: [...new Set(diffIds)] }) as PlanTask;
-    const results = [...new Set(diffIds)].map((id) => updated.diffs[String(id)]).filter(Boolean);
-    const passed = results.length === diffIds.length && results.every((diff) => diff!.lifecycle === "verified");
+    const uniqueDiffIds = [...new Set(diffIds as string[])];
+    const updated = await this.native("patch/verify", { ...base, diffIds: uniqueDiffIds }) as PlanTask;
+    const results = uniqueDiffIds.map((id) => updated.diffs[id]).filter(Boolean);
+    const passed = results.length === uniqueDiffIds.length && results.every((diff) => diff!.lifecycle === "verified");
     const summary = results.map((diff) => diff!.verification).filter(Boolean).join("; ");
     return {
       text: passed ? `Host verification passed: ${summary}` : `Host verification failed: ${summary}`,
