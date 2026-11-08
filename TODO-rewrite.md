@@ -132,6 +132,11 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
   - Description: Replaced the floating `K` details window with on-demand tree expansion. Task details expose descriptions, linked requirements, acceptance criteria, file hints, derived state explanations, changed paths and hunk-review reasons. Requirement details expose reverse-linked tasks, acceptance-criterion coverage and related hunks. Related rows cross-highlight; no details popup or K mapping remains.
   
+- [x] Navigate and copy exact hunk evidence from task and requirement rows
+  - SPEC: `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`, `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-41`
+  - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: Task- and requirement-linked hunk rows now resolve their zero-based hunk index to the exact parsed Git hunk for preview, Enter navigation, and literal copy. Candidate task and fully qualified SPEC references are shown alongside each hunk's attribution state and reason. Enter on a task opens its TODO source; `za` remains the explicit expansion action.
+
 - [ ] Validate the vertical slice in the supported Neovim host
   - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
