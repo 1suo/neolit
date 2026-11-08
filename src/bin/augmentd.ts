@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { runStdioAugmentServer } from "../augmentd/server.js";
+import { applyPlannedDiffsTransaction, verifyAppliedDiffs } from "../tui/apply.js";
 
 process.on("uncaughtException", (error) => {
   process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
@@ -37,20 +38,30 @@ const persistencePath = stateFile ? path.resolve(stateFile) : path.join(stateRoo
 
 if (args.includes("--mcp")) {
   const { runStdioMcpServer } = await import("../augmentd/mcp.js");
-  const { preflightPatches } = await import("../tui/apply.js");
+  const { preflightPatches, applyPlannedDiffsTransaction, verifyAppliedDiffs } = await import("../tui/apply.js");
   const { SocketAugmentPeer } = await import("../augmentd/socket.js");
   // The MCP client's agent is the model. Attached to a socket (--connect),
   // every tool call mutates the server that socket serves — for example the
   // one embedded in the running TUI, which renders each mutation as it
   // lands. Without a socket the bridge owns its own task state.
   const peer = connectPath ? await SocketAugmentPeer.connect(connectPath) : undefined;
+  const { AugmentServer } = await import("../augmentd/server.js");
+  const ownedServer = peer ? undefined : new AugmentServer({
+    persistencePath,
+    applyPatches: directory ? (diffs) => applyPlannedDiffsTransaction(directory, diffs) : undefined,
+    verifyPatches: directory ? (diffs) => verifyAppliedDiffs(directory, diffs) : undefined,
+  });
   await runStdioMcpServer({
-    ...(peer ? { peer } : { persistencePath }),
+    ...(peer ? { peer } : { server: ownedServer }),
     // The optional repository directory only enables git apply diagnostics.
     preflight: directory ? (patches) => preflightPatches(directory, patches) : undefined,
   });
   peer?.close();
 } else {
   if (connectPath !== undefined) usage();
-  await runStdioAugmentServer({ persistencePath });
+  await runStdioAugmentServer({
+    persistencePath,
+    applyPatches: directory ? (diffs) => applyPlannedDiffsTransaction(directory, diffs) : undefined,
+    verifyPatches: directory ? (diffs) => verifyAppliedDiffs(directory, diffs) : undefined,
+  });
 }
