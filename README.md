@@ -47,9 +47,9 @@ See [the planning core reference](./src/planning/README.md) for API details.
 - [Neovim companion](https://github.com/1suo/neolit.nvim/tree/rewrite/planning-workspace)
   — the Git-native workspace, opened by `:Neolit` (`:NeolitPlan` remains an
   explicit alias).
-- [VS Code companion](./editors/vscode/README.md) — Explorer task/requirement
-  navigation, planned-file annotations, Git hunk review, and contextual
-  handoff using the same core.
+- [VS Code companion](./editors/vscode/README.md) — Explorer task/requirement navigation, documentation diagnostics,
+  planned-file annotations, changed-file/hunk review, and contextual handoff
+  using the same core.
 
 Both adapters consume the shared planning API and leave native file, Git, and
 diff interfaces in control.
