@@ -10,6 +10,7 @@ import { applyPlannedDiffsTransaction, commitAppliedPaths, verifyAppliedDiffs } 
 import type { SessionStreamLine, ToolSessionDriver } from "./tool-session.js";
 import { sessionBindingFor } from "./session-store.js";
 import { RepositoryWatcher, type RepositoryChange } from "./repository-watch.js";
+import { loadRepositoryOverlays } from "./repository-overlays.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, RoutedMessage, RoutedOption, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
@@ -962,6 +963,24 @@ export class AugmentTuiController {
           });
           this.task = expectResult(marked, PlanTaskLike.is) as PlanTask;
         }
+      }
+      // Repository/user practice overlays become typed, path-scoped
+      // constraints before the marking window closes or any model call runs.
+      for (const overlay of loadRepositoryOverlays(this.directory)) {
+        const constrained = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 20,
+          method: "node/constrain",
+          params: {
+            taskId: this.task.id,
+            expectedRevision: this.task.revision,
+            nodeId: this.task.rootNodeId,
+            path: overlay.scope,
+            text: "[" + overlay.title + "] " + overlay.text,
+            source: overlay.source,
+          },
+        });
+        this.task = expectResult(constrained, PlanTaskLike.is) as PlanTask;
       }
       this.pendingMarks = [];
       this.pendingMode = "lock";
