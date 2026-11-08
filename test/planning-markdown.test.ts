@@ -86,6 +86,22 @@ describe("planning Markdown", () => {
     expect(result.tasks[0]!.state).toBe("unmapped");
   });
 
+  it("captures added and removed source lines per hunk without diff markers", () => {
+    const [file] = parseUnifiedDiff([
+      "diff --git a/src/auth/session.ts b/src/auth/session.ts",
+      "--- a/src/auth/session.ts",
+      "+++ b/src/auth/session.ts",
+      "@@ -4,2 +4,2 @@ function refresh()",
+      "-  return oldToken;",
+      "+  return newToken;",
+      " unchanged();",
+    ].join("\n"));
+    expect(file!.hunks[0]).toMatchObject({
+      addedLines: ["  return newToken;"],
+      removedLines: ["  return oldToken;"],
+    });
+  });
+
   it("maps actual unified diff paths to TODO tasks without claiming hunk-level proof", () => {
     const todo = parseTodoDocument(todoPath, [
       "- [ ] Implement refresh",
@@ -113,7 +129,7 @@ describe("planning Markdown", () => {
       "+export const value = 1;",
     ].join("\n"));
     expect(files).toHaveLength(2);
-    expect(files[0]!.hunks[0]).toMatchObject({ oldStart: 10, oldLines: 2, newStart: 10, newLines: 3, header: "function refresh()" });
+    expect(files[0]!.hunks[0]).toMatchObject({ oldStart: 10, oldLines: 2, newStart: 10, newLines: 3, header: "function refresh()", addedLines: [" return refreshToken(token);"], removedLines: [] });
     expect(files[0]!.rawDiff).toContain("+ return refreshToken(token);");
     expect(mapDiffToTasks(files, resolved.tasks)).toEqual([
       {
