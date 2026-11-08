@@ -73,7 +73,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       item.contextValue = "plannedFile";
       item.iconPath = new vscode.ThemeIcon("file");
       const task = this.workspace?.tasks.find((entry) => entry.key === node.taskKey);
-      item.tooltip = task?.description.join("\n") || "File referenced by this TODO task.";
+      item.tooltip = task ? [task.text, ...task.description].filter(Boolean).join("\n") : "File referenced by this TODO task.";
       item.command = { command: "neolit.openPlanFile", title: "Open planned file or diff", arguments: [node] };
       return item;
     }
