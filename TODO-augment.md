@@ -3,7 +3,7 @@
 Known gaps between shipped behavior and `src/augment/SPEC.md`.
 
 - [ ] Persist tasks and protocol sessions across daemon restarts.
-- [ ] Add a repository watcher that turns path/basis changes into `node/stale` operations.
+- [x] Add a repository watcher that turns worktree path changes and HEAD movement into `node/stale` operations: `src/tui/repository-watch.ts` polls tracked and non-ignored untracked paths, detects edits/creates/deletes/renames and basis changes, queues events during controller operations, and re-baselines after Neolit-owned apply/commit writes. The controller closes the watcher on dispose.
 - [ ] Track apply/verify lifecycle in planned-diff core state and expose `patch/apply` over JSON-RPC with rollback; the standalone TUI already applies drafted patches host-side through a preflighted, atomic `git apply` transaction (`src/tui/apply.ts`).
 - [x] Add an OpenCode CLI `ModelRuntime` for the standalone TUI.
 - [x] Project the planned tree onto the complete repository tree.
