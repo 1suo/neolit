@@ -376,13 +376,22 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       const relatedTasks = selectRelatedTaskContexts({ path: node.path, previousPath: file.previousPath, tasks: current.tasks })
         .filter((item) => node.candidateTaskKeys.includes(item.task.key));
+      const relatedRequirements = node.candidateRequirementRefs.flatMap((reference) => {
+        const separator = reference.lastIndexOf("#");
+        if (separator < 1) return [];
+        const specPath = reference.slice(0, separator);
+        const id = reference.slice(separator + 1);
+        const spec = current.specs.find((item) => item.path === specPath);
+        const requirement = spec?.requirements.find((item) => item.id === id);
+        return requirement ? [{ specPath, requirement }] : [];
+      });
       const documentationContext = relatedTasks.length === 1
         ? selectTaskDocumentationContext({ task: current.tasks.find((item) => item.key === relatedTasks[0]!.task.key)!, readmes: current.readmeContents })
         : undefined;
       const packet = buildDiffQuestionPacket({
         question: "Please explain this change, its relationship to the linked plan, and any gaps or risks.",
         anchor, currentBaseCommit: current.git.base, currentDiffText: currentFileDiff,
-        relatedTasks, documentationContext,
+        relatedTasks, relatedRequirements, documentationContext,
       });
       if (packet.status === "stale") {
         vscode.window.showWarningMessage("This diff context is stale. Refresh Neolit before copying it.");
