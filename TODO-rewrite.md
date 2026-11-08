@@ -45,9 +45,13 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Validate missing and ambiguous reference reporting
   - SPEC: `REWRITE-SPEC.md#R-18`, `REWRITE-SPEC.md#R-19`, `REWRITE-SPEC.md#R-29`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
-- [ ] Build documentation graph navigation and minimal context assembly
-  - SPEC: `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-11`, `REWRITE-SPEC.md#R-41`
-  - Description: Retrieve only relevant linked documentation for a selected task/requirement; keep current-state README facts separate from desired-state SPEC.
+- [x] Select minimal related task context for a diff path
+  - SPEC: `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-41`
+  - File: `src/planning/context.ts`
+  - Description: Added `selectRelatedTaskContexts`: select tasks only through explicit file hints (including rename source paths), preserve all shared candidates, and include their resolved requirements and acceptance criteria in contextual packets.
+- [ ] Navigate the documentation graph for a selected task/requirement
+  - SPEC: `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-11`
+  - Description: Follow only the selected component's README links and keep shipped README facts separate from desired SPEC behavior; do not dump the entire graph into every context packet.
 
 ## Phase 3 — Git evidence and derived states
 
