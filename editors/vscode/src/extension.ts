@@ -127,7 +127,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     if (node.kind !== "task") return [];
     const task = workspace.tasks.find((item) => item.key === node.key);
     if (!task) return [];
-    const files: PlanFileNode[] = task.filePaths.map((file) => ({ kind: "file", path: file, taskKey: task.key, label: file }));
+    const files: PlanFileNode[] = [...new Set(task.filePaths)].map((file) => ({ kind: "file", path: file, taskKey: task.key, label: file }));
     const requirements: RequirementNode[] = task.resolvedRequirements.map((item) => ({
       kind: "requirement", key: node.key, specPath: item.specPath, id: item.id,
       label: `${item.id} — ${item.text}`,
@@ -177,10 +177,16 @@ export function activate(context: vscode.ExtensionContext): void {
   const root = folder.uri.fsPath;
   const tree = new PlanningTree();
   const decorations = new PlanningDecorationProvider();
+  let current: PlanningWorkspace | undefined;
   const baseDocuments = new BaseDocumentProvider(root, () => current);
   const view = vscode.window.createTreeView("neolit.plan", { treeDataProvider: tree, showCollapseAll: true });
-  context.subscriptions.push(view, tree, decorations, vscode.window.registerFileDecorationProvider(decorations), vscode.workspace.registerTextDocumentContentProvider(BASE_SCHEME, baseDocuments));
-  let current: PlanningWorkspace | undefined;
+  context.subscriptions.push(
+    view,
+    tree,
+    decorations,
+    vscode.window.registerFileDecorationProvider(decorations),
+    vscode.workspace.registerTextDocumentContentProvider(BASE_SCHEME, baseDocuments),
+  );
 
   const refresh = async () => {
     try {
