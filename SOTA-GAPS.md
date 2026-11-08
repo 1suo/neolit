@@ -44,34 +44,34 @@ Current code and tests ship, among others:
 
 Ordered by user-visible impact; the owning record tracks each gap.
 
-1. **Durability.** Core daemon tasks and protocol sessions live in memory and do not
-   survive daemon restarts. The standalone TUI separately persists its
-   active task and per-task agent-session bindings across process restarts;
-   that does not make the daemon's in-memory store durable
-   ([TODO-augment.md](./TODO-augment.md)). Resumable planning across
-   independent daemon instances and machines is still table stakes.
+1. **Durability.** Standalone JSON-RPC and MCP servers now atomically persist
+   task snapshots and expose `task/list` / `plan_list`; the TUI separately
+   persists task state, agent-session bindings, and bounded session output.
+   Cross-machine synchronization and multi-process coordination over one
+   shared store remain open ([TODO-augment.md](./TODO-augment.md)).
 2. **Verification-gated apply.** The core now records `drafted` → `applied` →
    `verified`/`failed`; JSON-RPC and MCP expose host-injected transactional
    `patch/apply` and `patch/verify`, including filesystem rollback when apply
    or durable state recording fails. The built-in verifier checks whitespace
    and reverse-applies the full patch series in a disposable worktree.
-   and check or test outcomes never gate plan completion.
+   The built-in verifier checks whitespace and reversibility; arbitrary test
+   suites and CI checks are not run automatically by the host.
 3. **Repository awareness.** The standalone TUI now polls tracked and non-ignored
    untracked paths plus HEAD, and turns external edits, creates, deletes, and
    basis movement into `node/stale` operations. Changes queue behind active
    controller work; Neolit-owned apply operations re-baseline the watcher, while commits trigger basis staleness.
-   Path-aware filesystem indexing to prioritize context remains open.
+   A bounded path index now resolves common source imports and supplies
+   scope-specific related-file hints to model calls.
 4. **Granular multi-client sync.** Change notifications carry only the task
    id and revision, so multi-client tree views must refetch; finer-grained
    notifications remain open, and coordination stops at per-task
    serialization — no plan diff or merge across concurrent tasks.
-5. **Host adapter breadth and efficiency.** Model access ships as
-   CLI backends (opencode, claude, codex) in the standalone TUI;
-   native OpenCode-plugin and Codex runtimes and the Claude and Codex
-   tool-session adapters remain open. OpenCode model calls and tool-session
-   steps already use the kept-alive `PersistentAgentServer` warm transport,
-   with CLI fallback; equivalent warm transports for the other backends
-   remain open.
+5. **Host adapter breadth and efficiency.** CLI model runtimes ship for
+   OpenCode, Claude, and Codex; Claude and Codex tool-session adapters now
+   use their respective MCP configuration and session-resume paths. Live-host
+   verification of those paths and the OpenCode warm tool-step transport
+   remains open. Native OpenCode-plugin and non-CLI Codex runtime adapters
+   are still absent; equivalent warm transports for Claude and Codex remain open.
 6. **Telemetry and evaluation.** Nothing measures plan quality, retry rates,
    or apply success over time, so improvement claims cannot be evidenced —
    the repository's telemetry-before-optimization rule is unmet.
