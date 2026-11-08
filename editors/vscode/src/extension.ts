@@ -26,7 +26,7 @@ const EMPTY_SCHEME = "neolit-empty";
 
 function workspaceFileUri(folder: vscode.WorkspaceFolder, relativePath: string): vscode.Uri | undefined {
   if (!relativePath || path.isAbsolute(relativePath)
-    || relativePath.replaceAll("\\\\", "/").split("/").some((segment) => segment === ".." || segment === "." || segment === "")) return undefined;
+    || relativePath.replaceAll("\\", "/").split("/").some((segment) => segment === ".." || segment === "." || segment === "")) return undefined;
   const absolute = path.resolve(folder.uri.fsPath, relativePath);
   const relative = path.relative(folder.uri.fsPath, absolute);
   if (!relative || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return undefined;
