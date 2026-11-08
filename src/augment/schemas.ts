@@ -165,6 +165,8 @@ const PlannedDiffSchema = z.object({
   patch: z.string().min(1),
   kind: z.enum(["new", "modify", "delete", "unknown"]),
   basisRevision: z.string().min(1),
+  lifecycle: z.enum(["drafted", "applied", "verified", "failed"]).optional(),
+  verification: z.string().optional(),
   failedCheck: z.string().optional(),
 });
 
