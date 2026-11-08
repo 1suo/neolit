@@ -14,7 +14,7 @@ import {
 
 type TaskNode = { kind: "task"; key: string; label: string };
 type RequirementNode = { kind: "requirement"; key: string; specPath: string; id: string; label: string };
-type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; label: string };
+type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; candidateTaskKeys: string[]; label: string };
 type GroupNode = { kind: "group"; label: string };
 type PlanFileNode = { kind: "file"; path: string; taskKey: string; label: string };
 type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode;
@@ -135,7 +135,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       const file = workspace.git.changedFiles.find((item) => item.path === association.path);
       return {
         kind: "hunk" as const, path: association.path, previousPath: file?.previousPath,
-        hunkIndex: association.hunkIndex,
+        hunkIndex: association.hunkIndex, candidateTaskKeys: association.candidateTaskKeys,
         label: `${association.state === "attributed" ? "DOC↳" : association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} ${association.path} · hunk ${association.hunkIndex + 1}`,
       };
     });
@@ -152,7 +152,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       label: `${item.id} — ${item.text}`,
     }));
     const hunks: HunkNode[] = (workspace.derived.tasks[node.key]?.hunkReviews ?? []).map((review) => ({
-      kind: "hunk", path: review.path, hunkIndex: review.hunkIndex,
+      kind: "hunk", path: review.path, hunkIndex: review.hunkIndex, candidateTaskKeys: review.candidateTaskKeys,
       label: `${review.state === "attributed" ? "DOC↳" : review.state === "documentation" ? "DOC" : review.state === "unplanned" ? "?" : "~"} ${review.path} · hunk ${review.hunkIndex + 1}`,
     }));
     return [...files, ...requirements, ...hunks];
@@ -284,14 +284,15 @@ export function activate(context: vscode.ExtensionContext): void {
         path: node.path, side: "working-tree", baseCommit: current.git.base,
         diffText: currentFileDiff, hunk,
       });
-      const relatedTasks = selectRelatedTaskContexts({ path: node.path, previousPath: file.previousPath, tasks: current.tasks });
+      const relatedTasks = selectRelatedTaskContexts({ path: node.path, previousPath: file.previousPath, tasks: current.tasks })
+        .filter((item) => node.candidateTaskKeys.includes(item.task.key));
       const documentationContext = relatedTasks.length === 1
         ? selectTaskDocumentationContext({ task: current.tasks.find((item) => item.key === relatedTasks[0]!.task.key)!, readmes: current.readmeContents })
         : undefined;
       const packet = buildDiffQuestionPacket({
         question: "Please explain this change, its relationship to the linked plan, and any gaps or risks.",
         anchor, currentBaseCommit: current.git.base, currentDiffText: currentFileDiff,
-        selectedDiffText: file.rawDiff, relatedTasks, documentationContext,
+        relatedTasks, documentationContext,
       });
       if (packet.status === "stale") {
         vscode.window.showWarningMessage("This diff context is stale. Refresh Neolit before copying it.");
