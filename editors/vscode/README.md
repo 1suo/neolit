@@ -23,10 +23,10 @@ Open the repository in VS Code and launch the extension from an Extension Develo
 - Explicit task file hints appear beneath the task and receive a `P` Explorer annotation when unchanged. Opening one shows the real file; after it changes, the same row opens the native base-to-working diff. Changed files use a distinct `N` review annotation.
 - Requirement rows open the exact SPEC source location and expand to show every TODO task linked to that fully qualified SPEC path and requirement ID.
 - Expanding a task shows its linked SPEC requirements and its candidate hunk reviews.
-- A separate **Git changes** group shows every parsed hunk, including unplanned and documentation changes that have no task candidate.
+- A separate **Git changes** group shows every parsed hunk, including unplanned and documentation changes that have no task candidate. Each hunk row shows its own task- and requirement-candidate counts.
 - Hunk rows distinguish unresolved source-code candidates (`~`), ordinary documentation changes (`DOC`), source-attributed TODO/SPEC documentation edits (`DOC↳`), and unplanned changes (`?`). `DOC↳` is based on exact overlap with parsed task/requirement source ranges; it identifies the documentation record touched, not implementation fulfilment. All markers are review annotations, not proof of implementation.
 - **Open Native Hunk Diff** opens VS Code's native diff editor, comparing the selected file's content at the resolved Git base with the current working-tree file. Added/untracked files have an empty base side; renames compare against the previous path.
-- **Copy Hunk Context** uses the shared stale-checked context packet builder and copies the result for pasting into the user's existing agent session.
+- **Copy Hunk Context** uses only that hunk's candidate tasks, selects the exact hunk from the file diff, and passes it through the shared stale-checked context packet builder before copying it for the user's existing agent session.
 - Refresh runs on demand, after in-workspace saves, and when the window regains focus.
 
 Git status remains owned by VS Code's native Git integration. Neolit does not register competing Git decorations or disguise planned paths as actual Git changes.
