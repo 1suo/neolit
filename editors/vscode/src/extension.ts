@@ -243,6 +243,10 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!working) return;
       const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${node.path}`, query: current.git.base });
       await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${node.path} · ${current.git.base.slice(0, 8)}`);
+      await vscode.commands.executeCommand("workbench.action.compareEditor.focusSecondarySide");
+      for (let index = 0; index <= node.hunkIndex; index += 1) {
+        await vscode.commands.executeCommand("workbench.action.compareEditor.nextChange");
+      }
     }),
     vscode.commands.registerCommand("neolit.copyHunkContext", async (node?: HunkNode) => {
       if (!node || node.kind !== "hunk" || !current) return;
