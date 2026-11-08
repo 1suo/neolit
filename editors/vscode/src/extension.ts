@@ -14,10 +14,11 @@ import {
 
 type TaskNode = { kind: "task"; key: string; label: string };
 type RequirementNode = { kind: "requirement"; key: string; specPath: string; id: string; label: string };
+type ChangedFileNode = { kind: "changedFile"; path: string; previousPath?: string; label: string };
 type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; candidateTaskKeys: string[]; candidateRequirementRefs: string[]; label: string };
 type GroupNode = { kind: "group"; label: string };
 type PlanFileNode = { kind: "file"; path: string; taskKey: string; label: string };
-type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode;
+type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode | ChangedFileNode;
 const execFileAsync = promisify(execFile);
 const BASE_SCHEME = "neolit-base";
 
@@ -87,6 +88,15 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       item.iconPath = new vscode.ThemeIcon("git-compare");
       return item;
     }
+    if (node.kind === "changedFile") {
+      const file = this.workspace?.git.changedFiles.find((item) => item.path === node.path);
+      const item = new vscode.TreeItem(node.label, file?.hunks.length ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
+      item.contextValue = "changedFile";
+      item.iconPath = new vscode.ThemeIcon("file-modified");
+      item.description = file?.status;
+      item.command = { command: "neolit.openChangedFile", title: "Open native file diff", arguments: [node] };
+      return item;
+    }
     if (node.kind === "file") {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
       item.contextValue = "plannedFile";
@@ -126,20 +136,25 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     if (!workspace) return [];
     if (!node) {
       const tasks: TaskNode[] = workspace.tasks.map((task) => ({ kind: "task", key: task.key, label: task.text }));
-      const changes: GroupNode[] = workspace.git.hunkAssociations.length
-        ? [{ kind: "group", label: `Git changes · ${workspace.git.hunkAssociations.length} hunks` }]
+      const changes: GroupNode[] = workspace.git.changedFiles.length
+        ? [{ kind: "group", label: `Git changes · ${workspace.git.changedFiles.length} files · ${workspace.git.hunkAssociations.length} hunks` }]
         : [];
       return [...tasks, ...changes];
     }
-    if (node.kind === "group") return workspace.git.hunkAssociations.map((association) => {
-      const file = workspace.git.changedFiles.find((item) => item.path === association.path);
-      return {
-        kind: "hunk" as const, path: association.path, previousPath: file?.previousPath,
+    if (node.kind === "group") return workspace.git.changedFiles.map((file) => ({
+      kind: "changedFile" as const,
+      path: file.path,
+      previousPath: file.previousPath,
+      label: file.path,
+    }));
+    if (node.kind === "changedFile") return workspace.git.hunkAssociations
+      .filter((association) => association.path === node.path)
+      .map((association) => ({
+        kind: "hunk" as const, path: association.path, previousPath: node.previousPath,
         hunkIndex: association.hunkIndex, candidateTaskKeys: association.candidateTaskKeys,
         candidateRequirementRefs: association.candidateRequirementRefs,
-        label: `${association.state === "attributed" ? "DOC↳" : association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} ${association.path} · hunk ${association.hunkIndex + 1} · ${association.candidateTaskKeys.length} task / ${association.candidateRequirementRefs.length} req`,
-      };
-    });
+        label: `${association.state === "attributed" ? "DOC↳" : association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} hunk ${association.hunkIndex + 1} · ${association.candidateTaskKeys.length} task / ${association.candidateRequirementRefs.length} req`,
+      }));
     if (node.kind === "requirement") {
       return workspace.tasks.filter((task) => task.resolvedRequirements.some((item) => item.specPath === node.specPath && item.id === node.id))
         .map((task) => ({ kind: "task" as const, key: task.key, label: task.text }));
@@ -276,11 +291,14 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!uri) return;
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
     }),
-    vscode.commands.registerCommand("neolit.openChangedFile", async (node?: HunkNode) => {
-      if (!node || node.kind !== "hunk") return;
-      const uri = workspaceFileUri(folder, node.path);
-      if (!uri) return;
-      await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
+    vscode.commands.registerCommand("neolit.openChangedFile", async (node?: HunkNode | ChangedFileNode) => {
+      if (!node || (node.kind !== "hunk" && node.kind !== "changedFile") || !current) return;
+      const file = current.git.changedFiles.find((item) => item.path === node.path);
+      if (!file) return;
+      const working = workspaceFileUri(folder, file.path);
+      if (!working) return;
+      const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${file.path}`, query: current.git.base });
+      await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${file.path} · ${current.git.base.slice(0, 8)}`);
     }),
     vscode.commands.registerCommand("neolit.openHunkDiff", async (node?: HunkNode) => {
       if (!node || node.kind !== "hunk" || !current) return;
