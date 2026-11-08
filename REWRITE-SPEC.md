@@ -48,7 +48,7 @@ These sources have distinct ownership. Do not duplicate one source's authority i
 | Git status/diff | What source files actually changed | Git |
 | Test/check output | What was actually verified | Test runner/CI; Neolit may display captured results |
 
-**R-08** Neolit reads planning documents in place and does not rewrite them as a side effect of browsing or refresh. The sole host-side document mutation is an explicit, confirmed archive/restore action on a selected TODO task, SPEC requirement, or SPEC acceptance criterion; it must preserve the complete Markdown block and never alter unrelated content.
+**R-08** Neolit reads planning documents in place and does not rewrite them as a side effect of browsing or refresh. The sole host-side document mutation is an explicit archive/restore action on a selected TODO task, SPEC requirement, or SPEC acceptance criterion; it must preserve the complete Markdown block and never alter unrelated content.
 
 **R-09** The root README remains the system-level description. Component READMEs own local architecture and behavior. Follow their links only as far as needed for the selected task.
 
@@ -371,4 +371,4 @@ No stage may reintroduce a parallel patch model or a Neolit-owned conversation s
 
 **R-77** TODO task metadata distinguishes `Description:` (intent and expected outcome) from `Agent notes:` (implementation summary, rationale, deviations, and remaining caveats). Agent notes may span indented Markdown lines and are rendered with the task's related changes. They are explanatory statements, never verification evidence.
 
-**R-78** The Neovim host provides an explicit archive/restore action (`a`) for a selected TODO task, SPEC requirement, or SPEC acceptance criterion. After confirmation, it moves the complete source range into or out of the matching `.archive.md` file, preserving text, IDs, nested metadata, and references. It must reject stale source ranges, modified source/archive buffers, unsafe paths, and duplicate destination blocks. Viewing and refreshing never mutate documents.
+**R-78** The Neovim host provides an explicit archive/restore action (`a`) for a selected TODO task, SPEC requirement, or SPEC acceptance criterion. Pressing `a` moves the complete source range into or out of the matching `.archive.md` file, preserving text, IDs, nested metadata, and references. It must reject stale source ranges, modified source/archive buffers, unsafe paths, and duplicate destination blocks. Viewing and refreshing never mutate documents.
