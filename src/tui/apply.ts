@@ -206,7 +206,7 @@ export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDi
       }
       throw error;
     }
-    return { paths: patches.map((diff) => diff.path || diff.id), rollback };
+    return { paths, rollback };
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
