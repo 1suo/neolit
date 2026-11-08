@@ -39,7 +39,7 @@ export type RequirementStateProjection = {
   requirementId: string;
   state: DerivedRequirementState;
   taskKeys: string[];
-  hunkReviews: Array<{ path: string; hunkIndex: number; oldStart: number; oldLines: number; newStart: number; newLines: number; state: TaskHunkAssociation["state"]; reason: TaskHunkAssociation["reason"] }>;
+  hunkReviews: Array<{ path: string; hunkIndex: number; oldStart: number; oldLines: number; newStart: number; newLines: number; state: TaskHunkAssociation["state"]; reason: TaskHunkAssociation["reason"]; candidateTaskKeys: string[]; candidateRequirementRefs: string[] }>;
   acceptanceCriteria: Array<{ ref: string; verified: boolean }>;
 };
 
@@ -166,6 +166,7 @@ export function derivePlanningStates(input: {
       ).map((item) => ({
         path: item.path, hunkIndex: item.hunkIndex, oldStart: item.hunk.oldStart, oldLines: item.hunk.oldLines,
         newStart: item.hunk.newStart, newLines: item.hunk.newLines, state: item.state, reason: item.reason,
+        candidateTaskKeys: item.candidateTaskKeys, candidateRequirementRefs: item.candidateRequirementRefs,
       }));
 
       let state: DerivedRequirementState = "unplanned";
