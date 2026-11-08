@@ -52,6 +52,10 @@
       {
         "command": "neolit.openPlanFile",
         "title": "Neolit: Open Planned File or Diff"
+      },
+      {
+        "command": "neolit.openDiagnostic",
+        "title": "Neolit: Open Documentation Diagnostic"
       }
     ],
     "menus": {
@@ -91,6 +95,11 @@
         {
           "command": "neolit.openPlanFile",
           "when": "view == neolit.plan && viewItem == plannedFile",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.openDiagnostic",
+          "when": "view == neolit.plan && viewItem == diagnostic",
           "group": "inline"
         }
       ]
