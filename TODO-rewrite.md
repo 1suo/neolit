@@ -2,7 +2,7 @@
 
 Checkboxes distinguish shipped implementation slices from outstanding validation. A checked implementation item does not claim tests or host-level verification passed; the paired validation item stays open until that work is actually performed. Incomplete implementation remains unchecked. No test work is implied by this ledger update.
 
-Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are ordered to prove the new product in vertical slices. Each task links to the normative requirement IDs it implements. Existing `TODO-augment.md` remains the historical/current planned-diff gap ledger until the old product is retired; do not silently reinterpret its items as work for this rewrite.
+Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are ordered to prove the new product in vertical slices. Each task links to the normative requirement IDs it implements. `TODO-augment.md` and `SOTA-GAPS.md` are retained as historical records of the retired planned-diff product; do not reinterpret their items as work for this rewrite.
 
 ## Phase 1 — contract and document conventions
 
@@ -131,16 +131,17 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 ## Phase 6 — retire old architecture and validate migration
 
-- [ ] Replace planned-diff kernel and protocol with the documentation/Git core
+- [x] Replace planned-diff kernel and protocol with the documentation/Git core
   - SPEC: `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`, `REWRITE-SPEC.md#R-53`, `REWRITE-SPEC.md#R-59`, `REWRITE-SPEC.md#R-60`, `REWRITE-SPEC.md#R-70`
-  - Description: Remove candidate domains, challenge/collapse/refinement, planned patch storage/application, model operation routing, and agent tool orchestration. Retain only measured, reusable behavior that fits the target.
+  - File: `src/augment/`, `src/augmentd/`, `src/tui/`, `src/bin/`, `src/index.ts`, `package.json`, `package-lock.json`
+  - Description: Retired the candidate/refinement/patch kernel, JSON-RPC/MCP/socket server, standalone TUI and OpenCode runtime, CLI binaries, and their legacy package-root exports. The package root now re-exports only `neolit/planning`; runtime dependencies and CLI build steps were removed. Historical gap documents remain untouched and are explicitly labeled as history in the root README.
 - [x] Publish the dedicated Git-native planning package entry point
   - SPEC: `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-54`
   - File: `package.json`, `src/planning/index.ts`, `src/planning/README.md`
   - Description: Added the `neolit/planning` export and a planning-only public barrel, included the planning package files in publication, and documented the host-neutral API. New adapters can consume the deterministic core without importing the legacy kernel/TUI surface.
 - [ ] Retire legacy package exports/CLI commands and complete the Neovim host-contract migration
   - SPEC: `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-59`, `REWRITE-SPEC.md#R-73`
-  - Description: The root export and legacy `augment`/`augmentd` commands remain for compatibility. Retire them only with the planned-diff kernel/TUI removal and migrate the Neovim default command, packaging, and host contract to the Git-native companion.
+  - Description: Core package-root exports and the `augment`/`augmentd` binaries are retired. Remaining work is to migrate the Neovim plugin's default command, packaging, and host contract from the legacy controller to the Git-native companion; do not remove compatibility code until that migration is complete.
 - [x] Preserve repository documents and isolate legacy task handling
   - SPEC: `REWRITE-SPEC.md#R-71`, `REWRITE-SPEC.md#R-72`
   - File: `src/planning/workspace.ts`, `src/planning/README.md`, `1suo/neolit.nvim/lua/neolit/planning.lua`
