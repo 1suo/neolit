@@ -287,7 +287,7 @@ export function buildDiffQuestionPacket(input: {
   if (input.selectedDiffText && !changedFile.rawDiff.includes(input.selectedDiffText)) {
     return { status: "stale", reason: "diff-changed" };
   }
-  if (input.selectedDiffText && anchor.hunk && !selectedHunk.includes(input.selectedDiffText)) {
+  if (input.selectedDiffText && anchor.hunk && (!selectedHunk || !selectedHunk.includes(input.selectedDiffText))) {
     return { status: "stale", reason: "diff-changed" };
   }
   const selectedDiffText = input.selectedDiffText ?? selectedHunk ?? changedFile.rawDiff;
