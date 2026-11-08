@@ -21,6 +21,7 @@ type PlanFileNode = { kind: "file"; path: string; taskKey: string; label: string
 type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode | ChangedFileNode;
 const execFileAsync = promisify(execFile);
 const BASE_SCHEME = "neolit-base";
+const EMPTY_SCHEME = "neolit-empty";
 
 function workspaceFileUri(folder: vscode.WorkspaceFolder, relativePath: string): vscode.Uri | undefined {
   if (!relativePath || path.isAbsolute(relativePath)) return undefined;
@@ -72,6 +73,10 @@ class BaseDocumentProvider implements vscode.TextDocumentContentProvider {
       return "";
     }
   }
+}
+
+class EmptyDocumentProvider implements vscode.TextDocumentContentProvider {
+  provideTextDocumentContent(): string { return ""; }
 }
 
 class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
@@ -222,6 +227,7 @@ export function activate(context: vscode.ExtensionContext): void {
     decorations,
     vscode.window.registerFileDecorationProvider(decorations),
     vscode.workspace.registerTextDocumentContentProvider(BASE_SCHEME, baseDocuments),
+    vscode.workspace.registerTextDocumentContentProvider(EMPTY_SCHEME, new EmptyDocumentProvider()),
   );
 
   const refresh = async () => {
@@ -296,9 +302,16 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!await ensureCurrent()) return;
       const file = current.git.changedFiles.find((item) => item.path === node.path);
       if (!file) return;
-      const working = workspaceFileUri(folder, file.path);
-      if (!working) return;
+      const fileUri = workspaceFileUri(folder, file.path);
+      if (!fileUri) return;
+      if (file.status !== "deleted" && file.hunks.length === 0) {
+        await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(fileUri));
+        return;
+      }
       const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${file.path}`, query: current.git.base });
+      const working = file.status === "deleted"
+        ? vscode.Uri.from({ scheme: EMPTY_SCHEME, path: `/${file.path}` })
+        : fileUri;
       await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${file.path} · ${current.git.base.slice(0, 8)}`);
     }),
     vscode.commands.registerCommand("neolit.openHunkDiff", async (node?: HunkNode) => {
@@ -307,9 +320,12 @@ export function activate(context: vscode.ExtensionContext): void {
       const file = current.git.changedFiles.find((item) => item.path === node.path);
       const hunk = file?.hunks[node.hunkIndex];
       if (!file || !hunk) return;
-      const working = workspaceFileUri(folder, node.path);
-      if (!working) return;
+      const fileUri = workspaceFileUri(folder, node.path);
+      if (!fileUri) return;
       const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${node.path}`, query: current.git.base });
+      const working = file.status === "deleted"
+        ? vscode.Uri.from({ scheme: EMPTY_SCHEME, path: `/${node.path}` })
+        : fileUri;
       await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${node.path} · ${current.git.base.slice(0, 8)}`);
       await vscode.commands.executeCommand("workbench.action.compareEditor.focusSecondarySide");
       for (let index = 0; index <= node.hunkIndex; index += 1) {
