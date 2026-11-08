@@ -79,6 +79,20 @@ export function formatStreamEvent(message: unknown): SessionStreamLine[] {
     return text ? [{ kind: "error", text: `✗ ${text}` }] : [];
   }
   if (record.type === "step_start") return [{ kind: "step", text: "▸ step" }];
+  // Codex `exec --json` item events use a different envelope from OpenCode.
+  const codexItem = record.item as Record<string, unknown> | undefined;
+  if (record.type === "item.started" || record.type === "item.completed" || record.type === "item.failed") {
+    if (codexItem?.type === "mcp_tool_call") {
+      const title = typeof codexItem.tool === "string" ? codexItem.tool : "neolit tool";
+      const detail = toolDetail(codexItem.arguments);
+      const suffix = detail ? " · " + detail : "";
+      const marker = record.type === "item.started" ? "→" : record.type === "item.failed" ? "✗" : "✓";
+      return [{ kind: "tool", text: marker + " " + title + suffix }];
+    }
+    if (codexItem?.type === "agent_message" && typeof codexItem.text === "string" && record.type !== "item.started") {
+      return codexItem.text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => ({ kind: "text" as const, text: capped(line, TEXT_LINE_CAP) }));
+    }
+  }
   const part = record.part as Record<string, unknown> | undefined;
   const partText = part && typeof part.text === "string" ? part.text : typeof record.text === "string" ? record.text : undefined;
   if ((record.type === "text" || part?.type === "text") && partText) {
