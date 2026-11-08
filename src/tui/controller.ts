@@ -1641,7 +1641,6 @@ export class AugmentTuiController {
     const paths = [...new Set(applied.map((diff) => diff.path).filter((path) => path && path !== "."))];
     await this.dispatch("Committing applied changes", async () => {
       const sha = commitAppliedPaths(this.directory, paths, `augment: ${task.objective}`);
-      this.repositoryWatcher?.rebaseline();
       this.repository = repositoryTree(this.directory);
       this.refresh();
       this.message = `Committed ${paths.length} applied ${paths.length === 1 ? "path" : "paths"} as ${sha}. The repository basis moved; press [S] on paths whose drafts need refresh.`;
