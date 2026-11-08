@@ -57,6 +57,8 @@ export interface AugmentServerOptions {
   applyPatches?: (diffs: PlannedDiff[]) => Promise<{ paths: string[]; rollback(): void }> | { paths: string[]; rollback(): void };
   /** Host-owned verification of already-applied patches. */
   verifyPatches?: (diffs: PlannedDiff[]) => Promise<{ passed: boolean; summary: string }> | { passed: boolean; summary: string };
+  /** Repository/user policy constraints attached atomically to every newly started task. */
+  initialConstraints?: () => Array<{ scope?: string; source: "user" | "repository"; title: string; text: string }>;
 }
 
 export class UnavailableModelRuntime implements ModelRuntime {
@@ -140,12 +142,14 @@ export class AugmentServer {
   private readonly persistencePath?: string;
   private readonly applyPatches?: AugmentServerOptions["applyPatches"];
   private readonly verifyPatches?: AugmentServerOptions["verifyPatches"];
+  private readonly initialConstraints?: AugmentServerOptions["initialConstraints"];
 
   constructor(options: AugmentServerOptions = {}) {
     this.runtime = options.runtime ?? new UnavailableModelRuntime();
     this.persistencePath = options.persistencePath;
     this.applyPatches = options.applyPatches;
     this.verifyPatches = options.verifyPatches;
+    this.initialConstraints = options.initialConstraints;
     if (this.persistencePath) this.restoreSnapshot();
   }
 
@@ -298,7 +302,19 @@ export class AugmentServer {
         const taskId = typeof input.taskId === "string" && input.taskId.trim() ? input.taskId.trim() : `task:${this.nextTaskId++}`;
         if (this.tasks.has(taskId)) throw new ProtocolError(-32002, `Task already exists: ${taskId}`);
         const mode = input.mode === "explanation" ? "explanation" : "change";
-        const task = createPlanTask({ id: taskId, objective: string(input.objective, "objective"), basisRevision: string(input.basisRevision, "basisRevision"), mode });
+        let task = createPlanTask({ id: taskId, objective: string(input.objective, "objective"), basisRevision: string(input.basisRevision, "basisRevision"), mode });
+        if (mode === "change") {
+          for (const overlay of this.initialConstraints?.() ?? []) {
+            task = addConstraint(task, {
+              taskId: task.id,
+              expectedRevision: task.revision,
+              nodeId: task.rootNodeId,
+              path: overlay.scope,
+              text: "[" + overlay.title + "] " + overlay.text,
+              source: overlay.source,
+            });
+          }
+        }
         this.store(task);
         return task;
       }
