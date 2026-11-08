@@ -31,6 +31,7 @@ export type GitStatusEntry = {
 export type PlanningWorkspace = {
   root: string;
   readmes: string[];
+  readmeContents: Array<{ path: string; content: string }>;
   specs: SpecDocument[];
   todos: TodoDocument[];
   tasks: ResolvedTask[];
@@ -201,7 +202,8 @@ export async function loadPlanningWorkspace(
     : "";
 
   const documents = await discoverDocuments(root);
-  const [specs, todos] = await Promise.all([
+  const [readmeContents, specs, todos] = await Promise.all([
+    Promise.all(documents.readmes.map(async (file) => ({ path: file, content: await readRepoFile(root, file) }))),
     readDocuments(root, documents.specs, "SPEC") as Promise<SpecDocument[]>,
     readDocuments(root, documents.todos, "TODO") as Promise<TodoDocument[]>,
   ]);
@@ -257,6 +259,7 @@ export async function loadPlanningWorkspace(
   return {
     root,
     readmes: documents.readmes,
+    readmeContents,
     specs,
     todos,
     tasks: resolved.tasks,
