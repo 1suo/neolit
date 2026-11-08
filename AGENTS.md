@@ -54,7 +54,7 @@ its own; the Skill is optional.
 3. **Plan:** identify the observable acceptance criteria and the smallest
    vertical slice. Do not add an agent session, prompt router, shadow plan,
    patch model, or workflow stage unless the SPEC explicitly requires it.
-4. **Implement:** change production code, tests, and types together. Prefer
+4. **Implement:** change production code and types together. Do not create or modify tests unless the task owner explicitly requests test work. Prefer
    deterministic parsing, Git evidence, and host-native editor/agent APIs.
 5. **Verify:** run the narrowest relevant tests, then npm run check; run
    npm run build when validating published output or host integration. Tests
