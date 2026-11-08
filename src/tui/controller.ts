@@ -428,6 +428,12 @@ export class AugmentTuiController {
     }
     this.watchExternalMutations();
     this.repositoryWatcher = new RepositoryWatcher(this.directory, (change) => this.onRepositoryChange(change));
+    // A persisted task may have slept through commits while the TUI was
+    // closed; compare its recorded basis with the current checkout on resume.
+    if (this.task && this.branch && this.task.basisRevision !== currentRevision(this.directory)) {
+      this.pendingRepositoryBasis = true;
+      queueMicrotask(() => void this.processRepositoryChanges());
+    }
     const socketEnv = process.env.AUGMENT_TUI_SOCKET?.trim();
     const explicitSocket = typeof options.serveSocket === "string" && options.serveSocket.trim()
       ? options.serveSocket.trim()
