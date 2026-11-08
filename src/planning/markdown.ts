@@ -496,38 +496,87 @@ export type TaskHunkAssociation = {
   candidateTaskKeys: string[];
   candidateRequirementIds: string[];
   candidateRequirementRefs: string[];
-  state: "unplanned" | "unresolved" | "documentation";
-  reason: "no-task-path-match" | "file-hint-is-not-hunk-evidence" | "documentation-change";
+  state: "unplanned" | "unresolved" | "documentation" | "attributed";
+  reason: "no-task-path-match" | "file-hint-is-not-hunk-evidence" | "documentation-change" | "todo-task-source-range" | "spec-requirement-source-range";
 };
 
+function changedLineRange(hunk: DiffHunk): SourceRange | undefined {
+  if (hunk.newLines === 0) return undefined;
+  return { startLine: hunk.newStart, endLine: hunk.newStart + hunk.newLines - 1 };
+}
+
+function rangesOverlap(left: SourceRange, right: SourceRange): boolean {
+  return left.startLine <= right.endLine && right.startLine <= left.endLine;
+}
+
 /**
- * Expose each changed hunk independently without promoting file-level hints
- * into claims that the hunk implements a task. Until explicit, reliable
- * hunk evidence exists, matching tasks are candidates and the hunk stays
- * unresolved. This preserves useful navigation without inventing attribution.
+ * File hints are candidates, never implementation proof. Positive attribution
+ * is limited to documentation: the hunk's new-side lines overlap an exact
+ * parsed TODO task or SPEC requirement source range. Source-code hunks remain
+ * unresolved until stronger deterministic evidence is available.
  */
 export function mapDiffHunksToTasks(
   changedFiles: ChangedFile[],
   tasks: ResolvedTask[],
+  specs: SpecDocument[] = [],
+  todos: TodoDocument[] = [],
 ): TaskHunkAssociation[] {
   return changedFiles.flatMap((file) => {
-    const documentation = /(?:^|\/)(?:README|(?:[^/]+-)?SPEC|TODO(?:-[^/]*)?)\.md$/iu.test(file.path);
-    const matching = documentation ? [] : tasks.filter((task) => task.filePaths.some((filePath) =>
-      filePath === file.path || filePath === file.previousPath,
-    ));
-    return file.hunks.map((hunk, hunkIndex) => ({
-      path: file.path,
-      hunkIndex,
-      hunk,
-      granularity: "hunk" as const,
-      candidateTaskKeys: matching.map((task) => task.key),
-      candidateRequirementIds: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => requirement.id)))],
-      candidateRequirementRefs: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => `${requirement.specPath}#${requirement.id}`)))],
-      state: documentation ? "documentation" as const : matching.length === 0 ? "unplanned" as const : "unresolved" as const,
-      reason: documentation ? "documentation-change" as const : matching.length === 0 ? "no-task-path-match" as const : "file-hint-is-not-hunk-evidence" as const,
-    }));
+    const todo = todos.find((document) => document.path === file.path);
+    const spec = specs.find((document) => document.path === file.path);
+    const documentation = Boolean(todo || spec || /(?:^|\/)README\.md$/iu.test(file.path));
+    return file.hunks.map((hunk, hunkIndex) => {
+      const changedRange = changedLineRange(hunk);
+      if (todo && changedRange) {
+        const matchedTasks = todo.tasks.filter((task) => rangesOverlap(task.range, changedRange));
+        if (matchedTasks.length > 0) {
+          return {
+            path: file.path, hunkIndex, hunk, granularity: "hunk" as const,
+            candidateTaskKeys: matchedTasks.map((task) => task.key),
+            candidateRequirementIds: [...new Set(matchedTasks.flatMap((task) => task.specReferences.flatMap((reference) => reference.ids)))],
+            candidateRequirementRefs: [...new Set(matchedTasks.flatMap((task) => task.specReferences.flatMap((reference) => reference.ids.map((id) => \`\${reference.path}#\${id}\`))))],
+            state: "attributed" as const, reason: "todo-task-source-range" as const,
+          };
+        }
+      }
+      if (spec && changedRange) {
+        const matchedRequirements = spec.requirements.filter((requirement) => rangesOverlap(requirement.range, changedRange));
+        const matchedCriteria = spec.acceptanceCriteria.filter((criterion) => rangesOverlap(criterion.range, changedRange));
+        const requirementRefs = [...new Set([
+          ...matchedRequirements.map((requirement) => \`\${spec.path}#\${requirement.id}\`),
+          ...matchedCriteria.flatMap((criterion) => criterion.requirementIds.map((id) => \`\${spec.path}#\${id}\`)),
+        ])];
+        if (requirementRefs.length > 0) {
+          const matchingTasks = tasks.filter((task) => task.resolvedRequirements.some((requirement) =>
+            requirementRefs.includes(\`\${requirement.specPath}#\${requirement.id}\`),
+          ));
+          return {
+            path: file.path, hunkIndex, hunk, granularity: "hunk" as const,
+            candidateTaskKeys: matchingTasks.map((task) => task.key),
+            candidateRequirementIds: [...new Set(requirementRefs.map((reference) => reference.slice(reference.lastIndexOf("#") + 1)))],
+            candidateRequirementRefs: requirementRefs,
+            state: "attributed" as const, reason: "spec-requirement-source-range" as const,
+          };
+        }
+      }
+      const matching = documentation ? [] : tasks.filter((task) => task.filePaths.some((filePath) =>
+        filePath === file.path || filePath === file.previousPath,
+      ));
+      return {
+        path: file.path,
+        hunkIndex,
+        hunk,
+        granularity: "hunk" as const,
+        candidateTaskKeys: matching.map((task) => task.key),
+        candidateRequirementIds: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => requirement.id)))],
+        candidateRequirementRefs: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => \`\${requirement.specPath}#\${requirement.id}\`)))],
+        state: documentation ? "documentation" as const : matching.length === 0 ? "unplanned" as const : "unresolved" as const,
+        reason: documentation ? "documentation-change" as const : matching.length === 0 ? "no-task-path-match" as const : "file-hint-is-not-hunk-evidence" as const,
+      };
+    });
   });
 }
+
 export type TaskIdentityMatch = {
   state: "matched" | "added" | "removed" | "ambiguous";
   previousKey?: string;
