@@ -94,6 +94,7 @@ export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDi
   const snapshots = new Map<string, FileSnapshot>();
   const createdDirectories = new Set<string>();
   for (const target of paths) {
+    if (!target || target.split("/").includes("..") || path.isAbsolute(target)) throw new Error(`Unsafe patch path: ${target}`);
     let parent = path.dirname(target);
     while (parent !== ".") {
       try { lstatSync(path.resolve(directory, parent)); }
@@ -105,7 +106,6 @@ export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDi
       if (next === parent) break;
       parent = next;
     }
-    if (!target || target.includes("..") || path.isAbsolute(target)) throw new Error(`Unsafe patch path: ${target}`);
     const absolute = path.resolve(directory, target);
     const relative = path.relative(path.resolve(directory), absolute);
     if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`Patch path escapes repository: ${target}`);
@@ -156,7 +156,7 @@ export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDi
   try {
     const files = patches.map((diff, index) => {
       const file = path.join(staging, `patch-${index}.diff`);
-      writeFileSync(file, diff.patch.endsWith("\\n") ? diff.patch : `${diff.patch}\\n`, "utf8");
+      writeFileSync(file, diff.patch.endsWith("\n") ? diff.patch : `${diff.patch}\n`, "utf8");
       return file;
     });
     try {
@@ -190,7 +190,7 @@ export function verifyAppliedDiffs(directory: string, diffs: PlannedDiff[]): { p
     mirrorPatchedPaths(directory, worktree, patches.map((diff) => diff.patch));
     const files = patches.map((diff, index) => {
       const file = path.join(staging, `patch-${index}.diff`);
-      writeFileSync(file, diff.patch.endsWith("\\n") ? diff.patch : `${diff.patch}\\n`, "utf8");
+      writeFileSync(file, diff.patch.endsWith("\n") ? diff.patch : `${diff.patch}\n`, "utf8");
       return file;
     });
     // The original patches were applied in order; undo them in reverse order
