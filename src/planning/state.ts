@@ -76,8 +76,6 @@ function criterionVerified(
 function stateForTask(
   task: ResolvedTask,
   changedPaths: string[],
-  expectedPaths: string[],
-  coveredExpectedPaths: string[],
   evidence: VerificationEvidence[],
   criterionCoverage: Array<{ ref: string; verified: boolean }>,
 ): DerivedTaskState {
@@ -88,24 +86,15 @@ function stateForTask(
       && /^\s*(?:blocked|blocker):\s*\S/iu.test(item.result))
   ) return "blocked";
 
-  let state: DerivedTaskState;
-  if (changedPaths.length === 0) {
-    state = "planned";
-  } else if (
-    expectedPaths.length > 0
-    && coveredExpectedPaths.length === expectedPaths.length
-  ) {
-    state = "implemented";
-  } else {
-    state = "in-progress";
-  }
+  if (changedPaths.length === 0) return "planned";
 
-  if (state !== "implemented") return state;
-
+  // File: hints establish relevance, not that the changed hunk implements the
+  // task. Until a precise hunk association exists, path-only evidence stays
+  // in-progress. Explicit passing evidence may verify linked criteria/tasks.
   const verified = criterionCoverage.length > 0
     ? criterionCoverage.every((criterion) => criterion.verified)
     : evidence.some((item) => item.passed && item.taskKeys?.includes(task.key));
-  return verified ? "verified" : "implemented";
+  return verified ? "verified" : "in-progress";
 }
 
 /**
@@ -128,17 +117,13 @@ export function derivePlanningStates(input: {
   for (const task of input.tasks) {
     const associations = input.associations.filter((item) => item.taskKeys.includes(task.key));
     const changedPaths = [...new Set(associations.map((item) => item.path))];
-    const expectedPaths = [...new Set(task.filePaths)];
-    const coveredExpectedPaths = expectedPaths.filter((expected) =>
-      input.changedFiles.some((file) => file.path === expected || file.previousPath === expected),
-    );
     const criterionCoverage = task.resolvedAcceptanceCriteria.map((criterion) => {
       const ref = criterionRef(criterion.specPath, criterion.id);
       return { ref, verified: criterionVerified(ref, evidence) };
     });
     taskProjections[task.key] = {
       taskKey: task.key,
-      state: stateForTask(task, changedPaths, expectedPaths, coveredExpectedPaths, evidence, criterionCoverage),
+      state: stateForTask(task, changedPaths, evidence, criterionCoverage),
       changedPaths,
       acceptanceCriteria: criterionCoverage,
     };
