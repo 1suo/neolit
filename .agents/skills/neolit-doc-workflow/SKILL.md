@@ -13,8 +13,7 @@ contract; this skill supplies the detailed procedure and templates.
 1. Read the root README for current shipped behavior and repository structure.
 2. Identify the relevant requirement IDs in REWRITE-SPEC.md for Git-native work.
    For legacy maintenance, use the owning legacy SPEC instead.
-3. Find the corresponding unchecked entry in TODO-rewrite.md or the relevant
-   legacy TODO.
+3. Find the corresponding implementation entry in TODO-rewrite.md.
 4. Read the nearest component README and only the code directly involved.
 5. If the task does not map to an existing requirement, determine whether it is
    a bug within the current contract or whether the SPEC itself needs an
@@ -87,8 +86,9 @@ A TODO item should use this structure:
   - File: src/path/to/file.ts, test/path/to/file.test.ts
   - Description: observable outcome, constraints, and remaining validation
 
-Keep the TODO item open until its implementation and validation are complete.
-Do not move future behavior into README text.
+Check an implementation item when the described code/documentation change is
+complete. Keep its paired validation item open until the relevant independent
+host/CI validation is actually performed. Do not move future behavior into README text.
 
 ## 6. Validate and commit
 
@@ -98,9 +98,10 @@ Run the narrowest relevant test first, then the repository check:
 - npm run build when validating built output or an editor host
 
 If a command cannot run, state the exact environmental reason and leave the
-relevant TODO item open. Do not claim success based on source inspection alone.
+paired validation item open. Do not claim success based on source inspection alone.
 
 Inspect git status --short again. Stage only task-owned files. Commit completed
-implementation and tests with a conventional prefix; keep documentation in the
-same commit only when inseparable. Do not amend, rewrite, push, or discard
+implementation with a conventional prefix; include documentation when it
+records the shipped behavior. Do not add tests unless the task owner explicitly
+requests test work. Do not amend, rewrite, push, or discard
 existing work unless explicitly requested.
