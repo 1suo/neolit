@@ -30,12 +30,11 @@
     "prepack": "npm run check && npm run build"
   },
   "keywords": [
-    "augmentation",
-    "lod",
     "git",
     "planning",
     "diff",
     "traceability",
+    "markdown",
     "coding-agents"
   ],
   "author": "1suo",
