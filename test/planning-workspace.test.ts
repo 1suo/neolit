@@ -141,14 +141,19 @@ describe("loadPlanningWorkspace", () => {
 
   it("uses an explicit comparison base and binds derived evidence to its resolved commit", async () => {
     const root = await fixture();
+    const originalHead = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+    await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => 'intermediate';\\n");
+    await execFileAsync("git", ["add", "src/auth/session.ts"], { cwd: root });
+    await execFileAsync("git", ["commit", "-qm", "intermediate implementation"], { cwd: root });
     const head = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
     await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => false;\\n");
 
     const defaultWorkspace = await loadPlanningWorkspace(root);
     expect(defaultWorkspace.git.base).toBe(head);
 
-    const selectedWorkspace = await loadPlanningWorkspace(root, { comparisonBase: "HEAD~0" });
-    expect(selectedWorkspace.git.base).toBe(head);
+    const selectedWorkspace = await loadPlanningWorkspace(root, { comparisonBase: "HEAD~1" });
+    expect(selectedWorkspace.git.base).toBe(originalHead);
+    expect(selectedWorkspace.git.base).not.toBe(head);
     expect(selectedWorkspace.git.diff).toContain("-export const refresh = () => true;");
     expect(selectedWorkspace.git.diff).toContain("+export const refresh = () => false;");
     expect(selectedWorkspace.derived.tasks[selectedWorkspace.tasks[0]!.key]!.state).toBe("implemented");
