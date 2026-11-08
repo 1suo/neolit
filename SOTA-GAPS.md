@@ -57,7 +57,7 @@ Ordered by user-visible impact; the owning record tracks each gap.
 3. **Repository awareness.** The standalone TUI now polls tracked and non-ignored
    untracked paths plus HEAD, and turns external edits, creates, deletes, and
    basis movement into `node/stale` operations. Changes queue behind active
-   controller work; Neolit-owned apply/commit operations re-baseline the watcher.
+   controller work; Neolit-owned apply operations re-baseline the watcher, while commits trigger basis staleness.
    Path-aware filesystem indexing to prioritize context remains open.
 4. **Granular multi-client sync.** Change notifications carry only the task
    id and revision, so multi-client tree views must refetch; finer-grained
