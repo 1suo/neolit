@@ -12,7 +12,7 @@ export interface RepositoryOverlay {
 
 const MAX_OVERLAYS = 32;
 const MAX_FILE_BYTES = 48_000;
-const RULE_LANGUAGE = /\\b(?:must|must not|never|always|required|do not|don't|should|avoid|prefer|only|ensure|keep|preserve)\\b/iu;
+const RULE_LANGUAGE = /\b(?:must|must not|never|always|required|do not|don't|should|avoid|prefer|only|ensure|keep|preserve)\b/iu;
 
 function trackedPaths(directory: string): string[] {
   try {
@@ -49,9 +49,7 @@ function wholeFileOverlay(directory: string, relative: string, source: Repositor
 }
 
 function documentationRules(relative: string, content: string): RepositoryOverlay[] {
-  const scope = relative.endsWith("/AGENTS.md") || relative === "AGENTS.md"
-    ? path.posix.dirname(relative)
-    : path.posix.dirname(relative);
+  const scope = path.posix.dirname(relative);
   const heading: string[] = [];
   const rules: RepositoryOverlay[] = [];
   let inFence = false;
@@ -62,11 +60,11 @@ function documentationRules(relative: string, content: string): RepositoryOverla
       continue;
     }
     if (inFence || !line || line.startsWith("<!--")) continue;
-    if (/^#{1,6}\\s/u.test(line)) {
-      heading.splice(0, heading.length, line.replace(/^#{1,6}\\s+/u, "").trim());
+    if (/^#{1,6}\s/u.test(line)) {
+      heading.splice(0, heading.length, line.replace(/^#{1,6}\s+/u, "").trim());
       continue;
     }
-    const rule = line.replace(/^(?:[-*+]\\s+|\\d+[.)]\\s+)/u, "").trim();
+    const rule = line.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/u, "").trim();
     if (!rule || (!RULE_LANGUAGE.test(rule) && path.posix.basename(relative).toLowerCase() !== "agents.md")) continue;
     const text = (heading.length ? heading.join(" / ") + ": " : "") + rule;
     rules.push({
@@ -91,8 +89,11 @@ export function loadRepositoryOverlays(directory: string): RepositoryOverlay[] {
   const globalConfig = process.env.XDG_CONFIG_HOME?.trim() || path.join(os.homedir(), ".config");
   const globalOverlay = path.join(globalConfig, "neolit", "overlay.md");
   try {
-    const text = fs.readFileSync(globalOverlay, "utf8").trim();
-    if (text) overlays.push({ source: "user", title: "User Neolit overlay", text: text.slice(0, MAX_FILE_BYTES) });
+    const stat = fs.statSync(globalOverlay);
+    if (stat.isFile() && stat.size <= MAX_FILE_BYTES) {
+      const text = fs.readFileSync(globalOverlay, "utf8").trim();
+      if (text) overlays.push({ source: "user", title: "User Neolit overlay", text });
+    }
   } catch {
     // Optional global overlay.
   }
