@@ -134,9 +134,13 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Replace planned-diff kernel and protocol with the documentation/Git core
   - SPEC: `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`, `REWRITE-SPEC.md#R-53`, `REWRITE-SPEC.md#R-59`, `REWRITE-SPEC.md#R-60`, `REWRITE-SPEC.md#R-70`
   - Description: Remove candidate domains, challenge/collapse/refinement, planned patch storage/application, model operation routing, and agent tool orchestration. Retain only measured, reusable behavior that fits the target.
-- [ ] Update package exports, CLI commands, and Neovim host contract
+- [x] Publish the dedicated Git-native planning package entry point
+  - SPEC: `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-54`
+  - File: `package.json`, `src/planning/index.ts`, `src/planning/README.md`
+  - Description: Added the `neolit/planning` export and a planning-only public barrel, included the planning package files in publication, and documented the host-neutral API. New adapters can consume the deterministic core without importing the legacy kernel/TUI surface.
+- [ ] Retire legacy package exports/CLI commands and complete the Neovim host-contract migration
   - SPEC: `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-59`, `REWRITE-SPEC.md#R-73`
-  - Description: Added an additive `neolit/planning` package subpath and a planning-only public barrel so new adapters can depend on the deterministic shared core without importing the legacy kernel/TUI surface. The root export and old commands remain for compatibility; retiring them and completing the Neovim host-contract migration are still open.
+  - Description: The root export and legacy `augment`/`augmentd` commands remain for compatibility. Retire them only with the planned-diff kernel/TUI removal and migrate the Neovim default command, packaging, and host contract to the Git-native companion.
 - [x] Preserve repository documents and isolate legacy task handling
   - SPEC: `REWRITE-SPEC.md#R-71`, `REWRITE-SPEC.md#R-72`
   - File: `src/planning/workspace.ts`, `src/planning/README.md`, `1suo/neolit.nvim/lua/neolit/planning.lua`
