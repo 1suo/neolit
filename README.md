@@ -62,10 +62,9 @@ diff interfaces in control.
 - [AGENTS.md](./AGENTS.md) defines the documentation-first agent workflow.
 
 Existing README/SPEC/TODO files are repository data and are not rewritten or
-migrated by Neolit. The former planned-diff implementation and its
-`augment`/`augmentd` commands have been retired; the historical
-[`TODO-augment.md`](./TODO-augment.md) and [`SOTA-GAPS.md`](./SOTA-GAPS.md)
-are retained as historical records, not active product contracts.
+migrated by Neolit. The former planned-diff implementation and its `augment`/`augmentd` commands
+have been retired. Older gap ledgers remain in the repository as archive
+material, not active product contracts.
 
 ## Development
 
