@@ -252,16 +252,14 @@ export function buildDiffQuestionPacket(input: {
 
   if (input.relatedTasks?.length) {
     const selectedTasks = input.relatedTasks.slice(0, limits.maxRelatedTasks);
-    const plan = selectedTasks.flatMap(({ todoPath, task, requirements }) => [
+    const plan = selectedTasks.flatMap(({ todoPath, task, requirements, acceptanceCriteria }) => [
       `- TODO ${todoPath}:${task.range.startLine}: ${task.text}`,
       ...requirements.map(({ specPath, requirement }) =>
         `  - ${specPath}#${requirement.id}: ${requirement.text}`,
       ),
-      ...input.relatedTasks
-        .find((candidate) => candidate.task.key === task.key)!
-        .acceptanceCriteria.map(({ specPath, criterion }) =>
-          `  - ${specPath}#${criterion.id}: ${criterion.text}`,
-        ),
+      ...acceptanceCriteria.map(({ specPath, criterion }) =>
+        `  - ${specPath}#${criterion.id}: ${criterion.text}`,
+      ),
     ]);
     if (input.relatedTasks.length > selectedTasks.length) {
       const omitted = input.relatedTasks.length - selectedTasks.length;
