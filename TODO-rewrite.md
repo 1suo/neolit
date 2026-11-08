@@ -100,6 +100,11 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Validate packet contents, size limits, and stale-context rejection
   - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
   - Description: Manually reviewed packet construction: question, anchor, exact file/hunk diff, selected lines, related tasks/requirements, and separated README/SPEC context are bounded; stale base/diff/blob and mismatched file/hunk selections return stale rather than substituting context. Source review only; no tests were run.
+- [x] Preserve exact line anchors from the diff-tree context action
+  - SPEC: `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-45`
+  - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: Corrected the diff-tree line-row action to pass its line range into the shared anchor builder and its exact source text into the packet builder. The packet now distinguishes the selected line from its containing hunk while retaining full-diff freshness validation.
+
 - [x] Implement copyable contextual handoff to the existing agent
   - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-50`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
