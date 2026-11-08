@@ -414,6 +414,7 @@ export class AugmentTuiController {
         };
       },
       verifyPatches: (diffs) => verifyAppliedDiffs(this.directory, diffs),
+      initialConstraints: () => loadRepositoryOverlays(this.directory),
     });
     this.defaultLod = options.defaultLod ?? "file";
     const rounds = options.challengeRounds ?? Number(process.env.AUGMENT_CHALLENGE_ROUNDS);
@@ -979,24 +980,6 @@ export class AugmentTuiController {
           });
           this.task = expectResult(marked, PlanTaskLike.is) as PlanTask;
         }
-      }
-      // Repository/user practice overlays become typed, path-scoped
-      // constraints before the marking window closes or any model call runs.
-      for (const overlay of loadRepositoryOverlays(this.directory)) {
-        const constrained = await this.server.handle({
-          jsonrpc: "2.0",
-          id: 20,
-          method: "node/constrain",
-          params: {
-            taskId: this.task.id,
-            expectedRevision: this.task.revision,
-            nodeId: this.task.rootNodeId,
-            path: overlay.scope,
-            text: "[" + overlay.title + "] " + overlay.text,
-            source: overlay.source,
-          },
-        });
-        this.task = expectResult(constrained, PlanTaskLike.is) as PlanTask;
       }
       this.pendingMarks = [];
       this.pendingMode = "lock";
