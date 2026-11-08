@@ -237,6 +237,16 @@ function emptyTreeEntry(entryPath: string, kind: PlanTreeEntry["kind"]): PlanTre
   };
 }
 
+function sortTreeChildren(entry: PlanTreeEntry): void {
+  // Keep project directories visible near the top of the TUI's bounded tree
+  // viewport. Root-level docs and config files must not push source folders
+  // below the initial fold merely because new documentation was added.
+  entry.children.sort((left, right) => {
+    const kindOrder = Number(left.kind !== "dir") - Number(right.kind !== "dir");
+    return kindOrder || left.name.localeCompare(right.name);
+  });
+}
+
 function ensureTreeEntry(root: PlanTreeEntry, entryPath: string, kind: PlanTreeEntry["kind"]): PlanTreeEntry {
   if (entryPath === ".") return root;
   const parentPath = entryPath.includes("/") ? entryPath.slice(0, entryPath.lastIndexOf("/")) : ".";
@@ -245,7 +255,7 @@ function ensureTreeEntry(root: PlanTreeEntry, entryPath: string, kind: PlanTreeE
   if (!child) {
     child = emptyTreeEntry(entryPath, kind);
     parent.children.push(child);
-    parent.children.sort((left, right) => left.path.localeCompare(right.path));
+    sortTreeChildren(parent);
   }
   return child;
 }
@@ -289,7 +299,7 @@ function mergePlanTree(repository: PlanTreeEntry, plan: PlanTreeEntry): PlanTree
   };
   merge(plan);
   const sortChildren = (entry: PlanTreeEntry) => {
-    entry.children.sort((left, right) => left.path.localeCompare(right.path));
+    sortTreeChildren(entry);
     entry.children.forEach(sortChildren);
   };
   sortChildren(repository);
