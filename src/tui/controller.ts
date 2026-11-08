@@ -1202,7 +1202,7 @@ export class AugmentTuiController {
     const row = this.selectedRow();
     const diffs = (row?.entry.diffIds ?? []).flatMap((id) => {
       const diff = task.diffs[id];
-      return diff ? [diff] : [];
+      return diff && (diff.lifecycle === undefined || diff.lifecycle === "drafted") ? [diff] : [];
     });
     if (!diffs.length) {
       this.error = "Select a drafted path to apply.";
