@@ -293,6 +293,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("neolit.openChangedFile", async (node?: HunkNode | ChangedFileNode) => {
       if (!node || (node.kind !== "hunk" && node.kind !== "changedFile") || !current) return;
+      if (!await ensureCurrent()) return;
       const file = current.git.changedFiles.find((item) => item.path === node.path);
       if (!file) return;
       const working = workspaceFileUri(folder, file.path);
