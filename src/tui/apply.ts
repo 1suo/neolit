@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, rmdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { patchPaths } from "../augment/state.js";
@@ -56,7 +56,7 @@ export function preflightPatches(directory: string, patches: string[]): string |
 function mirrorPatchedPaths(directory: string, worktree: string, patches: string[]): void {
   const targets = new Set(patches.flatMap((patch) => patchPaths(patch)));
   for (const target of targets) {
-    if (!target || target.includes("..") || path.isAbsolute(target)) continue;
+    if (!target || target.split("/").includes("..") || path.isAbsolute(target)) continue;
     const source = path.join(directory, target);
     const destination = path.join(worktree, target);
     let live = false;
@@ -92,7 +92,19 @@ export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDi
   if (failure) throw new Error(failure);
   const paths = [...new Set(patches.flatMap((diff) => patchPaths(diff.patch)))].sort();
   const snapshots = new Map<string, FileSnapshot>();
+  const createdDirectories = new Set<string>();
   for (const target of paths) {
+    let parent = path.dirname(target);
+    while (parent !== ".") {
+      try { lstatSync(path.resolve(directory, parent)); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") createdDirectories.add(parent);
+        else throw error;
+      }
+      const next = path.dirname(parent);
+      if (next === parent) break;
+      parent = next;
+    }
     if (!target || target.includes("..") || path.isAbsolute(target)) throw new Error(`Unsafe patch path: ${target}`);
     const absolute = path.resolve(directory, target);
     const relative = path.relative(path.resolve(directory), absolute);
@@ -126,6 +138,14 @@ export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDi
         }
       } catch (error) {
         failures.push(`${target}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    for (const directoryPath of [...createdDirectories].sort((left, right) => right.length - left.length)) {
+      try { rmdirSync(path.resolve(directory, directoryPath)); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" && (error as NodeJS.ErrnoException).code !== "ENOTEMPTY") {
+          failures.push(`${directoryPath}: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
     }
     rolledBack = true;
