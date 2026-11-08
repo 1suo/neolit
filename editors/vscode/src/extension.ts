@@ -17,7 +17,8 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
   private readonly emitter = new vscode.EventEmitter<PlanNode | undefined>();
   readonly onDidChangeTreeData = this.emitter.event;
   workspace?: PlanningWorkspace;
-  constructor(private readonly root: string) {}
+  constructor() {}
+  dispose(): void { this.emitter.dispose(); }
   refresh(workspace: PlanningWorkspace): void { this.workspace = workspace; this.emitter.fire(undefined); }
   getTreeItem(node: PlanNode): vscode.TreeItem {
     if (node.kind === "task") {
@@ -74,7 +75,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) return;
   const root = folder.uri.fsPath;
-  const tree = new PlanningTree(root);
+  const tree = new PlanningTree();
   const view = vscode.window.createTreeView("neolit.plan", { treeDataProvider: tree, showCollapseAll: true });
   context.subscriptions.push(view, tree);
   let current: PlanningWorkspace | undefined;
@@ -107,17 +108,18 @@ export function activate(context: vscode.ExtensionContext): void {
       const file = current.git.changedFiles.find((item) => item.path === node.path);
       const hunk = file?.hunks[node.hunkIndex];
       if (!file || !hunk) return;
+      const currentFileDiff = file.rawDiff;
       const anchor = createDiffAnchor({
         path: node.path, side: "working-tree", baseCommit: current.git.base,
-        diffText: current.git.diff, hunk,
+        diffText: currentFileDiff, hunk,
       });
-      const relatedTasks = selectRelatedTaskContexts({ path: node.path, previousPath: node.previousPath, tasks: current.tasks });
+      const relatedTasks = selectRelatedTaskContexts({ path: node.path, previousPath: file.previousPath, tasks: current.tasks });
       const documentationContext = relatedTasks.length === 1
         ? selectTaskDocumentationContext({ task: current.tasks.find((item) => item.key === relatedTasks[0]!.task.key)!, readmes: current.readmeContents })
         : undefined;
       const packet = buildDiffQuestionPacket({
         question: "Please explain this change, its relationship to the linked plan, and any gaps or risks.",
-        anchor, currentBaseCommit: current.git.base, currentDiffText: current.git.diff,
+        anchor, currentBaseCommit: current.git.base, currentDiffText: currentFileDiff,
         selectedDiffText: file.rawDiff, relatedTasks, documentationContext,
       });
       if (packet.status === "stale") {
