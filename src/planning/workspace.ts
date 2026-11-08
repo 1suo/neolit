@@ -262,7 +262,7 @@ export async function loadPlanningWorkspace(
 
 
   const associations = mapDiffToTasks(changedFiles, resolved.tasks);
-  const hunkAssociations = mapDiffHunksToTasks(changedFiles, resolved.tasks);
+  const hunkAssociations = mapDiffHunksToTasks(changedFiles, resolved.tasks, specs, todos);
   const diffIdentity = identifyDiff(JSON.stringify([
     base,
     diff,
