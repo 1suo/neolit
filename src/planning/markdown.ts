@@ -51,6 +51,7 @@ export type DiffHunk = {
   newLines: number;
   header: string;
   addedLines: string[];
+  addedLineNumbers?: number[];
   removedLines: string[];
 };
 export type ChangedFile = {
@@ -385,6 +386,7 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
   let current: ChangedFile | undefined;
   let currentLines: string[] = [];
   let currentHunk: DiffHunk | undefined;
+  let currentNewLine = 0;
 
   const finish = () => {
     if (current) {
@@ -394,6 +396,7 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
     current = undefined;
     currentLines = [];
     currentHunk = undefined;
+    currentNewLine = 0;
   };
 
   for (const line of diff.split(/\r?\n/u)) {
@@ -433,14 +436,20 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
           newLines: Number(match[4] ?? 1),
           header: match[5]!.trim(),
           addedLines: [],
+          addedLineNumbers: [],
           removedLines: [],
         };
+        currentNewLine = currentHunk.newStart;
         current.hunks.push(currentHunk);
       }
     } else if (currentHunk && line.startsWith("+") && !line.startsWith("+++")) {
       currentHunk.addedLines.push(line.slice(1));
+      currentHunk.addedLineNumbers!.push(currentNewLine);
+      currentNewLine += 1;
     } else if (currentHunk && line.startsWith("-") && !line.startsWith("---")) {
       currentHunk.removedLines.push(line.slice(1));
+    } else if (currentHunk && line.startsWith(" ")) {
+      currentNewLine += 1;
     }
   }
   finish();
@@ -500,13 +509,8 @@ export type TaskHunkAssociation = {
   reason: "no-task-path-match" | "file-hint-is-not-hunk-evidence" | "documentation-change" | "todo-task-source-range" | "spec-requirement-source-range";
 };
 
-function changedLineRange(hunk: DiffHunk): SourceRange | undefined {
-  if (hunk.newLines === 0) return undefined;
-  return { startLine: hunk.newStart, endLine: hunk.newStart + hunk.newLines - 1 };
-}
-
-function rangesOverlap(left: SourceRange, right: SourceRange): boolean {
-  return left.startLine <= right.endLine && right.startLine <= left.endLine;
+function hunkAddsLineInRange(hunk: DiffHunk, range: SourceRange): boolean {
+  return (hunk.addedLineNumbers ?? []).some((line) => line >= range.startLine && line <= range.endLine);
 }
 
 /**
@@ -526,9 +530,8 @@ export function mapDiffHunksToTasks(
     const spec = specs.find((document) => document.path === file.path);
     const documentation = Boolean(todo || spec || /(?:^|\/)README\.md$/iu.test(file.path));
     return file.hunks.map((hunk, hunkIndex) => {
-      const changedRange = changedLineRange(hunk);
-      if (todo && changedRange) {
-        const matchedTasks = todo.tasks.filter((task) => rangesOverlap(task.range, changedRange));
+      if (todo) {
+        const matchedTasks = todo.tasks.filter((task) => hunkAddsLineInRange(hunk, task.range));
         if (matchedTasks.length > 0) {
           return {
             path: file.path, hunkIndex, hunk, granularity: "hunk" as const,
@@ -539,9 +542,9 @@ export function mapDiffHunksToTasks(
           };
         }
       }
-      if (spec && changedRange) {
-        const matchedRequirements = spec.requirements.filter((requirement) => rangesOverlap(requirement.range, changedRange));
-        const matchedCriteria = spec.acceptanceCriteria.filter((criterion) => rangesOverlap(criterion.range, changedRange));
+      if (spec) {
+        const matchedRequirements = spec.requirements.filter((requirement) => hunkAddsLineInRange(hunk, requirement.range));
+        const matchedCriteria = spec.acceptanceCriteria.filter((criterion) => hunkAddsLineInRange(hunk, criterion.range));
         const requirementRefs = [...new Set([
           ...matchedRequirements.map((requirement) => \`\${spec.path}#\${requirement.id}\`),
           ...matchedCriteria.flatMap((criterion) => criterion.requirementIds.map((id) => \`\${spec.path}#\${id}\`)),
