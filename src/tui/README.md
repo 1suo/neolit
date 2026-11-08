@@ -154,7 +154,14 @@ falls back to the JSON envelope when a model still answers that way; the
 batch draft stays JSON. Backends today: `opencode` (`opencode run --format
 json`, default), `claude` (`claude -p --output-format json --permission-mode
 plan`), and `codex` (`codex exec --json --sandbox read-only`). Claude
-sessions resume via `--resume`; codex sessions are not continued yet. Vendor
+sessions resume via `--resume`; Codex captures `thread.started` ids and
+continues with `codex exec resume`. The tool-session driver supports all
+three backends: OpenCode layers MCP through `OPENCODE_CONFIG`, Claude passes
+`--mcp-config` plus an explicit `mcp__neolit__*` tool allowlist, and Codex
+uses `--config` overrides for a repository-scoped `mcp_servers.neolit`
+entry while keeping its sandbox read-only. Codex and Claude use the CLI
+session continuation path; OpenCode uses the kept-alive warm transport with
+one-shot fallback. Vendor
 flags drift — when one does, the fix is one object in that file. Adding an
 agent is the same: implement the `CliAgentBackend` interface and register it.
 
