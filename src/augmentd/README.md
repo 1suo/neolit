@@ -54,6 +54,8 @@ domain/propose
 domain/challenge
 node/refine
 patch/attach
+patch/apply
+patch/verify
 patch/draft
 patch/draft-batch
 patch/set
