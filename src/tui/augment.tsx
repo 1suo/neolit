@@ -504,6 +504,8 @@ export function AugmentTui(props: {
             { text: " develop ·", color: theme.primary },
             { text: "[A]", color: theme.primary, bold: true },
             { text: " apply ·", color: theme.primary },
+            { text: "[V]", color: theme.primary, bold: true },
+            { text: " verify ·", color: theme.primary },
             { text: "[C]", color: theme.primary, bold: true },
             { text: " commit ·", color: theme.primary },
             { text: "[L]", color: theme.primary, bold: true },
