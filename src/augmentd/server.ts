@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { assertTaskIntegrity, createPlanTask, addConstraint, attachPatch, markPathStale, planTree, PlanStateError, refineNode, refreshNode, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
+import { assertTaskIntegrity, createPlanTask, addConstraint, attachPatch, markPathStale, planTree, PlanStateError, refineNode, refreshNode, rejectCandidate, reopenNode, replacePatch, setDiffLifecycle, setPathRestriction } from "../augment/state.js";
 import { applyChallenge, applyDomainProposal, AugmentModelError, crystallizeNode, draftPatchesWithModel, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, routeMessageWithModel, selectCandidate } from "../augment/kernel.js";
 import { ChallengeDomainSchema, DomainProposalSchema, PatchProposalSchema, PlanTaskSchema, RefinementProposalSchema } from "../augment/schemas.js";
 import type { LOD, ModelRuntime, PlanRevision, PlanTask, Temperature } from "../augment/types.js";
@@ -53,6 +53,8 @@ export interface AugmentServerOptions {
   runtime?: ModelRuntime;
   /** Optional atomic task snapshot path; when set, every accepted mutation is durable before notification. */
   persistencePath?: string;
+  /** Host-owned transactional filesystem apply. The returned rollback runs if core persistence fails. */
+  applyPatches?: (diffs: PlannedDiff[]) => Promise<{ paths: string[]; rollback(): void }> | { paths: string[]; rollback(): void };
 }
 
 export class UnavailableModelRuntime implements ModelRuntime {
@@ -134,10 +136,12 @@ export class AugmentServer {
   private readonly taskLocks = new Map<string, Promise<void>>();
   private nextTaskId = 1;
   private readonly persistencePath?: string;
+  private readonly applyPatches?: AugmentServerOptions["applyPatches"];
 
   constructor(options: AugmentServerOptions = {}) {
     this.runtime = options.runtime ?? new UnavailableModelRuntime();
     this.persistencePath = options.persistencePath;
+    this.applyPatches = options.applyPatches;
     if (this.persistencePath) this.restoreSnapshot();
   }
 
@@ -518,6 +522,52 @@ export class AugmentServer {
           diffId: string(input.diffId, "diffId"),
           failedCheck: string(input.failedCheck, "failedCheck"),
           temperature: temperature(input.temperature),
+        });
+        this.store(updated);
+        return updated;
+      }
+      case "patch/apply": {
+        const base = taskMutation(params);
+        const input = object(params);
+        if (!Array.isArray(input.diffIds) || !input.diffIds.length || input.diffIds.some((id) => typeof id !== "string" || !id.trim())) {
+          throw new ProtocolError(-32602, "diffIds must be a non-empty array of diff ids");
+        }
+        if (!this.applyPatches) throw new ProtocolError(-32022, "This host has not configured a transactional patch applier");
+        const task = this.requireTask(base.taskId);
+        const diffs = [...new Set(input.diffIds as string[])].map((id) => {
+          const diff = task.diffs[id];
+          if (!diff) throw new ProtocolError(-32004, `Unknown planned diff: ${id}`);
+          return diff;
+        });
+        const transaction = await this.applyPatches(diffs);
+        try {
+          const updated = setDiffLifecycle(task, {
+            ...base,
+            diffIds: diffs.map((diff) => diff.id),
+            lifecycle: "applied",
+            paths: transaction.paths,
+          });
+          this.store(updated);
+          return updated;
+        } catch (error) {
+          try { transaction.rollback(); } catch (rollbackError) {
+            throw new Error(`Patch state could not be saved and filesystem rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
+          }
+          throw error;
+        }
+      }
+      case "patch/verify": {
+        const base = taskMutation(params);
+        const input = object(params);
+        if (!Array.isArray(input.diffIds) || !input.diffIds.length || input.diffIds.some((id) => typeof id !== "string" || !id.trim())) {
+          throw new ProtocolError(-32602, "diffIds must be a non-empty array of diff ids");
+        }
+        if (typeof input.passed !== "boolean") throw new ProtocolError(-32602, "passed must be a boolean");
+        const updated = setDiffLifecycle(this.requireTask(base.taskId), {
+          ...base,
+          diffIds: input.diffIds as string[],
+          lifecycle: input.passed ? "verified" : "failed",
+          detail: string(input.summary, "summary"),
         });
         this.store(updated);
         return updated;
