@@ -343,7 +343,7 @@ export const claudeBackend: CliAgentBackend = {
   },
 };
 
-/** Codex: `codex exec --json` emits a JSONL event stream. Sessions are not continued yet. */
+/** Codex: `codex exec --json` emits a JSONL event stream; thread ids resume with `codex exec resume`. */
 export const codexBackend: CliAgentBackend = {
   id: "codex",
   defaultCommand: "codex",
@@ -351,6 +351,7 @@ export const codexBackend: CliAgentBackend = {
   invocation(parts) {
     return [
       "exec",
+      ...(parts.session ? ["resume", parts.session] : []),
       "--json",
       "--sandbox",
       "read-only",
@@ -377,7 +378,15 @@ export const codexBackend: CliAgentBackend = {
     }
     return texts.join("\n");
   },
-  extractSessionId() {
+  extractSessionId(stdout) {
+    for (const line of stdout.split(/\r?\n/)) {
+      try {
+        const event = JSON.parse(line.trim()) as Record<string, unknown>;
+        if (event.type === "thread.started" && typeof event.thread_id === "string") return event.thread_id;
+      } catch {
+        continue;
+      }
+    }
     return undefined;
   },
   extractError(stdout) {
