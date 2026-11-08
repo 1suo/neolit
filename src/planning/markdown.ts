@@ -385,7 +385,7 @@ export function mapDiffToTasks(
   return changedFiles.map((file) => {
     // Documentation changes are first-class review items, not implementation
     // evidence for whichever task happens to mention the same path.
-    if (/(?:^|\\/)(?:README|SPEC|TODO(?:-[^/]*)?)\.md$/iu.test(file.path)) {
+    if (/(?:^|\\/)(?:README|(?:[^/]+-)?SPEC|TODO(?:-[^/]*)?)\.md$/iu.test(file.path)) {
       return {
         path: file.path,
         granularity: "file" as const,
