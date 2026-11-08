@@ -19,7 +19,7 @@ import {
 } from "./markdown.js";
 
 const execFileAsync = promisify(execFile);
-const MARKDOWN_LINK = /\[[^\]]*\]\(\s*(?:<([^>\n]+)>|((?:\\.|[^\s()])+))(?:\s+(?:"[^"]*"|\'[^\']*\'))?\s*\)/gu;
+const MARKDOWN_LINK = /\[[^\]]*\]\(\s*(?:<([^>\n]+)>|((?:\\.|[^\s()])+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/gu;
 
 export type GitStatusEntry = {
   path: string;
