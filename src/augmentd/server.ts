@@ -590,6 +590,9 @@ export class AugmentServer {
           if (!diff) throw new ProtocolError(-32004, `Unknown planned diff: ${id}`);
           return diff;
         });
+        const applicationOrder = task.events.flatMap((event) => event.type === "patch-applied" ? event.diffIds : []);
+        const order = new Map(applicationOrder.map((id, index) => [id, index]));
+        diffs.sort((left, right) => (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(right.id) ?? Number.MAX_SAFE_INTEGER));
         const result = await this.verifyPatches(diffs);
         const updated = setDiffLifecycle(task, {
           ...base,
