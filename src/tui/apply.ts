@@ -220,6 +220,8 @@ export function applyPlannedDiffs(directory: string, diffs: PlannedDiff[]): stri
 export function verifyAppliedDiffs(directory: string, diffs: PlannedDiff[]): { passed: boolean; summary: string } {
   const patches = diffs.filter((diff) => diff.patch.trim().length > 0);
   if (!patches.length) return { passed: false, summary: "No applied patches were supplied for verification." };
+  try { safePatchPaths(directory, patches.map((diff) => diff.patch)); }
+  catch (error) { return { passed: false, summary: error instanceof Error ? error.message : String(error) }; }
   const staging = mkdtempSync(path.join(tmpdir(), "augment-verify-"));
   const worktree = path.join(staging, "wt");
   try {
