@@ -6,6 +6,7 @@ import { derivePlanningStates, type VerificationEvidence } from "./state.js";
 import { promisify } from "node:util";
 import {
   mapDiffToTasks,
+  mapDiffHunksToTasks,
   parseSpecDocument,
   parseTodoDocument,
   parseUnifiedDiff,
@@ -43,6 +44,7 @@ export type PlanningWorkspace = {
     status: GitStatusEntry[];
     changedFiles: ChangedFile[];
     associations: TaskDiffAssociation[];
+    hunkAssociations: ReturnType<typeof mapDiffHunksToTasks>;
     diff: string;
     diffIdentity: string;
   };
@@ -240,6 +242,7 @@ export async function loadPlanningWorkspace(
 
 
   const associations = mapDiffToTasks(changedFiles, resolved.tasks);
+  const hunkAssociations = mapDiffHunksToTasks(changedFiles, resolved.tasks);
   const diffIdentity = identifyDiff(JSON.stringify([
     base,
     diff,
@@ -272,6 +275,7 @@ export async function loadPlanningWorkspace(
       status,
       changedFiles,
       associations,
+      hunkAssociations,
       diff,
       diffIdentity,
     },
