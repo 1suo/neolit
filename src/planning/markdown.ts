@@ -54,6 +54,7 @@ export type DiffHunk = {
   addedLineNumbers?: number[];
   removedLines: string[];
   removedLineNumbers?: number[];
+  changes?: Array<{ kind: "added" | "removed"; text: string; lineNumber: number }>;
 };
 export type ChangedFile = {
   path: string;
@@ -442,6 +443,7 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
           addedLineNumbers: [],
           removedLines: [],
           removedLineNumbers: [],
+          changes: [],
         };
         currentNewLine = currentHunk.newStart;
         currentOldLine = currentHunk.oldStart;
@@ -450,10 +452,12 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
     } else if (currentHunk && line.startsWith("+")) {
       currentHunk.addedLines.push(line.slice(1));
       currentHunk.addedLineNumbers!.push(currentNewLine);
+      currentHunk.changes!.push({ kind: "added", text: line.slice(1), lineNumber: currentNewLine });
       currentNewLine += 1;
     } else if (currentHunk && line.startsWith("-")) {
       currentHunk.removedLines.push(line.slice(1));
       currentHunk.removedLineNumbers!.push(currentOldLine);
+      currentHunk.changes!.push({ kind: "removed", text: line.slice(1), lineNumber: currentOldLine });
       currentOldLine += 1;
     } else if (currentHunk && line.startsWith(" ")) {
       currentNewLine += 1;
