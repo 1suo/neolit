@@ -141,26 +141,27 @@ export function derivePlanningStates(input: {
 
   const requirements: RequirementStateProjection[] = [];
   for (const spec of input.specs) {
+    const referencePath = spec.referencePath ?? spec.path;
     for (const requirement of spec.requirements) {
       const taskMatches = input.tasks.filter((task) =>
-        task.resolvedRequirements.some((item) => item.specPath === spec.path && item.id === requirement.id),
+        task.resolvedRequirements.some((item) => item.specPath === referencePath && item.id === requirement.id),
       );
       const taskKeys = taskMatches.map((task) => task.key);
       const criteriaByRef = new Map<string, { ref: string; verified: boolean }>();
       for (const task of taskMatches) {
-        const taskRequirements = task.resolvedRequirements.filter((item) => item.specPath === spec.path);
+        const taskRequirements = task.resolvedRequirements.filter((item) => item.specPath === referencePath);
         for (const criterion of task.resolvedAcceptanceCriteria) {
           const linkedById = criterion.requirementIds.includes(requirement.id);
           const linkedBySingleRequirement = criterion.requirementIds.length === 0
             && taskRequirements.length === 1
             && taskRequirements[0]!.id === requirement.id;
-          if (criterion.specPath !== spec.path || (!linkedById && !linkedBySingleRequirement)) continue;
-          const ref = criterionRef(spec.path, criterion.id);
+          if (criterion.specPath !== referencePath || (!linkedById && !linkedBySingleRequirement)) continue;
+          const ref = criterionRef(referencePath, criterion.id);
           criteriaByRef.set(ref, { ref, verified: criterionVerified(ref, evidence) });
         }
       }
       const acceptanceCriteria = [...criteriaByRef.values()];
-      const requirementRef = criterionRef(spec.path, requirement.id);
+      const requirementRef = criterionRef(referencePath, requirement.id);
       const hunkReviews = (input.hunkAssociations ?? []).filter((item) =>
         item.candidateRequirementRefs.includes(requirementRef),
       ).map((item) => ({
