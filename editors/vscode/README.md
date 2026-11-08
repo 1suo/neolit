@@ -23,7 +23,7 @@ Open the repository in VS Code and launch the extension from an Extension Develo
 - Expanding a task shows its linked SPEC requirements and its candidate hunk reviews.
 - A separate **Git changes** group shows every parsed hunk, including unplanned and documentation changes that have no task candidate.
 - Hunk rows distinguish unresolved candidates (`~`), documentation changes (`DOC`), and unplanned changes (`?`). These are review annotations, not proof of implementation.
-- Opening a hunk navigates to the real changed file in the native editor.
+- **Open Native Hunk Diff** opens VS Code's native diff editor, comparing the selected file's content at the resolved Git base with the current working-tree file. Added/untracked files have an empty base side; renames compare against the previous path.
 - **Copy Hunk Context** uses the shared stale-checked context packet builder and copies the result for pasting into the user's existing agent session.
 - Refresh runs on demand, after in-workspace saves, and when the window regains focus.
 
