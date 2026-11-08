@@ -182,6 +182,21 @@ current HEAD when resumed, catching commits made while the TUI was closed.
 Ignored files and `node_modules` are excluded consistently with the
 repository tree.
 
+## User, practice, and documentation overlays
+
+New change tasks load optional policy sources before the marking window:
+
+- `~/.config/neolit/overlay.md` (or `$XDG_CONFIG_HOME/neolit/overlay.md`) is a user-wide overlay.
+- `.neolit/overlay.md` is a repository-local user overlay.
+- `.neolit/practice.md` is a repository-wide practice overlay.
+- Root and nested `AGENTS.md` files contribute directory-scoped instructions; `CONTRIBUTING.md`, `ARCHITECTURE.md`, root `README.md`, and `docs/**/README.md` contribute imperative rules such as MUST/NEVER/SHOULD/DO NOT.
+
+Each source becomes a typed `PlanConstraint` with its source and scope
+preserved. Nested instruction files apply to their owning directory; explicit
+overlays apply repository-wide. The loader caps the combined set at 32
+constraints and each source file at 48 KB. Explanation-only tasks do not load
+change constraints.
+
 ## Path-aware repository index
 
 Every model operation receives a compact repository index from
