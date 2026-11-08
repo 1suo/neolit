@@ -73,22 +73,30 @@ export function selectTaskDocumentationContext(input: {
 }): TaskDocumentationContext {
   const limit = input.maxReadmeChars ?? 12_000;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100_000) throw new RangeError("README context limit must be from 1 to 100000.");
-  const directories = [
+  const directories = [...new Set([
     ...input.task.filePaths.map((file) => file.replaceAll("\\", "/").split("/").slice(0, -1).join("/")),
     ...input.task.specReferences.map((ref) => ref.path.split("/").slice(0, -1).join("/")),
-  ];
-  const candidates = input.readmes.flatMap((readme) => {
-    const dir = readme.path.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
-    const depths = directories.filter((related) => related === dir || related.startsWith(dir ? `${dir}/` : ""))
-      .map(() => dir ? dir.split("/").length : 0);
-    return depths.length ? [{ ...readme, depth: Math.max(...depths) }] : [];
-  });
-  const deepest = candidates.length ? Math.max(...candidates.map((item) => item.depth)) : -1;
-  const matches = deepest >= 0 ? candidates.filter((item) => item.depth === deepest) : input.readmes.filter((item) => item.path === "README.md");
-  const selected = [...new Map(matches.map((item) => [item.path, item])).values()];
+  ])];
+  const selectedByPath = new Map<string, { path: string; content: string }>();
   const diagnostics: string[] = input.task.unresolvedReferences.map((reference) => `Unresolved SPEC reference in ${reference.path}: ${reference.ids.join(", ")}.`);
-  if (selected.length > 1) diagnostics.push(`Multiple equally specific README documents match: ${selected.map((item) => item.path).join(", ")}.`);
-  if (selected.length === 0) diagnostics.push("No README matches the task's explicit file or SPEC locations.");
+  for (const relatedDirectory of directories) {
+    const candidates = input.readmes.flatMap((readme) => {
+      const readmeDirectory = readme.path.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
+      if (relatedDirectory !== readmeDirectory && !relatedDirectory.startsWith(readmeDirectory ? `${readmeDirectory}/` : "")) return [];
+      return [{ readme, depth: readmeDirectory ? readmeDirectory.split("/").length : 0 }];
+    });
+    if (!candidates.length) continue;
+    const deepest = Math.max(...candidates.map((candidate) => candidate.depth));
+    const matches = candidates.filter((candidate) => candidate.depth === deepest).map((candidate) => candidate.readme);
+    if (matches.length > 1) diagnostics.push(`Multiple equally specific README documents match ${relatedDirectory || "the repository root"}: ${matches.map((item) => item.path).join(", ")}.`);
+    for (const match of matches) selectedByPath.set(match.path, match);
+  }
+  if (selectedByPath.size === 0) {
+    const rootReadme = input.readmes.find((readme) => readme.path === "README.md");
+    if (rootReadme) selectedByPath.set(rootReadme.path, rootReadme);
+    else diagnostics.push("No README matches the task's explicit file or SPEC locations.");
+  }
+  const selected = [...selectedByPath.values()];
   const currentBehavior = selected.map((item) => ({
     readmePath: item.path,
     content: boundedText(item.content, limit, "README"),
