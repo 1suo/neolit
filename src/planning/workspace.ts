@@ -178,7 +178,7 @@ async function readDocuments(root: string, files: string[], kind: "SPEC" | "TODO
   return kind === "SPEC"
     ? contents.map(({ file, content }) => ({
         ...parseSpecDocument(file, content),
-        ...(isArchiveDocument(file) ? { referencePath: file.replace(/\\.archive\\.md$/iu, ".md") } : {}),
+        ...(isArchiveDocument(file) ? { referencePath: file.replace(/\.archive\.md$/iu, ".md") } : {}),
       }))
     : contents.map(({ file, content }) => parseTodoDocument(file, content));
 }
