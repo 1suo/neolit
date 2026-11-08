@@ -73,18 +73,38 @@ async function readRepoFile(root: string, candidate: string): Promise<string> {
 
 function linkedMarkdown(content: string): string[] {
   const result: string[] = [];
-  for (const match of content.matchAll(MARKDOWN_LINK)) {
-    const rawTarget = (match[1] ?? match[2] ?? "").split(/[?#]/u, 1)[0]!;
+  const add = (raw: string) => {
+    const withoutFragment = raw.trim().replace(/\\([\\() ])/gu, "$1").split(/[?#]/u, 1)[0]!;
     let target: string;
     try {
-      target = decodeURIComponent(rawTarget.replace(/\\([\\()])/gu, "$1")).trim();
+      target = decodeURIComponent(withoutFragment).trim();
     } catch {
-      continue;
+      return;
     }
-    if (!target || /^[a-z][a-z\d+.-]*:/iu.test(target) || !target.toLowerCase().endsWith(".md")) continue;
+    if (!target || /^[a-z][a-z\d+.-]*:/iu.test(target) || target.startsWith("//") || !target.toLowerCase().endsWith(".md")) return;
     result.push(target);
+  };
+  for (const match of content.matchAll(MARKDOWN_LINK)) add(match[1] ?? match[2] ?? "");
+
+  // CommonMark reference definitions are links only when referenced. Labels
+  // are case-insensitive and internal whitespace is insignificant.
+  const normalizeLabel = (label: string) => label.trim().replace(/\s+/gu, " ").toLowerCase();
+  const definitions = new Map<string, string>();
+  const definitionPattern = /^ {0,3}\[([^\]]+)\]:\s*(?:<([^>\n]+)>|([^\s]+))/gimu;
+  for (const match of content.matchAll(definitionPattern)) {
+    definitions.set(normalizeLabel(match[1]!), match[2] ?? match[3]!);
   }
-  return result;
+  const referencePattern = /\[(?:[^\]]+)\]\s*\[\s*([^\]]*)\s*\]|\[([^\]]+)\]/gu;
+  for (const match of content.matchAll(referencePattern)) {
+    const label = normalizeLabel(match[1] || match[2] || "");
+    const target = definitions.get(label);
+    if (target) add(target);
+  }
+
+  // Angle-bracket Markdown autolinks to local Markdown documents, excluding
+  // HTML tags and absolute URLs.
+  for (const match of content.matchAll(/<([^<>\s]+\.md)>/giu)) add(match[1]!);
+  return [...new Set(result)];
 }
 
 function isPlanningDocument(file: string, kind: "SPEC" | "TODO"): boolean {
