@@ -98,41 +98,39 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Validate stale-anchor rejection across base, diff, and blob changes
   - SPEC: `REWRITE-SPEC.md#R-36`, `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-45`
   - Description: Manually reviewed anchor creation and currentness checks: anchors retain repository-relative path, side, line/hunk range, base commit, SHA-256 diff identity, and optional blob identity; changed base/diff/blob values fail closed. Source review only; no tests were run.
-- [x] Implement compact contextual question packets
-  - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
-  - File: `src/planning/context.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added a shared packet builder that validates the current base/diff identity, includes only selected diff text, and appends related TODO/SPEC context. The Neovim prototype now supports `<leader>nx` on a diff-buffer line or visual line range, includes exact selected lines plus file diff/base/diff identity, rejects unsaved working buffers, and refreshes on stale HEAD/diff. The Neovim prototype now calls the shared `buildDiffQuestionPacket` API; packets include exact line text, current diff, linked TODO/SPEC context, and explicit size limits. Core tests cover truncation and stale anchors; a headless Neovim smoke test covers line-range packets and stale-diff rejection. File, hunk, and line-range diff questions now all use the shared builder; file/hunk packets include selected diff text, exact coordinates, base and diff identity, linked TODO/SPEC context, standalone candidate requirement details, and common size limits. Plugin fixtures now cover all three diff-selection levels plus stale-diff rejection. Core and plugin validation remains separate.
-- [x] Validate packet contents, size limits, and stale-context rejection
-  - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
-  - Description: Manually reviewed packet construction: question, anchor, exact file/hunk diff, selected lines, related tasks/requirements, and separated README/SPEC context are bounded; stale base/diff/blob and mismatched file/hunk selections return stale rather than substituting context. Source review only; no tests were run.
-- [x] Preserve exact line anchors from the diff-tree context action
-  - SPEC: `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-45`
+- [x] Retire generated prompt copying from the Neovim workflow
+  - SPEC: `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-42`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Corrected the diff-tree line-row action to pass its line range into the shared anchor builder and its exact source text into the packet builder. The packet now distinguishes the selected line from its containing hunk while retaining full-diff freshness validation.
+  - Description: Removed the question dialogs, generated context packets, and packet-building path from the Neovim adapter. Tree actions now copy selected task/requirement/criterion/description text, exact file diffs or selected hunk patch text, and repository-relative source paths with line numbers. No agent session or generated prompt is involved.
+- [x] Review literal Neovim copy targets
+  - SPEC: `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-41`
+  - Description: Source review confirms distinct copy targets for task/requirement/criterion text, file diffs, hunk patch text, and source paths/line numbers. No tests were run.
+- [x] Remove the Neovim line-range question and packet action
+  - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`
+  - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: Removed the obsolete line-range question callback and its generated packet builder invocation. Diff inspection remains native; literal text/path/diff/hunk copying is handled by the tree.
 
-- [x] Include resolved task and SPEC context in task/requirement questions
-  - SPEC: `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-43`
+- [x] Render resolved TODO-to-SPEC relationships in the Neovim planning tree
+  - SPEC: `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-44`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Task and planned-file questions now include their descriptions, file hints, resolved requirements, linked acceptance criteria, unresolved references, and task-scoped current-behavior excerpts selected through the shared README context resolver. Requirement questions include every explicitly linked TODO task and its resolved SPEC/README context. These copyable packets are capped at 16,000 Unicode characters without splitting UTF-8 sequences and use real line breaks; no agent session is created or contacted.
+  - Description: Expanding a TODO task shows its parsed description, resolved requirements, acceptance criteria and source references. Expanding a SPEC requirement shows linked TODO tasks, criterion coverage and associated hunk reviews. Cross-highlighting follows resolved task/requirement relationships.
 
-- [x] Implement copyable contextual handoff to the existing agent
-  - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-50`
+- [x] Keep agent conversations outside the Neovim planning workflow
+  - SPEC: `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: The Neovim flow builds a bounded contextual packet, copies it through the editor clipboard, and preserves native file/diff navigation. No Neolit-owned chat or session protocol is introduced.
-- [ ] Add a supported existing-agent session handoff when a host API is available
-  - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-48`, `REWRITE-SPEC.md#R-49`
-  - Description: Integrate only a documented host API that can address the active agent session. Keep clipboard handoff as the fallback; do not invent a provider protocol or Neolit chat layer.
+  - Description: The Neovim adapter has no question composer, generated prompt, message store, or agent-session integration. Copy and navigation actions operate directly on repository text and Git diffs.
+
 
 ## Phase 5 — editor-native vertical slice and adapters
 
-- [x] Implement the Neovim task-to-contextual-question vertical slice
-  - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
-  - File: `1suo/neolit.nvim` (separate repository, branch `rewrite/planning-workspace`)
-  - Description: The read-only companion view is implemented and is now the default `:Neolit` command (`:NeolitPlan` remains an alias): an expanded-by-default, collapsible file → hunk diff tree is the primary section; each file/hunk opens the native diff at the selected hunk, and `za`/`zR`/`zM` control tree expansion. Task/requirement traceability and planned-file navigation follow below the diff tree. Exact line-range and file/hunk context packets use the shared core and clipboard handoff. The former planned-diff controller and host were removed. Native explorer decorations/details UI remain host-specific future refinement; the existing headless planning smoke fixture has not been run.
-- [x] Add a focused Neovim details surface for selected planning rows
+- [x] Implement the Neovim parsed planning workspace
+  - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
+  - File: `1suo/neolit.nvim`, branch `main`
+  - Description: The default `:Neolit` workspace presents one compact repository tree. TODO and SPEC documents start collapsed; expanding them reveals parsed tasks, descriptions, resolved requirements, reverse task links, acceptance criteria, derived states, and hunk evidence. Changed files expand to task associations and per-hunk candidate reasons. Affected-only mode retains the relevant TODO/SPEC source documents. Native source/diff preview windows are reused; the former planned-diff controller and generated prompt workflow are removed.
+- [x] Add compact expandable task and requirement details
   - SPEC: `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-63`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added a native floating details window for changed files, hunks, individual changed lines, TODO tasks, SPEC requirements, and diagnostics. The diff tree now keeps hunk candidate labels compact and requirement rows to stable IDs/state; full descriptions, candidate task/requirement details, derived requirement states, resolved requirements, acceptance criteria (including criteria linked through TODO references), linked TODO tasks and their derived states, and unresolved references are shown on demand with `K`. Selecting a task highlights its associated file/hunk candidates and linked requirements; selecting a requirement highlights its linked tasks and their mapped changes. This is an implementation record, not a host-runtime validation claim.
+  - Description: Replaced the floating `K` details window with on-demand tree expansion. Task details expose descriptions, linked requirements, acceptance criteria, file hints, derived state explanations, changed paths and hunk-review reasons. Requirement details expose reverse-linked tasks, acceptance-criterion coverage and related hunks. Related rows cross-highlight; no details popup or K mapping remains.
   
 - [ ] Validate the vertical slice in the supported Neovim host
   - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
