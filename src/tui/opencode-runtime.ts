@@ -6,6 +6,7 @@ import { parseRawDraftReply } from "../augment/raw-diff.js";
 import { preflightPatches } from "./apply.js";
 import { backendById, extractServerPassword, extractServerUrl, opencodeBackend, WarmTransportUnavailableError, type AgentInvocationParts, type CliAgentBackend } from "./agent-backends.js";
 import { forgetSessionBinding, rememberSessionBinding, sessionBindingFor } from "./session-store.js";
+import { repositoryIndexContext } from "./repository-index.js";
 
 export { extractAssistantText } from "./agent-backends.js";
 
@@ -467,6 +468,7 @@ export class CliAgentRuntime implements ModelRuntime {
         : `Return ONE valid JSON object and no prose, Markdown, or code fence.`,
       `Reply contract:\n${operationContract(request)}`,
       `Temperature intent: ${request.temperature}. LOD: ${request.lod}.`,
+      repositoryIndexContext(this.directory, request.context.node.path),
       ...(draftFileSection(request, this.directory) ? [draftFileSection(request, this.directory)] : []),
       ...corrections,
       DRAFT_OPERATIONS.has(request.operation)
