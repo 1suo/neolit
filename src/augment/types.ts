@@ -61,6 +61,9 @@ export interface PlannedDiff {
   patch: string;
   kind: PlannedDiffKind;
   basisRevision: string;
+  /** Host apply/verification lifecycle; omitted on legacy drafts means drafted. */
+  lifecycle?: "drafted" | "applied" | "verified" | "failed";
+  verification?: string;
   failedCheck?: string;
 }
 
@@ -130,6 +133,9 @@ export type PlanEvent =
   | { type: "node-refined"; revision: PlanRevision; nodeId: PlanNodeId; childIds: PlanNodeId[] }
   | { type: "node-reopened"; revision: PlanRevision; nodeId: PlanNodeId; reason: string }
   | { type: "patch-attached"; revision: PlanRevision; nodeId: PlanNodeId; diffId: PlanDiffId }
+  | { type: "patch-applied"; revision: PlanRevision; diffIds: PlanDiffId[]; paths: string[] }
+  | { type: "patch-verified"; revision: PlanRevision; diffIds: PlanDiffId[]; summary: string }
+  | { type: "patch-verification-failed"; revision: PlanRevision; diffIds: PlanDiffId[]; summary: string }
   | { type: "constraint-added"; revision: PlanRevision; constraintId: PlanConstraintId }
   | { type: "explanations-attached"; revision: PlanRevision; topic: string; explanationIds: PlanEvidenceId[] }
   | { type: "node-staled"; revision: PlanRevision; nodeId: PlanNodeId; path: string }
