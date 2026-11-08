@@ -54,7 +54,7 @@ function workspaceFileUri(folder: vscode.WorkspaceFolder, relativePath: string):
 class BaseDocumentProvider implements vscode.TextDocumentContentProvider {
   constructor(private readonly root: string, private readonly getWorkspace: () => PlanningWorkspace | undefined) {}
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
-    const relative = uri.path.replace(/^\\//u, "");
+    const relative = uri.path.replace(/^\//u, "");
     if (!relative || relative.split("/").some((segment) => segment === ".." || segment === "." || segment === "")) return "";
     const absolute = path.resolve(this.root, relative);
     const withinRoot = path.relative(this.root, absolute);
@@ -330,10 +330,19 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("neolit.openPlanFile", async (node?: PlanFileNode) => {
       if (!node || node.kind !== "file" || !current) return;
-      const changed = current.git.changedFiles.find((item) => item.path === node.path || item.previousPath === node.path);
+      let changed = current.git.changedFiles.find((item) => item.path === node.path || item.previousPath === node.path);
       if (changed) {
+        if (!await ensureCurrent()) return;
+        changed = current?.git.changedFiles.find((item) => item.path === node.path || item.previousPath === node.path);
+        if (!changed || !current) {
+          const uri = workspaceFileUri(folder, node.path);
+          if (uri) await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
+          return;
+        }
         const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${changed.path}`, query: current.git.base });
-        const working = workspaceFileUri(folder, changed.path);
+        const working = changed.status === "deleted"
+          ? vscode.Uri.from({ scheme: EMPTY_SCHEME, path: `/${changed.path}` })
+          : workspaceFileUri(folder, changed.path);
         if (!working) return;
         await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${changed.path} · ${current.git.base.slice(0, 8)}`);
         return;
