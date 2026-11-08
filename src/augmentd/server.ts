@@ -106,7 +106,7 @@ function taskMutation(value: unknown): TaskMutationParams {
 }
 
 /** Read-only methods never take a task's turn; everything else is serialized per task. */
-const READ_METHODS = new Set(["initialize", "task/get", "tree/get", "node/get", "diff/get", "shutdown"]);
+const READ_METHODS = new Set(["initialize", "task/list", "task/get", "tree/get", "node/get", "diff/get", "shutdown"]);
 
 /**
  * Boundary parse for proposal payloads entering the controller directly
@@ -151,6 +151,8 @@ export class AugmentServer {
           const task = PlanTaskSchema.parse(value) as unknown as PlanTask;
           assertTaskIntegrity(task);
           if (!this.tasks.has(task.id)) this.tasks.set(task.id, task);
+          const generated = /^task:(\d+)$/u.exec(task.id);
+          if (generated) this.nextTaskId = Math.max(this.nextTaskId, Number(generated[1]) + 1);
         } catch {
           // Ignore an invalid entry without sacrificing other recoverable tasks.
         }
@@ -171,7 +173,7 @@ export class AugmentServer {
     try {
       const fd = fs.openSync(temporary, "w", 0o600);
       try {
-        fs.writeFileSync(fd, `${JSON.stringify([...this.tasks.values()])}\\n`, "utf8");
+        fs.writeFileSync(fd, `${JSON.stringify([...this.tasks.values()])}\n`, "utf8");
         fs.fsyncSync(fd);
       } finally {
         fs.closeSync(fd);
@@ -306,6 +308,9 @@ export class AugmentServer {
         if (this.tasks.has(task.id)) throw new ProtocolError(-32002, `Task already exists: ${task.id}`);
         this.store(task);
         return task;
+      }
+      case "task/list": {
+        return [...this.tasks.values()].map((task) => ({ id: task.id, objective: task.objective, mode: task.mode, revision: task.revision, basisRevision: task.basisRevision }));
       }
       case "task/get": {
         const input = object(params);
