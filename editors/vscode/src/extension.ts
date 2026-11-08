@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import path from "node:path";
+import { realpathSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -25,6 +26,24 @@ function workspaceFileUri(folder: vscode.WorkspaceFolder, relativePath: string):
   const absolute = path.resolve(folder.uri.fsPath, relativePath);
   const relative = path.relative(folder.uri.fsPath, absolute);
   if (!relative || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return undefined;
+
+  // Resolve the target or its nearest existing ancestor so symlinked paths
+  // cannot redirect a planned-file navigation outside the selected worktree.
+  const realRoot = realpathSync(folder.uri.fsPath);
+  let ancestor = absolute;
+  let resolvedAncestor: string;
+  while (true) {
+    try {
+      resolvedAncestor = realpathSync(ancestor);
+      break;
+    } catch {
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) return undefined;
+      ancestor = parent;
+    }
+  }
+  const realRelative = path.relative(realRoot, resolvedAncestor);
+  if (realRelative === ".." || realRelative.startsWith(".." + path.sep) || path.isAbsolute(realRelative)) return undefined;
   return vscode.Uri.file(absolute);
 }
 
