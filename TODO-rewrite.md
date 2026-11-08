@@ -122,7 +122,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Add a focused Neovim details surface for selected planning rows
   - SPEC: `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-63`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added a native floating details window for changed files, hunks, individual changed lines, TODO tasks, SPEC requirements, and diagnostics. The diff tree now keeps hunk candidate labels compact and requirement rows to stable IDs/state; full descriptions, candidate task/requirement details, and linked acceptance criteria are shown on demand with `K`. Selecting a task highlights its associated file/hunk candidates and linked requirements; selecting a requirement highlights its linked tasks and their mapped changes. This is an implementation record, not a host-runtime validation claim.
+  - Description: Added a native floating details window for changed files, hunks, individual changed lines, TODO tasks, SPEC requirements, and diagnostics. The diff tree now keeps hunk candidate labels compact and requirement rows to stable IDs/state; full descriptions, candidate task/requirement details, derived requirement states, and linked acceptance criteria are shown on demand with `K`. Selecting a task highlights its associated file/hunk candidates and linked requirements; selecting a requirement highlights its linked tasks and their mapped changes. This is an implementation record, not a host-runtime validation claim.
   
 - [ ] Validate the vertical slice in the supported Neovim host
   - SPEC: `REWRITE-SPEC.md#R-01`, `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-06`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-64`, `REWRITE-SPEC.md#R-65`
@@ -169,7 +169,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [x] Every TODO task resolves to one or more existing SPEC requirement IDs.
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-18`
-  - Description: Static audit of all 45 TODO checkbox tasks found at least one `REWRITE-SPEC.md` reference per task and no referenced IDs missing from the current SPEC. This was a document audit, not a test run.
+  - Description: Static audit of all 47 TODO checkbox tasks found at least one `REWRITE-SPEC.md` reference per task and no referenced IDs missing from the current SPEC. This was a document audit, not a test run.
 - [ ] Derived states are tested independently from Markdown checkbox values.
   - SPEC: `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-29`, `REWRITE-SPEC.md#R-30`
 - [ ] Diff mapping tests include ambiguous, partial, and unplanned changes.
