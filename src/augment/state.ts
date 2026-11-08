@@ -886,6 +886,9 @@ export function setDiffLifecycle(task: PlanTask, input: SetDiffLifecycleInput): 
     const node = requireNode(next, diff.nodeId);
     if (node.status === "stale") throw new PlanStateError(`Cannot change apply lifecycle for stale node ${node.id}.`, "node-state");
     const current = diff.lifecycle ?? "drafted";
+    if (input.lifecycle === "applied" && diff.basisRevision !== next.basisRevision) {
+      throw new PlanStateError(`Diff ${id} was drafted against ${diff.basisRevision}, not the current task basis ${next.basisRevision}. Refresh and redraft it before applying.`, "node-state");
+    }
     if (input.lifecycle === "applied" && current !== "drafted" && current !== "failed") {
       throw new PlanStateError(`Diff ${id} cannot be applied from lifecycle ${current}.`, "node-state");
     }
