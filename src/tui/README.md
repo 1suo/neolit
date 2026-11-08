@@ -96,7 +96,7 @@ Enter  the single message entry point for the selected path. Without an active t
 D  develop the selected path and everything under it — a chosen approach expands into files, then every undrafted file below is drafted in ONE batched model call (all files of the subtree in a single prompt; the whole batch is validated all-or-nothing before anything lands); when the batch or a single file fails, files fall back to individual drafts — one file's failure never stops the rest, failures are marked × and summarized ("Drafted 6/9 — press D to retry"). A file, hunk, or virtual target always drafts its exact patch
 A  apply the selected path's drafted patch(es) to the working tree
 G  verify selected applied patch(es) with git diff --check and reverse-apply preflight
-C  commit exactly the paths this session applied (pathspec commit; unrelated dirty or staged files stay untouched)
+C  commit exactly the paths this session applied (requires G verification; unrelated dirty or staged files stay untouched)
 L  mark/unmark the selected path in the restriction plain, lock polarity: marked (`#`, red) paths must not change, everything else may
 W  mark/unmark the selected path, allow polarity: marked (`#`, accent) paths are the only ones that may change. One plain, one marked set: pressing the other polarity key inverts it (the set stays, its meaning flips). Marks made before a task starts are applied before its first model run, and a new task carries the previous task's plain (marks and polarity) over
 F  fold/unfold the selected directory (folded folders show `▸` and hide their subtree)
