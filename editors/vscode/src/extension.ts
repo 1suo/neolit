@@ -31,7 +31,7 @@ function workspaceFileUri(folder: vscode.WorkspaceFolder, relativePath: string):
   // cannot redirect a planned-file navigation outside the selected worktree.
   const realRoot = realpathSync(folder.uri.fsPath);
   let ancestor = absolute;
-  let resolvedAncestor: string;
+  let resolvedAncestor = ancestor;
   while (true) {
     try {
       resolvedAncestor = realpathSync(ancestor);
