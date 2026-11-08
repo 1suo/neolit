@@ -20,6 +20,7 @@ export type PreflightPatches = (patches: string[]) => string | undefined;
 
 export type McpToolName =
   | "plan_start"
+  | "plan_list"
   | "plan_status"
   | "read_diff"
   | "propose_approaches"
@@ -32,6 +33,7 @@ export type McpToolName =
 /** Deterministic per-operation call caps; reads (`plan_status`, `read_diff`) are uncapped. */
 export const MCP_TOOL_CAPS: Record<McpToolName, number> = {
   plan_start: 8,
+  plan_list: Number.POSITIVE_INFINITY,
   propose_approaches: 32,
   challenge_approaches: 32,
   select_approach: 32,
@@ -75,6 +77,11 @@ const TOOLS: ToolSpec[] = [
       },
       required: required("objective", "basisRevision"),
     },
+  },
+  {
+    name: "plan_list",
+    description: "List resumable tasks restored from durable storage. Call this after reconnecting to recover task ids, then use plan_status with the chosen id.",
+    inputSchema: { type: "object", properties: {}, required: [] },
   },
   {
     name: "plan_status",
@@ -373,6 +380,8 @@ export class McpAugmentServer {
     switch (name) {
       case "plan_start":
         return this.planStart(input);
+      case "plan_list":
+        return this.planList();
       case "plan_status":
         return this.planStatus(requiredString(input, "taskId"));
       case "read_diff":
@@ -400,6 +409,18 @@ export class McpAugmentServer {
     return {
       text: `Task ${task.id} started at revision ${task.revision}; root node ${task.rootNodeId}. Call plan_status next.`,
       structured: { taskId: task.id, revision: task.revision, rootNodeId: task.rootNodeId, objective: task.objective, basisRevision: task.basisRevision },
+    };
+  }
+
+  private async planList(): Promise<ToolOutcome> {
+    const tasks = await this.native("task/list", {}) as Array<{
+      id: string; objective: string; mode: string; revision: number; basisRevision: string;
+    }>;
+    return {
+      text: tasks.length
+        ? tasks.map((task) => `${task.id} · r${task.revision} · ${task.mode} · ${task.objective}`).join("\\n")
+        : "No saved tasks are available.",
+      structured: { tasks },
     };
   }
 
