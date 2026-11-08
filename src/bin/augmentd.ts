@@ -15,20 +15,24 @@ function usage(): never {
 }
 
 const args = process.argv.slice(2);
-let connectPath: string | undefined;\nlet stateFile: string | undefined;
+let connectPath: string | undefined;
+let stateFile: string | undefined;
 for (let index = 0; index < args.length; index++) {
   const arg = args[index]!;
   if (arg === "--directory" || arg === "--connect" || arg === "--state-file") {
     const value = args[index + 1];
     if (!value || value.startsWith("--")) usage();
-    if (arg === "--connect") connectPath = value;\n    if (arg === "--state-file") stateFile = value;
+    if (arg === "--connect") connectPath = value;
+    if (arg === "--state-file") stateFile = value;
     index += 1;
   } else if (arg !== "--mcp") {
     usage();
   }
 }
 const directoryIndex = args.indexOf("--directory");
-const directory = directoryIndex >= 0 ? args[directoryIndex + 1] : undefined;\nconst stateRoot = process.env.XDG_STATE_HOME?.trim() || path.join(os.homedir(), ".local", "state");\nconst stateKey = directory ? createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16) : "default";\nconst persistencePath = stateFile ? path.resolve(stateFile) : path.join(stateRoot, "neolit", `augmentd-${stateKey}.json`);
+const directory = directoryIndex >= 0 ? args[directoryIndex + 1] : undefined;
+const stateRoot = process.env.XDG_STATE_HOME?.trim() || path.join(os.homedir(), ".local", "state");\nconst stateKey = directory ? createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16) : "default";
+const persistencePath = stateFile ? path.resolve(stateFile) : path.join(stateRoot, "neolit", `augmentd-${stateKey}.json`);
 
 if (args.includes("--mcp")) {
   const { runStdioMcpServer } = await import("../augmentd/mcp.js");
