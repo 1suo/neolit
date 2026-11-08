@@ -3,6 +3,7 @@ import type {
   ResolvedTask,
   SpecDocument,
   TaskDiffAssociation,
+  TaskHunkAssociation,
 } from "./markdown.js";
 
 export type DerivedTaskState =
@@ -29,6 +30,7 @@ export type TaskStateProjection = {
   taskKey: string;
   state: DerivedTaskState;
   changedPaths: string[];
+  hunkReviews: Array<{ path: string; hunkIndex: number; oldStart: number; oldLines: number; newStart: number; newLines: number; state: TaskHunkAssociation["state"]; reason: TaskHunkAssociation["reason"] }>;
   acceptanceCriteria: Array<{ ref: string; verified: boolean }>;
 };
 
@@ -37,6 +39,7 @@ export type RequirementStateProjection = {
   requirementId: string;
   state: DerivedRequirementState;
   taskKeys: string[];
+  hunkReviews: Array<{ path: string; hunkIndex: number; oldStart: number; oldLines: number; newStart: number; newLines: number; state: TaskHunkAssociation["state"]; reason: TaskHunkAssociation["reason"] }>;
   acceptanceCriteria: Array<{ ref: string; verified: boolean }>;
 };
 
@@ -107,6 +110,7 @@ export function derivePlanningStates(input: {
   tasks: ResolvedTask[];
   changedFiles: ChangedFile[];
   associations: TaskDiffAssociation[];
+  hunkAssociations?: TaskHunkAssociation[];
   verificationEvidence?: VerificationEvidence[];
   baseCommit: string;
   diffIdentity: string;
@@ -117,6 +121,10 @@ export function derivePlanningStates(input: {
   for (const task of input.tasks) {
     const associations = input.associations.filter((item) => item.taskKeys.includes(task.key));
     const changedPaths = [...new Set(associations.map((item) => item.path))];
+    const hunkReviews = (input.hunkAssociations ?? []).filter((item) => item.candidateTaskKeys.includes(task.key)).map((item) => ({
+      path: item.path, hunkIndex: item.hunkIndex, oldStart: item.hunk.oldStart, oldLines: item.hunk.oldLines,
+      newStart: item.hunk.newStart, newLines: item.hunk.newLines, state: item.state, reason: item.reason,
+    }));
     const criterionCoverage = task.resolvedAcceptanceCriteria.map((criterion) => {
       const ref = criterionRef(criterion.specPath, criterion.id);
       return { ref, verified: criterionVerified(ref, evidence) };
@@ -125,6 +133,7 @@ export function derivePlanningStates(input: {
       taskKey: task.key,
       state: stateForTask(task, changedPaths, evidence, criterionCoverage),
       changedPaths,
+      hunkReviews,
       acceptanceCriteria: criterionCoverage,
     };
   }
@@ -150,6 +159,13 @@ export function derivePlanningStates(input: {
         }
       }
       const acceptanceCriteria = [...criteriaByRef.values()];
+      const requirementRef = criterionRef(spec.path, requirement.id);
+      const hunkReviews = (input.hunkAssociations ?? []).filter((item) =>
+        item.candidateRequirementRefs.includes(requirementRef),
+      ).map((item) => ({
+        path: item.path, hunkIndex: item.hunkIndex, oldStart: item.hunk.oldStart, oldLines: item.hunk.oldLines,
+        newStart: item.hunk.newStart, newLines: item.hunk.newLines, state: item.state, reason: item.reason,
+      }));
 
       let state: DerivedRequirementState = "unplanned";
       if (taskMatches.length > 0) {
@@ -171,6 +187,7 @@ export function derivePlanningStates(input: {
         requirementId: requirement.id,
         state,
         taskKeys,
+        hunkReviews,
         acceptanceCriteria,
       });
     }
