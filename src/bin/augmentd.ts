@@ -47,14 +47,16 @@ if (args.includes("--mcp")) {
   // lands. Without a socket the bridge owns its own task state.
   const peer = connectPath ? await SocketAugmentPeer.connect(connectPath) : undefined;
   const { AugmentServer } = await import("../augmentd/server.js");
-  const ownedServer = peer ? undefined : new AugmentServer({
-    persistencePath,
-    applyPatches: directory ? (diffs) => applyPlannedDiffsTransaction(directory, diffs) : undefined,
-    verifyPatches: directory ? (diffs) => verifyAppliedDiffs(directory, diffs) : undefined,
-    initialConstraints: directory ? () => loadRepositoryOverlays(directory) : undefined,
-  });
+  const serverOptions = peer ? { peer } : {
+    server: new AugmentServer({
+      persistencePath,
+      applyPatches: directory ? (diffs) => applyPlannedDiffsTransaction(directory, diffs) : undefined,
+      verifyPatches: directory ? (diffs) => verifyAppliedDiffs(directory, diffs) : undefined,
+      initialConstraints: directory ? () => loadRepositoryOverlays(directory) : undefined,
+    }),
+  };
   await runStdioMcpServer({
-    ...(peer ? { peer } : { server: ownedServer }),
+    ...serverOptions,
     // The optional repository directory scopes durable state and enables Git apply/verify plus repository overlays.
     preflight: directory ? (patches) => preflightPatches(directory, patches) : undefined,
   });
