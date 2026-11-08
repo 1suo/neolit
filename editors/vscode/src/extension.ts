@@ -12,7 +12,8 @@ import {
 type TaskNode = { kind: "task"; key: string; label: string };
 type RequirementNode = { kind: "requirement"; key: string; specPath: string; id: string; label: string };
 type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; label: string };
-type PlanNode = TaskNode | RequirementNode | HunkNode;
+type GroupNode = { kind: "group"; label: string };
+type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode;
 
 class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
   private readonly emitter = new vscode.EventEmitter<PlanNode | undefined>();
@@ -22,6 +23,12 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
   dispose(): void { this.emitter.dispose(); }
   refresh(workspace: PlanningWorkspace): void { this.workspace = workspace; this.emitter.fire(undefined); }
   getTreeItem(node: PlanNode): vscode.TreeItem {
+    if (node.kind === "group") {
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
+      item.contextValue = "changeGroup";
+      item.iconPath = new vscode.ThemeIcon("git-compare");
+      return item;
+    }
     if (node.kind === "task") {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.contextValue = "task";
@@ -48,11 +55,21 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
   getChildren(node?: PlanNode): PlanNode[] {
     const workspace = this.workspace;
     if (!workspace) return [];
-    if (!node) return workspace.tasks.map((task) => ({
-      kind: "task" as const,
-      key: task.key,
-      label: task.text,
-    }));
+    if (!node) {
+      const tasks: TaskNode[] = workspace.tasks.map((task) => ({ kind: "task", key: task.key, label: task.text }));
+      const changes: GroupNode[] = workspace.git.hunkAssociations.length
+        ? [{ kind: "group", label: `Git changes · ${workspace.git.hunkAssociations.length} hunks` }]
+        : [];
+      return [...tasks, ...changes];
+    }
+    if (node.kind === "group") return workspace.git.hunkAssociations.map((association) => {
+      const file = workspace.git.changedFiles.find((item) => item.path === association.path);
+      return {
+        kind: "hunk" as const, path: association.path, previousPath: file?.previousPath,
+        hunkIndex: association.hunkIndex,
+        label: `${association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} ${association.path} · hunk ${association.hunkIndex + 1}`,
+      };
+    });
     if (node.kind !== "task") return [];
     const task = workspace.tasks.find((item) => item.key === node.key);
     if (!task) return [];
@@ -79,9 +96,11 @@ class PlanningDecorationProvider implements vscode.FileDecorationProvider {
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
     const relative = path.relative(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "", uri.fsPath);
     if (!this.paths.has(path.normalize(relative))) return undefined;
-    const decoration = new vscode.FileDecoration("N", "Neolit review annotation; actual Git status remains in Source Control.");
-    decoration.color = new vscode.ThemeColor("charts.blue");
-    return decoration;
+    return new vscode.FileDecoration(
+      "N",
+      "Neolit review annotation; actual Git status remains in Source Control.",
+      new vscode.ThemeColor("charts.blue"),
+    );
   }
   dispose(): void { this.emitter.dispose(); }
 }
