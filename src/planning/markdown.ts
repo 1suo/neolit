@@ -99,30 +99,33 @@ export function parseSpecDocument(documentPath: string, content: string): SpecDo
   const headings: string[] = [];
   const requirements: SpecRequirement[] = [];
   const acceptanceCriteria: SpecAcceptanceCriterion[] = [];
+  let currentEntry: SpecRequirement | SpecAcceptanceCriterion | undefined;
   const lines = content.split(/\r?\n/u);
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
     const heading = headingAt(line);
     if (heading) {
+      currentEntry = undefined;
       headings.length = heading.level - 1;
       headings[heading.level - 1] = heading.text;
       continue;
     }
     const match = REQUIREMENT.exec(line);
     if (match) {
-      requirements.push({
+      currentEntry = {
         id: match[1]!,
         sourcePath: normalizeRepoPath(documentPath),
         text: match[2]!,
         headingPath: [...headings],
         range: { startLine: index + 1, endLine: index + 1 },
-      });
+      };
+      requirements.push(currentEntry);
       continue;
     }
     const criterion = ACCEPTANCE_CRITERION.exec(line);
     if (criterion) {
-      acceptanceCriteria.push({
+      currentEntry = {
         id: criterion[1]!,
         sourcePath: normalizeRepoPath(documentPath),
         text: criterion[2]!,
