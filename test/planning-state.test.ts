@@ -79,7 +79,7 @@ describe("derived planning states", () => {
     });
   });
 
-  it("ignores TODO checkboxes and derives partial/full implementation from Git paths", () => {
+  it("ignores TODO checkboxes and treats file-path hints as partial evidence", () => {
     const result = projection([
       "src/auth/refresh.ts",
       "src/auth/login.ts",
@@ -92,7 +92,7 @@ describe("derived planning states", () => {
     const unmapped = resolved.tasks[3]!;
 
     expect(result.tasks[refresh.key]!.state).toBe("in-progress");
-    expect(result.tasks[login.key]!.state).toBe("implemented");
+    expect(result.tasks[login.key]!.state).toBe("in-progress");
     expect(result.tasks[blocked.key]!.state).toBe("blocked");
     expect(result.tasks[unmapped.key]!.state).toBe("unmapped");
     expect(result.requirements.find((item) => item.requirementId === "R-01")!.state).toBe("in-progress");
@@ -112,7 +112,7 @@ describe("derived planning states", () => {
       acceptanceCriteriaRefs: ["src/auth/SPEC.md#AC-01"],
     }];
 
-    expect(projection(changed, oneCriterion).tasks[refresh.key]!.state).toBe("implemented");
+    expect(projection(changed, oneCriterion).tasks[refresh.key]!.state).toBe("in-progress");
 
     const allCriteria: VerificationEvidence[] = [
       ...oneCriterion,
@@ -160,7 +160,7 @@ describe("derived planning states", () => {
         acceptanceCriteriaRefs: ["src/auth/SPEC.md#AC-01", "src/auth/SPEC.md#AC-02"],
       },
     ];
-    expect(projection(changed, evidence).tasks[refresh.key]!.state).toBe("implemented");
+    expect(projection(changed, evidence).tasks[refresh.key]!.state).toBe("in-progress");
   });
   it("derives blocked state from an explicit failed check blocker", () => {
     const login = resolved.tasks[1]!;
