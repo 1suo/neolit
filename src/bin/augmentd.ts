@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { runStdioAugmentServer } from "../augmentd/server.js";
+import { loadRepositoryOverlays } from "../tui/repository-overlays.js";
 import { applyPlannedDiffsTransaction, verifyAppliedDiffs } from "../tui/apply.js";
 
 process.on("uncaughtException", (error) => {
@@ -50,6 +51,7 @@ if (args.includes("--mcp")) {
     persistencePath,
     applyPatches: directory ? (diffs) => applyPlannedDiffsTransaction(directory, diffs) : undefined,
     verifyPatches: directory ? (diffs) => verifyAppliedDiffs(directory, diffs) : undefined,
+    initialConstraints: directory ? () => loadRepositoryOverlays(directory) : undefined,
   });
   await runStdioMcpServer({
     ...(peer ? { peer } : { server: ownedServer }),
