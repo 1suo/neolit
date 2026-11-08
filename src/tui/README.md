@@ -53,6 +53,8 @@ approaches landed with nothing drafted, `●` every stage below ready.
 ~ modify     drafted modification
 - delete     drafted deletion
 ✓ applied    drafted patch was applied to the working tree; nothing is committed
+✓ verified   host verification passed; [C] may commit this path
+! verify failed  host verification rejected an applied patch
 ! stale      repository basis changed
 # locked     path cannot change in this run (allow-polarity marks use the same glyph, accented)
 ● ready      path has its drafted patch complete
