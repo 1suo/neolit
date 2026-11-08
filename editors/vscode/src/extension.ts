@@ -218,6 +218,27 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showErrorMessage(`Neolit planning refresh failed: ${String(error)}`);
     }
   };
+
+  // Re-read Git immediately before hunk navigation or agent handoff. Focus and
+  // save events improve responsiveness, but an external Git process can change
+  // the index/HEAD without either event firing.
+  const ensureCurrent = async (): Promise<boolean> => {
+    const previous = current;
+    try {
+      const fresh = await load(root);
+      current = fresh;
+      tree.refresh(fresh);
+      decorations.refresh(fresh);
+      if (!previous || previous.git.base !== fresh.git.base || previous.git.diffIdentity !== fresh.git.diffIdentity) {
+        vscode.window.showWarningMessage("Git state changed since this hunk was selected. Neolit refreshed; select the hunk again.");
+        return false;
+      }
+      return true;
+    } catch (error) {
+      vscode.window.showErrorMessage(`Neolit could not refresh Git state before the action: ${String(error)}`);
+      return false;
+    }
+  };
   context.subscriptions.push(
     vscode.commands.registerCommand("neolit.refresh", refresh),
     vscode.commands.registerCommand("neolit.openTask", async (node?: TaskNode) => {
@@ -263,6 +284,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("neolit.openHunkDiff", async (node?: HunkNode) => {
       if (!node || node.kind !== "hunk" || !current) return;
+      if (!await ensureCurrent()) return;
       const file = current.git.changedFiles.find((item) => item.path === node.path);
       const hunk = file?.hunks[node.hunkIndex];
       if (!file || !hunk) return;
@@ -277,6 +299,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("neolit.copyHunkContext", async (node?: HunkNode) => {
       if (!node || node.kind !== "hunk" || !current) return;
+      if (!await ensureCurrent()) return;
       const file = current.git.changedFiles.find((item) => item.path === node.path);
       const hunk = file?.hunks[node.hunkIndex];
       if (!file || !hunk) return;
