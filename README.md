@@ -20,12 +20,12 @@ The deterministic TypeScript core provides:
 - conservative file/hunk candidate associations and derived task/requirement
   states;
 - stale-checked file, hunk, and line-range anchors;
-- compact contextual question packets for an existing coding-agent session.
+- derived task/requirement evidence and explicit reasons for unresolved hunk attribution.
 
 It does not call an LLM, generate or apply patches, stage or commit files, or
-send messages to an agent. If an editor cannot address an existing agent
-session through a supported host API, it can copy the contextual packet for
-the user to send.
+send messages to an agent. Editor integrations expose repository text and
+source paths directly; Neolit does not require generated prompts or a
+Neolit-owned conversation.
 
 Import the shared API from either the package root or its explicit subpath:
 
@@ -33,7 +33,6 @@ Import the shared API from either the package root or its explicit subpath:
 import {
   loadPlanningWorkspace,
   derivePlanningStates,
-  buildDiffQuestionPacket,
 } from "neolit";
 
 // Equivalent explicit import:
@@ -61,13 +60,14 @@ and point `neolit_dir` at this checkout:
 }
 ```
 
-Run `:Neolit` from the target repository. Press `<CR>` on a task or
-requirement to open its Markdown source, on a planned file to open the file or
-its actual diff, and on a changed file/hunk to open a native diff against the
-configured comparison base. Press `x` on a task, requirement, file, or hunk
-to copy a bounded context packet; in a native diff, `<leader>nx` copies
-context for the current line or visual line selection. Paste the packet into
-your existing agent session yourself. Press `r` to refresh and `q` to close.
+Run `:Neolit` from the target repository. Expand TODO documents to inspect
+parsed tasks, descriptions, linked requirements, acceptance criteria, and
+derived change evidence. Expand SPEC documents and individual requirements to
+see linked tasks, criterion coverage, and related hunks. Expand changed files
+to inspect task candidates and hunk-attribution reasons. Press `x` to copy the
+selected text or diff/hunk, and `y` to copy its repository path and source
+line. Press `f` to show affected paths together with their related TODO/SPEC
+documents. Press `r` to refresh and `q` to close.
 
 Set `comparison_base` to another commit/ref when needed; it defaults to
 `HEAD`. The workspace is read-only. File hints are candidates, not proof of
