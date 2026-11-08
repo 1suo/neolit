@@ -48,7 +48,7 @@ These sources have distinct ownership. Do not duplicate one source's authority i
 | Git status/diff | What source files actually changed | Git |
 | Test/check output | What was actually verified | Test runner/CI; Neolit may display captured results |
 
-**R-08** Neolit reads planning documents in place and does not rewrite them as a side effect of browsing or refresh. The sole host-side document mutation is an explicit archive/restore action on a selected TODO task, SPEC requirement, or SPEC acceptance criterion; it must preserve the complete Markdown block and never alter unrelated content.
+**R-08** Neolit reads planning documents in place and does not rewrite them as a side effect of browsing or refresh. The Neovim tree may explicitly delete the selected TODO task, SPEC requirement, or acceptance criterion source range. It must reject stale or modified source buffers and leave unrelated content untouched; Git history is the recovery mechanism.
 
 **R-09** The root README remains the system-level description. Component READMEs own local architecture and behavior. Follow their links only as far as needed for the selected task.
 
@@ -363,12 +363,6 @@ No stage may reintroduce a parallel patch model or a Neolit-owned conversation s
 
 ## 16. Archive documents and implementation notes
 
-**R-74** A linked planning document may have an adjacent archive file named by inserting `.archive` before `.md`: `TODO.archive.md`, `TODO-auth.archive.md`, `SPEC.archive.md`, or `auth-SPEC.archive.md`. The archive is ordinary Markdown, not a database or a Neolit-owned state store.
-
-**R-75** The workspace discovers an existing archive file whenever its active TODO/SPEC document is discovered. Archived TODO tasks and SPEC requirements remain parseable and referenceable; moving a requirement into an archive must not invalidate active TODO references to its original SPEC path and stable ID. Duplicate IDs across active and archive content remain diagnostics, not silently resolved collisions.
-
-**R-76** Editor views keep archive documents separate from active planning documents and collapsed/hidden from the default active-work view. Users can deliberately expand or open an archive document to inspect historical tasks and requirements. Archived status is not an implementation, completion, or verification state.
-
 **R-77** TODO task metadata distinguishes `Description:` (intent and expected outcome) from `Agent notes:` (implementation summary, rationale, deviations, and remaining caveats). Agent notes may span indented Markdown lines and are rendered with the task's related changes. They are explanatory statements, never verification evidence.
 
-**R-78** The Neovim host provides an explicit archive/restore action (`a`). On a selected TODO task, SPEC requirement, or SPEC acceptance criterion in the tree, it moves that complete source range. In an opened SPEC preview, it moves the Markdown paragraph under the cursor, including paragraphs without requirement or criterion IDs. It moves the block into or out of the matching `.archive.md` file, preserving text and references. It must reject stale source ranges, modified source/archive buffers, unsafe paths, and duplicate destination blocks. Viewing and refreshing never mutate documents.
+**R-78** The Neovim tree provides a one-key delete action (`d`) for a selected TODO task, SPEC requirement, or acceptance criterion. It deletes the complete parsed source range from its Markdown file, validates that the source range still identifies the selected entry, rejects modified source buffers and unsafe paths, and refreshes the workspace. No archive/restore workflow or key mapping is added to ordinary preview buffers.
