@@ -29,7 +29,7 @@ import { rememberSessionBinding, sessionBindingFor } from "./session-store.js";
  */
 
 /** Backends whose non-interactive runs accept generated MCP wiring today. */
-const SUPPORTED_BACKENDS = new Set(["opencode", "claude"]);
+const SUPPORTED_BACKENDS = new Set(["opencode", "claude", "codex"]);
 
 /** One display line of the live agent-session stream (view-only). */
 export interface SessionStreamLine {
@@ -152,6 +152,29 @@ export function claudeToolConfig(bridge: string[], socketPath: string, directory
   };
 }
 
+/** Codex CLI config overrides; they add only the repository-scoped Neolit MCP server. */
+export function codexToolConfig(bridge: string[], socketPath: string, directory: string): Record<string, unknown> {
+  return {
+    mcp_servers: {
+      neolit: {
+        command: bridge[0] ?? "augmentd",
+        args: [...bridge.slice(1), "--mcp", "--connect", socketPath, "--directory", directory],
+        enabled: true,
+      },
+    },
+  };
+}
+
+function codexToolArgs(config: Record<string, unknown>): string[] {
+  const servers = config.mcp_servers as Record<string, { command: string; args: string[]; enabled: boolean }>;
+  const server = servers.neolit!;
+  return [
+    "--config", "mcp_servers.neolit.command=" + JSON.stringify(server.command),
+    "--config", "mcp_servers.neolit.args=" + JSON.stringify(server.args),
+    "--config", "mcp_servers.neolit.enabled=true",
+  ];
+}
+
 /**
  * The prompt contract. The step verbs are stable prefixes — hosts and tests
  * match on them, so renames are protocol changes. Session opener carries the
@@ -159,7 +182,7 @@ export function claudeToolConfig(bridge: string[], socketPath: string, directory
  */
 export const toolPrompts = {
   open: (taskId: string, objective: string) =>
-    `You drive one Neolit planned-diff task (task id ${taskId}). Objective: "${objective}". The neolit tools are the ONLY way to change the plan or the repository: plan_status (with the task id) for current state and node ids, propose_approaches and challenge_approaches for domains, select_approach only when explicitly told, refine_plan, draft_file (one file per call; read the file first), repair_patch after a diagnostic (read_diff first), read_diff to see a drafted patch. Never edit, write, or run shell commands. Reply in one short line when a step is done.`,
+    `You drive one Neolit planned-diff task (task id ${taskId}). Objective: "${objective}". The neolit tools are the ONLY way to change the plan or the repository: plan_status (with the task id) for current state and node ids, propose_approaches and challenge_approaches for domains, select_approach only when explicitly told, refine_plan, draft_file (one file per call; read the file first), repair_patch after a diagnostic (read_diff first), read_diff to see a drafted patch. Only call apply_patches and verify_patches when the operator explicitly asks; never commit. Never edit, write, or run shell commands. Reply in one short line when a step is done.`,
   propose: (target: string, note?: string, rejected?: string[]) =>
     `Propose approaches for ${target}.${note ? ` This is a regeneration: ${note}` : ""}${rejected?.length ? ` Previously rejected approaches must not return: ${rejected.join("; ")}.` : ""} Call plan_status first, then propose_approaches (1-5 materially distinct candidates) and challenge_approaches (accept once the domain covers the objective). Do NOT call select_approach — a human chooses. Reply in one short line when done.`,
   refine: (target: string) =>
@@ -388,6 +411,18 @@ export class ToolSessionDriver {
     // always `--standalone`: a private server inheriting this process's
     // environment, where the generated layer (with the neolit bridge) is
     // visible. The fast path is the warm HTTP exchange above, not this.
+    if (this.options.backend.id === "codex") {
+      return [
+        "exec",
+        ...(session ? ["resume", session] : []),
+        "--json",
+        "--sandbox",
+        "read-only",
+        ...wiring.extraArgs,
+        ...(this.options.model ? ["-m", this.options.model] : []),
+        prompt,
+      ];
+    }
     if (this.options.backend.id === "opencode") {
       const base = this.options.backend.invocation(
         { model: this.options.model, session, prompt, title: "neolit step", autoApprove: true },
@@ -407,7 +442,9 @@ export class ToolSessionDriver {
     const file = path.join(os.tmpdir(), `neolit-tools-${process.pid}.json`);
     const config = this.options.backend.id === "opencode"
       ? openCodeToolConfig(this.bridge, socketPath, this.options.directory)
-      : claudeToolConfig(this.bridge, socketPath, this.options.directory);
+      : this.options.backend.id === "claude"
+        ? claudeToolConfig(this.bridge, socketPath, this.options.directory)
+        : codexToolConfig(this.bridge, socketPath, this.options.directory);
     fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, "utf8");
     // An OpenCode serve child started with this env owns the MCP layer, so
     // warm steps through it see the neolit tools; without it, steps fall
@@ -415,7 +452,9 @@ export class ToolSessionDriver {
     // invocation.
     this.wiring = this.options.backend.id === "opencode"
       ? { env: { OPENCODE_CONFIG: file }, extraArgs: [], file, socketPath }
-      : { env: {}, extraArgs: ["--mcp-config", file, "--allowedTools", "mcp__neolit__*"], file, socketPath };
+      : this.options.backend.id === "claude"
+        ? { env: {}, extraArgs: ["--mcp-config", file, "--allowedTools", "mcp__neolit__*"], file, socketPath }
+        : { env: {}, extraArgs: codexToolArgs(config), file, socketPath };
     if (this.options.backend.id === "opencode") {
       // One kept-alive serve child started with the wiring env owns the MCP
       // connections (the neolit bridge): every step runs against it over
