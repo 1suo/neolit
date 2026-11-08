@@ -55,7 +55,7 @@ Invalid shape, illegal paths, duplicate identities, out-of-scope mutations, lock
 
 ## Host and protocol contract
 
-`augmentd` exposes the pure core over host-neutral JSON-RPC. It stores tasks in memory in the current implementation and must eventually persist them atomically. Hosts implement model runtimes (OpenCode, Codex, direct providers, or deterministic tests), transactional patch application, and verification. `patch/apply` is unavailable unless the host injects an applier; `patch/verify` is unavailable unless it injects a verifier. The TUI and `augmentd --directory DIR` inject Git-backed implementations. `augmentd` also serves the planned-diff operations as MCP agent tools; hosts inject repository diagnostics (a `git apply` preflight) so tool-driven drafts are answered with exact applicability failures.
+`augmentd` exposes the pure core over host-neutral JSON-RPC. Standalone servers persist tasks atomically when a persistence path is configured; the augmentd executable configures repository-scoped storage by default. Hosts may instead own persistence through their embedding layer. Hosts implement model runtimes (OpenCode, Codex, direct providers, or deterministic tests), transactional patch application, and verification. `patch/apply` is unavailable unless the host injects an applier; `patch/verify` is unavailable unless it injects a verifier. The TUI and `augmentd --directory DIR` inject Git-backed implementations. `augmentd` also serves the planned-diff operations as MCP agent tools; hosts inject repository diagnostics (a `git apply` preflight) so tool-driven drafts are answered with exact applicability failures.
 
 ## Acceptance
 
