@@ -132,9 +132,16 @@ export function parseSpecDocument(documentPath: string, content: string): SpecDo
         headingPath: [...headings],
         range: { startLine: index + 1, endLine: index + 1 },
         requirementIds: [...new Set([...criterion[2]!.matchAll(/\bR-\d{2,}\b/gu)].map((item) => item[0]))],
-      });
+      };
+      acceptanceCriteria.push(currentEntry);
+      continue;
     }
-  }
+    if (!line.trim()) {
+      currentEntry = undefined;
+    } else if (currentEntry) {
+      currentEntry.text += ` ${line.trim()}`;
+      currentEntry.range.endLine = index + 1;
+    }
 
   return { path: normalizeRepoPath(documentPath), requirements, acceptanceCriteria };
 }
