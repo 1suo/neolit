@@ -7,8 +7,9 @@ derives task, requirement, file, and hunk views for editor integrations.
 **Git is the source of truth for code changes.** README files describe current
 behavior; SPEC files describe desired behavior; TODO files record actionable
 work. Adjacent `TODO.archive.md` / `SPEC.archive.md` files retain completed or
-obsolete entries without bloating active plans. TODO `Description:` records
-intent; `Agent notes:` records the implementation explanation. Neolit reads
+obsolete entries without bloating active plans; the Neovim tree can explicitly
+move or restore a selected task/requirement with confirmation. TODO
+`Description:` records intent; `Agent notes:` records the implementation explanation. Neolit reads
 these Markdown sources in place and never maintains a second authoritative
 plan, patch store, task lifecycle, or agent conversation.
 
