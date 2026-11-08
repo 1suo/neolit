@@ -1,0 +1,45 @@
+{
+  "name": "neolit-vscode",
+  "displayName": "Neolit Planning",
+  "description": "Git-native planning annotations and contextual diff navigation",
+  "version": "0.1.0",
+  "publisher": "1suo",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Other"],
+  "activationEvents": ["workspaceContains:README.md"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "views": {
+      "explorer": [
+        { "id": "neolit.plan", "name": "Neolit Plan", "when": "workspaceFolderCount == 1" }
+      ]
+    },
+    "commands": [
+      { "command": "neolit.refresh", "title": "Neolit: Refresh Planning View" },
+      { "command": "neolit.openTask", "title": "Neolit: Open TODO Task" },
+      { "command": "neolit.openChangedFile", "title": "Neolit: Open Changed File" },
+      { "command": "neolit.copyHunkContext", "title": "Neolit: Copy Hunk Context" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "neolit.refresh", "when": "view == neolit.plan", "group": "navigation" }
+      ],
+      "view/item/context": [
+        { "command": "neolit.openTask", "when": "view == neolit.plan && viewItem == task", "group": "inline" },
+        { "command": "neolit.openChangedFile", "when": "view == neolit.plan && viewItem == hunk", "group": "inline" },
+        { "command": "neolit.copyHunkContext", "when": "view == neolit.plan && viewItem == hunk", "group": "inline" }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js",
+    "watch": "npm run compile -- --watch"
+  },
+  "dependencies": { "neolit": "file:../.." },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.9.3"
+  }
+}
