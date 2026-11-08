@@ -27,7 +27,7 @@ Open the repository in VS Code and launch the extension from an Extension Develo
 - Hunk rows distinguish unresolved source-code candidates (`~`), ordinary documentation changes (`DOC`), source-attributed TODO/SPEC documentation edits (`DOC↳`), and unplanned changes (`?`). `DOC↳` is based on exact overlap with parsed task/requirement source ranges; it identifies the documentation record touched, not implementation fulfilment. All markers are review annotations, not proof of implementation.
 - **Open Native Hunk Diff** opens VS Code's native diff editor, comparing the selected file's content at the resolved Git base with the current working-tree file. Added/untracked files have an empty base side; renames compare against the previous path.
 - **Copy Hunk Context** uses only that hunk's candidate tasks, selects the exact hunk from the file diff, and passes it through the shared stale-checked context packet builder before copying it for the user's existing agent session.
-- Refresh runs on demand, after in-workspace saves, and when the window regains focus.
+- Refresh runs on demand, after in-workspace saves, and when the window regains focus. Hunk navigation and context handoff re-read Git immediately before acting, so external index/HEAD changes invalidate the selected hunk instead of sending stale context.
 
 Git status remains owned by VS Code's native Git integration. Neolit does not register competing Git decorations or disguise planned paths as actual Git changes.
 
