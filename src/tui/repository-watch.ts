@@ -29,9 +29,13 @@ export class RepositoryWatcher {
     this.timer.unref?.();
   }
 
-  /** Adopt known host-owned writes without reporting them as external edits. */
-  rebaseline(): void {
-    this.capture();
+  /** Adopt only known host-owned paths; unrelated concurrent edits remain observable. */
+  rebaseline(paths: string[]): void {
+    for (const relative of paths) {
+      const signature = this.readPathSignature(relative);
+      if (signature === undefined) this.snapshot.delete(relative);
+      else this.snapshot.set(relative, signature);
+    }
   }
 
   close(): void {
@@ -73,6 +77,17 @@ export class RepositoryWatcher {
     }
   }
 
+  private readPathSignature(relative: string): string | undefined {
+    try {
+      const absolute = path.join(this.directory, relative);
+      const stat = fs.lstatSync(absolute, { bigint: true });
+      const link = stat.isSymbolicLink() ? fs.readlinkSync(absolute) : "";
+      return [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeNs, link].join(":");
+    } catch {
+      return undefined;
+    }
+  }
+
   private readSnapshot(): Map<string, string> {
     let names: string[];
     try {
@@ -98,9 +113,8 @@ export class RepositoryWatcher {
     const result = new Map<string, string>();
     for (const name of names) {
       try {
-        const stat = fs.lstatSync(path.join(this.directory, name), { bigint: true });
-        const link = stat.isSymbolicLink() ? fs.readlinkSync(path.join(this.directory, name)) : "";
-        result.set(name, [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeNs, link].join(":"));
+        const signature = this.readPathSignature(name);
+        if (signature !== undefined) result.set(name, signature);
       } catch {
         // A disappearing file is represented by its absence in the next map.
       }
