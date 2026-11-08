@@ -84,7 +84,8 @@ The standalone TUI serves its embedded server this way while it runs, which is w
 `mcp.ts` serves the planned-diff operations as MCP tools (`initialize`, `tools/list`, `tools/call`) over the same stdio framing, so an agent host (OpenCode, Claude, Codex) can let its model write into the plan one small call at a time instead of one JSON blob:
 
 ```text
-plan_start            plan_list            plan_status\nread_diff              apply_patches        verify_patches
+plan_start            plan_list            plan_status
+read_diff              apply_patches        verify_patches
 propose_approaches    challenge_approaches
 select_approach       refine_plan
 draft_file            repair_patch
@@ -94,11 +95,11 @@ draft_file            repair_patch
 
 ```sh
 npx augmentd --mcp                                  # standalone: owns its own task store
-npx augmentd --mcp --directory .                    # + joint git apply diagnostics for drafts
+npx augmentd --mcp --directory .                    # + repository-scoped storage, overlays, and Git apply/verify
 npx augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment-<project>-<hash>.sock"   # attach to a running TUI (ls that directory to find the address)
 ```
 
-Attached with `--connect`, every tool call mutates the served store — the TUI's (or neolit.nvim's) panel renders each mutation as it lands; detached, the bridge owns its own tasks. The MCP client's agent is the model, so no `ModelRuntime` is injected in either mode. A host embedding the server passes its own `preflight` function and may route dispatch to any `NativePeer` (in-process `AugmentServer` or `SocketAugmentPeer`).
+Attached with `--connect`, every tool call mutates the served store — the TUI's (or neolit.nvim's) panel renders each mutation as it lands; detached, the bridge owns its own tasks. The MCP client's agent is the model, so no `ModelRuntime` is injected in either mode. A host embedding the server passes its own `preflight`, `applyPatches`, `verifyPatches`, and `initialConstraints` callbacks and may route dispatch to any `NativePeer` (in-process `AugmentServer` or `SocketAugmentPeer`).
 
 ## Error codes
 
