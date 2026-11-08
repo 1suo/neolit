@@ -20,15 +20,28 @@ type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode
 const execFileAsync = promisify(execFile);
 const BASE_SCHEME = "neolit-base";
 
+function workspaceFileUri(folder: vscode.WorkspaceFolder, relativePath: string): vscode.Uri | undefined {
+  if (!relativePath || path.isAbsolute(relativePath)) return undefined;
+  const absolute = path.resolve(folder.uri.fsPath, relativePath);
+  const relative = path.relative(folder.uri.fsPath, absolute);
+  if (!relative || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return undefined;
+  return vscode.Uri.file(absolute);
+}
+
 class BaseDocumentProvider implements vscode.TextDocumentContentProvider {
   constructor(private readonly root: string, private readonly getWorkspace: () => PlanningWorkspace | undefined) {}
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const relative = uri.path.replace(/^\\//u, "");
+    const absolute = path.resolve(this.root, relative);
+    const withinRoot = path.relative(this.root, absolute);
     const workspace = this.getWorkspace();
     const baseCommit = uri.query;
-    if (!workspace || !/^[0-9a-f]{40,64}$/iu.test(baseCommit) || !relative || relative.split("/").some((part) => part === "..")) return "";
+    if (!workspace || !/^[0-9a-f]{40,64}$/iu.test(baseCommit) || !relative || withinRoot === ".." || withinRoot.startsWith(".." + path.sep) || path.isAbsolute(withinRoot)) return "";
     const file = workspace.git.changedFiles.find((item) => item.path === relative);
     const sourcePath = file?.previousPath ?? relative;
+    const sourceAbsolute = path.resolve(this.root, sourcePath);
+    const sourceRelative = path.relative(this.root, sourceAbsolute);
+    if (sourceRelative === ".." || sourceRelative.startsWith(".." + path.sep) || path.isAbsolute(sourceRelative)) return "";
     try {
       const { stdout } = await execFileAsync("git", ["show", `${baseCommit}:${sourcePath}`], {
         cwd: this.root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
@@ -184,7 +197,9 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!node || node.kind !== "task" || !current) return;
       const task = current.tasks.find((item) => item.key === node.key);
       if (!task) return;
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, task.key.slice(0, task.key.indexOf("::"))));
+      const taskUri = workspaceFileUri(folder, task.key.slice(0, task.key.indexOf("::")));
+      if (!taskUri) return;
+      const document = await vscode.workspace.openTextDocument(taskUri);
       const position = new vscode.Position(Math.max(0, task.range.startLine - 1), 0);
       await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
     }),
@@ -193,7 +208,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const spec = current.specs.find((item) => item.path === node.specPath);
       const requirement = spec?.requirements.find((item) => item.id === node.id);
       if (!spec || !requirement) return;
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, node.specPath));
+      const specUri = workspaceFileUri(folder, node.specPath);
+      if (!specUri) return;
+      const document = await vscode.workspace.openTextDocument(specUri);
       const position = new vscode.Position(Math.max(0, requirement.range.startLine - 1), 0);
       await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
     }),
@@ -202,16 +219,19 @@ export function activate(context: vscode.ExtensionContext): void {
       const changed = current.git.changedFiles.find((item) => item.path === node.path);
       if (changed) {
         const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${node.path}`, query: current.git.base });
-        const working = vscode.Uri.joinPath(folder.uri, node.path);
+        const working = workspaceFileUri(folder, node.path);
+        if (!working) return;
         await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${node.path} · ${current.git.base.slice(0, 8)}`);
         return;
       }
-      const uri = vscode.Uri.joinPath(folder.uri, node.path);
+      const uri = workspaceFileUri(folder, node.path);
+      if (!uri) return;
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
     }),
     vscode.commands.registerCommand("neolit.openChangedFile", async (node?: HunkNode) => {
       if (!node || node.kind !== "hunk") return;
-      const uri = vscode.Uri.joinPath(folder.uri, node.path);
+      const uri = workspaceFileUri(folder, node.path);
+      if (!uri) return;
       await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
     }),
     vscode.commands.registerCommand("neolit.openHunkDiff", async (node?: HunkNode) => {
@@ -219,7 +239,8 @@ export function activate(context: vscode.ExtensionContext): void {
       const file = current.git.changedFiles.find((item) => item.path === node.path);
       const hunk = file?.hunks[node.hunkIndex];
       if (!file || !hunk) return;
-      const working = vscode.Uri.joinPath(folder.uri, node.path);
+      const working = workspaceFileUri(folder, node.path);
+      if (!working) return;
       const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${node.path}`, query: current.git.base });
       await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${node.path} · ${current.git.base.slice(0, 8)}`);
     }),
