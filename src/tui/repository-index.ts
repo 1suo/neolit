@@ -151,6 +151,11 @@ export class RepositoryPathIndex {
       `Indexed ${this.paths.length} paths and ${this.files.size} source files; scope: ${scope || "."}.`,
     ];
     if (directories.size) lines.push(`Directories: ${[...directories].sort().slice(0, 40).join(", ")}.`);
+    if (scope && this.paths.includes(scope) && !this.files.has(scope)) {
+      const siblingDir = path.posix.dirname(scope);
+      const siblings = this.paths.filter((entry) => entry !== scope && path.posix.dirname(entry) === siblingDir).slice(0, 32);
+      if (siblings.length) lines.push("Nearby files:", ...siblings.map((file) => "- " + file + " (same directory)"));
+    }
     if (scope && this.files.has(scope)) {
       const ranked = new Map<string, { score: number; reason: string }>();
       for (const imported of this.files.get(scope)!.imports) ranked.set(imported, { score: 6, reason: "imports" });
@@ -185,7 +190,7 @@ export class RepositoryPathIndex {
       candidates.push(base + ".lua", base + "/init.lua");
     } else if (extension === ".py" || extension === ".rs") {
       const base = specifier.replaceAll(".", "/").replaceAll("::", "/");
-      candidates.push(base + ".py", base + "/__init__.py", base + ".rs", base + "/mod.rs");
+      candidates.push(base + ".py", base + "/__init__.py", base + ".rs", base + "/mod.rs", "src/" + base + ".rs", "src/" + base + "/mod.rs");
     } else if (specifier.startsWith("@/") || specifier.startsWith("~/")) {
       const base = specifier.slice(2);
       candidates.push(base, "src/" + base, "lua/" + base);
