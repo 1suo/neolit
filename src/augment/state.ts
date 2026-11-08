@@ -889,7 +889,7 @@ export function setDiffLifecycle(task: PlanTask, input: SetDiffLifecycleInput): 
     if (input.lifecycle === "applied" && diff.basisRevision !== next.basisRevision) {
       throw new PlanStateError(`Diff ${id} was drafted against ${diff.basisRevision}, not the current task basis ${next.basisRevision}. Refresh and redraft it before applying.`, "node-state");
     }
-    if (input.lifecycle === "applied" && current !== "drafted" && current !== "failed") {
+    if (input.lifecycle === "applied" && current !== "drafted") {
       throw new PlanStateError(`Diff ${id} cannot be applied from lifecycle ${current}.`, "node-state");
     }
     if ((input.lifecycle === "verified" || input.lifecycle === "failed") && current !== "applied") {
