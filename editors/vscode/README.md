@@ -4,9 +4,13 @@ This is a thin VS Code companion over the shared `neolit/planning` package. It r
 
 ## Development
 
-From this directory:
+Build the shared core first, then compile the extension:
 
 ```sh
+# repository root
+npm run build
+
+# editors/vscode
 npm install
 npm run compile
 ```
