@@ -4,13 +4,28 @@
 
 ## Responsibility
 
-- own in-memory task sessions;
+- own task sessions with an atomic, durable snapshot for standalone daemon and MCP processes;
 - dispatch pure core operations;
 - invoke the injected model runtime for crystallization/refinement;
 - reject stale revisions and unknown nodes;
 - keep model execution outside process-global state.
 
 It does not watch the repository, apply patches, run checks, authenticate providers, or render a UI. Those are host responsibilities.
+
+## Durable task sessions
+
+Standalone `augmentd` and standalone `augmentd --mcp` persist every accepted
+task mutation before acknowledging it. The snapshot is written with mode
+`0600` to a temporary file, fsynced, then atomically renamed. Startup validates
+each saved task against the protocol schema and referential-integrity rules;
+invalid entries are skipped without discarding other valid tasks. The default
+path is `$XDG_STATE_HOME/neolit/augmentd-<repository-hash>.json` when
+`--directory DIR` is supplied, otherwise
+`$XDG_STATE_HOME/neolit/augmentd-default.json` (falling back to
+`~/.local/state`). Use `--state-file FILE` to choose an explicit store.
+`task/list` and MCP `plan_list` enumerate recovered task ids after reconnect;
+then `task/get` / `plan_status` resumes the selected task. The TUI has its own
+repository-scoped task and agent-session binding store.
 
 ## Protocol
 
@@ -20,6 +35,7 @@ Requests are one JSON-RPC object per line. Batch requests are not supported.
 initialize
 task/start
 task/restore
+task/list
 task/get
 tree/get
 explain
@@ -45,7 +61,7 @@ diff/get
 shutdown
 ```
 
-`task/restore` rehydrates a previously persisted task into a fresh server so hosts can resume after a restart; the payload must be a version-1 task that passes the boundary schema (`PlanTaskSchema`) and referential-integrity check, and the task id must not already exist. Hosts embedding the server can subscribe with `onChange` for push delivery; over stdio, every task mutation is forwarded as a notification line — `{"jsonrpc":"2.0","method":"augment/taskChanged","params":{"taskId":"…","revision":N}}` — so editor hosts invalidate views instead of polling. Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches — it accepts an optional `nodeId` to focus the explanation on one path. `message/route` classifies one node-linked user message with a single bounded `route-message` model call (`develop`, `explain`, or `offer-options` with at least two interpretations) and returns the verdict without mutating the task — the host decides which flow continues. `path/restrict` keeps one plain: `lockedPaths` is the marked set and `restrictionMode` its polarity — in lock mode candidates, refinement children, and patches (including the paths named inside patch text) must not intersect the set; in allow mode a candidate pattern is legal only when the marked set fully covers it (a pattern that merely overlaps an allowed path — a folder spanning allowed and locked siblings — still names paths outside the set and is rejected; coverage by a single marked entry is required). Switching polarity inverts the plain without touching the set. `node/refresh` ends staleness for a subtree: stale nodes return to their last live lifecycle point, readiness propagates again, and an optional `basisRevision` re-anchors the task while existing diffs keep the basis they were drafted against. `patch/set` lets a host overwrite a drafted patch with its own edited text (for example, saved from an editor buffer); it reclassifies the diff, bumps the revision, records an optional `failedCheck` grounding, and is rejected for stale revisions, unknown diffs, or locked paths.
+`task/restore` rehydrates a task supplied by an embedding host; the payload must be a version-1 task that passes the boundary schema (`PlanTaskSchema`) and referential-integrity check, and the task id must not already exist. `task/list` returns the id, objective, mode, revision, and basis revision for every recovered task. Hosts embedding the server can subscribe with `onChange` for push delivery; over stdio, every task mutation is forwarded as a notification line — `{"jsonrpc":"2.0","method":"augment/taskChanged","params":{"taskId":"…","revision":N}}` — so editor hosts invalidate views instead of polling. Every mutating request carries `taskId` and `expectedRevision`; the server rejects a mismatch before touching state. A task may use `mode: "change"` or `mode: "explanation"`; `explain` invokes the bounded explanation operation and attaches path explanations without creating candidates or patches — it accepts an optional `nodeId` to focus the explanation on one path. `message/route` classifies one node-linked user message with a single bounded `route-message` model call (`develop`, `explain`, or `offer-options` with at least two interpretations) and returns the verdict without mutating the task — the host decides which flow continues. `path/restrict` keeps one plain: `lockedPaths` is the marked set and `restrictionMode` its polarity — in lock mode candidates, refinement children, and patches (including the paths named inside patch text) must not intersect the set; in allow mode a candidate pattern is legal only when the marked set fully covers it (a pattern that merely overlaps an allowed path — a folder spanning allowed and locked siblings — still names paths outside the set and is rejected; coverage by a single marked entry is required). Switching polarity inverts the plain without touching the set. `node/refresh` ends staleness for a subtree: stale nodes return to their last live lifecycle point, readiness propagates again, and an optional `basisRevision` re-anchors the task while existing diffs keep the basis they were drafted against. `patch/set` lets a host overwrite a drafted patch with its own edited text (for example, saved from an editor buffer); it reclassifies the diff, bumps the revision, records an optional `failedCheck` grounding, and is rejected for stale revisions, unknown diffs, or locked paths.
 
 ### Deterministic proposal seams
 
