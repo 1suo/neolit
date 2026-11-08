@@ -62,7 +62,7 @@ async function readRepoFile(root: string, candidate: string): Promise<string> {
   if (!safePath) throw new Error("Repository path escapes the selected worktree.");
   const resolved = await realpath(path.join(root, safePath));
   const relative = path.relative(root, resolved);
-  if (relative === ".." || relative.startsWith("../") || path.isAbsolute(relative)) {
+  if (relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) {
     throw new Error("Repository file resolves outside the selected worktree.");
   }
   return readFile(resolved, "utf8");
