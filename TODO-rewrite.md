@@ -58,9 +58,13 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Validate staged, unstaged, renamed, deleted, and untracked diff behavior
   - SPEC: `REWRITE-SPEC.md#R-33`, `REWRITE-SPEC.md#R-34`, `REWRITE-SPEC.md#R-37`, `REWRITE-SPEC.md#R-38`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
-- [ ] Parse diff hunks and map changed paths/hunks to TODO tasks and SPEC requirements
+- [x] Parse unified diff paths and retain hunk source evidence
   - SPEC: `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-04`, `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`
-  - Description: Implemented conservative file-level path associations: shared file hints are marked unresolved, README/SPEC/TODO changes are classified as documentation, and unmatched paths remain unplanned. Unified diff hunks now retain added/removed source lines and coordinates for precise downstream mapping; automatic hunk-to-task attribution remains open because file hints alone are not proof.
+  - File: `src/planning/markdown.ts`
+  - Description: Parse changed paths, quoted Git paths, renames, hunk coordinates, and added/removed source lines. File-level associations remain conservative: shared hints are unresolved, documentation changes are classified separately, and unmatched paths remain unplanned.
+- [ ] Map individual diff hunks to TODO tasks and SPEC requirements where evidence permits
+  - SPEC: `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-04`, `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`
+  - Description: File-path hints alone are not proof that a hunk implements a task. Add only deterministic, explainable hunk associations; preserve ambiguous and unplanned hunks as such.
 - [x] Implement evidence-derived task and requirement states
   - SPEC: `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-29`, `REWRITE-SPEC.md#R-30`
   - Description: Added AC-ID parsing and read-only task/requirement projections for planned/in-progress/implemented/verified/blocked/unmapped/unplanned. File-path hints now remain `in-progress` rather than overstating implementation; verified requires passing evidence linked to all applicable criteria (or directly to a task with no criteria) and the exact base/diff identity. Workspace and unit fixtures cover checkbox independence, partial path evidence, blockers, unmapped references, all-criteria verification, and stale/failed checks. Precise hunk-level implementation attribution remains necessary before `implemented` can be derived. 
