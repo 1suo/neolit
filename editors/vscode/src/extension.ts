@@ -24,11 +24,12 @@ class BaseDocumentProvider implements vscode.TextDocumentContentProvider {
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const relative = uri.path.replace(/^\\//u, "");
     const workspace = this.getWorkspace();
-    if (!workspace || !relative || relative.split("/").some((part) => part === "..")) return "";
+    const baseCommit = uri.query;
+    if (!workspace || !/^[0-9a-f]{40,64}$/iu.test(baseCommit) || !relative || relative.split("/").some((part) => part === "..")) return "";
     const file = workspace.git.changedFiles.find((item) => item.path === relative);
     const sourcePath = file?.previousPath ?? relative;
     try {
-      const { stdout } = await execFileAsync("git", ["show", `${workspace.git.base}:${sourcePath}`], {
+      const { stdout } = await execFileAsync("git", ["show", `${baseCommit}:${sourcePath}`], {
         cwd: this.root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
       });
       return stdout;
