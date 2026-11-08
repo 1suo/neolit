@@ -142,6 +142,7 @@ export function parseSpecDocument(documentPath: string, content: string): SpecDo
       currentEntry.text += ` ${line.trim()}`;
       currentEntry.range.endLine = index + 1;
     }
+  }
 
   return { path: normalizeRepoPath(documentPath), requirements, acceptanceCriteria };
 }
