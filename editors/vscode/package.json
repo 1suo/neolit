@@ -48,6 +48,10 @@
       {
         "command": "neolit.openRequirement",
         "title": "Neolit: Open SPEC Requirement"
+      },
+      {
+        "command": "neolit.openPlanFile",
+        "title": "Neolit: Open Planned File or Diff"
       }
     ],
     "menus": {
@@ -82,6 +86,11 @@
         {
           "command": "neolit.openRequirement",
           "when": "view == neolit.plan && viewItem == requirement",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.openPlanFile",
+          "when": "view == neolit.plan && viewItem == plannedFile",
           "group": "inline"
         }
       ]
