@@ -6,7 +6,7 @@ import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
 import { defaultSocketPath, serveAugmentSocket, type SocketService } from "../augmentd/socket.js";
 import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
-import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
+import { applyPlannedDiffsTransaction, commitAppliedPaths } from "./apply.js";
 import type { SessionStreamLine, ToolSessionDriver } from "./tool-session.js";
 import { sessionBindingFor } from "./session-store.js";
 import { RepositoryWatcher, type RepositoryChange } from "./repository-watch.js";
@@ -399,7 +399,7 @@ export class AugmentTuiController {
     this.directory = options.directory;
     this.branch = currentBranch(options.directory);
     this.runtime = options.runtime;
-    this.server = new AugmentServer({ runtime: options.runtime });
+    this.server = new AugmentServer({ runtime: options.runtime, applyPatches: (diffs) => applyPlannedDiffsTransaction(this.directory, diffs) });
     this.defaultLod = options.defaultLod ?? "file";
     const rounds = options.challengeRounds ?? Number(process.env.AUGMENT_CHALLENGE_ROUNDS);
     this.challengeRounds = Number.isInteger(rounds) && rounds >= 0 && rounds <= 2 ? rounds : undefined;
@@ -1195,12 +1195,18 @@ export class AugmentTuiController {
       return;
     }
     await this.dispatch("Applying drafted changes", async () => {
-      const applied = applyPlannedDiffs(this.directory, diffs);
+      const response = await this.server.handle({
+        jsonrpc: "2.0",
+        id: 51,
+        method: "patch/apply",
+        params: { taskId: task.id, expectedRevision: this.requireTask().revision, diffIds: diffs.map((diff) => diff.id) },
+      });
+      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
       this.repositoryWatcher?.rebaseline();
-      for (const diff of diffs) if (diff.patch.trim().length > 0) this.appliedDiffIds.add(diff.id);
+      for (const diff of diffs) this.appliedDiffIds.add(diff.id);
       this.repository = repositoryTree(this.directory);
       this.refresh();
-      this.message = `Applied ${applied.length} drafted ${applied.length === 1 ? "change" : "changes"} to the working tree. Nothing is committed.`;
+      this.message = `Applied ${diffs.length} drafted ${diffs.length === 1 ? "change" : "changes"} to the working tree. Nothing is committed.`;
     });
   }
 
