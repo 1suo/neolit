@@ -205,6 +205,10 @@ layout, and interaction conventions are canonical in
 The former LangGraph/OpenCode solution graph lives in the sibling
 [`opencode-langgraph`](https://github.com/1suo/opencode-langgraph) repository.
 
+## Acceptance smoke
+
+See [`docs/ACCEPTANCE-SMOKE.md`](./docs/ACCEPTANCE-SMOKE.md) for the manual acceptance path across the daemon, TUI, and Neovim host.
+
 ## Development
 
 ```sh
