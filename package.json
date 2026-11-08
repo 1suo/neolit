@@ -1,60 +1,50 @@
 {
   "name": "neolit",
   "version": "0.6.25",
-  "description": "Planned-diff augmentation core and host-neutral JSON-RPC server",
+  "description": "Git-native planning and diff traceability core",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "augmentd": "dist/bin/augmentd.js",
-    "augment": "dist/bin/augment.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./planning": {
+      "types": "./dist/planning/index.d.ts",
+      "default": "./dist/planning/index.js"
     }
   },
   "files": [
     "dist/",
     "LICENSE",
     "README.md",
-    "src/augment/README.md",
-    "src/augment/SPEC.md",
-    "src/augmentd/README.md",
-    "src/tui/README.md"
+    "src/planning/README.md",
+    "src/planning/"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npm run clean && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/bin/augmentd.js', 0o755); require('node:fs').chmodSync('dist/bin/augment.js', 0o755)\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
     "test": "vitest run",
     "check": "tsc -p tsconfig.json --noEmit && vitest run",
     "prepack": "npm run check && npm run build"
   },
   "keywords": [
-    "augmentation",
-    "planned-diff",
-    "csp",
-    "wfc",
-    "cegar",
-    "lod",
-    "development-tools"
+    "git",
+    "planning",
+    "diff",
+    "traceability",
+    "markdown",
+    "coding-agents"
   ],
   "author": "1suo",
   "license": "MIT",
   "engines": {
     "node": ">=22.12.0"
   },
-  "dependencies": {
-    "ink": "^7.1.1",
-    "react": "^19.3.0",
-    "zod": "^4.4.3"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^24.10.0",
-    "@types/react": "^19.3.0",
-    "ink-testing-library": "^4.0.0",
-    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
   }

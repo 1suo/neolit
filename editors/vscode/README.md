@@ -1,0 +1,36 @@
+# Neolit VS Code adapter
+
+This is a thin VS Code companion over the shared `neolit/planning` package. It reads linked README/SPEC/TODO documents and Git state through the core; it does not parse Markdown, derive task states, apply patches, or own an agent session.
+
+## Development
+
+Build the shared core first, then compile the extension:
+
+```sh
+# repository root
+npm run build
+
+# editors/vscode
+npm install
+npm run compile
+```
+
+Open the repository in VS Code and launch the extension from an Extension Development Host (F5). The **Neolit Plan** view appears in Explorer. The `vscode:prepublish` lifecycle script builds the bundled extension entry point before VSIX packaging; the shared core is a development-time dependency and is bundled into the extension.
+
+## Behavior
+
+- Task rows show the shared derived state, expose the task description as a tooltip, and open the source TODO task.
+- Explicit task file hints appear beneath the task and receive a `P` Explorer annotation when unchanged. Opening one shows the real file; after it changes, the same row opens the native base-to-working diff. Changed files use a distinct `N` review annotation.
+- Requirement rows open the exact SPEC source location and expand to show every TODO task linked to that fully qualified SPEC path and requirement ID.
+- Expanding a task shows its linked SPEC requirements and its candidate hunk reviews.
+- A separate **Git changes** group shows every changed file and its parsed hunks, including binary/mode-only files with no parsed hunks and unplanned/documentation changes that have no task candidate. Each changed-file row remains visible even without parsed text hunks; deleted files compare against an empty working side, while binary/mode-only files open in the native editor. Each hunk row shows its own task- and requirement-candidate counts, with exact candidate names and requirement text in the tooltip.
+- Hunk rows distinguish unresolved source-code candidates (`~`), ordinary documentation changes (`DOC`), source-attributed TODO/SPEC documentation edits (`DOC↳`), and unplanned changes (`?`). `DOC↳` is based on exact overlap with parsed task/requirement source ranges; it identifies the documentation record touched, not implementation fulfilment. All markers are review annotations, not proof of implementation.
+- **Open Native Hunk Diff** opens VS Code's native diff editor, comparing the selected file's content at the resolved Git base with the current working-tree file. Added/untracked files have an empty base side; renames compare against the previous path.
+- **Copy Hunk Context** uses only that hunk's candidate tasks and requirement references, selects the exact hunk from the file diff, and passes them through the shared stale-checked context packet builder before copying it for the user's existing agent session.
+- Refresh runs on demand, after in-workspace saves, and when the window regains focus. Hunk navigation and context handoff re-read Git immediately before acting, so external index/HEAD changes invalidate the selected hunk instead of sending stale context.
+
+Git status remains owned by VS Code's native Git integration. Neolit does not register competing Git decorations or disguise planned paths as actual Git changes.
+
+## Trivial changes
+
+The companion does not intercept prompts, create planning documents, or require a TODO/SPEC before a user edits code. For a small change, use the existing coding agent directly and review the ordinary Git diff; the planning view is optional and remains empty when no linked planning documents exist.

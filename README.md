@@ -1,231 +1,112 @@
-# neolit
+# Neolit
 
-Neolit is a **planned-diff augmentation kernel**. It turns an objective into an
-inspectable, filesystem-shaped tree of candidate approaches, refinements,
-planned hunks, obligations, constraints, and stale basis ranges. A host-neutral
-JSON-RPC server exposes that state to editors and agent applications.
+Neolit is a thin, editor-native layer for connecting repository intent to actual
+Git changes. It reads ordinary Markdown documentation and Git metadata, then
+derives task, requirement, file, and hunk views for editor integrations.
 
-The planned-diff kernel is not an agent harness and has no provider-specific
-runtime or direct filesystem authority. This repository also ships a standalone
-TUI host: it injects OpenCode/Claude/Codex CLI runtimes, watches the worktree,
-and owns transactional Git apply/verification. External editors and agent
-applications use the same host-neutral JSON-RPC/MCP protocol and inject their
-own model, repository, and UI adapters.
+**Git is the source of truth for code changes.** README files describe current
+behavior; SPEC files describe desired behavior; TODO files record actionable
+work. Neolit reads these sources in place and never maintains a second
+authoritative plan, patch store, task lifecycle, or agent conversation.
 
-## Core idea
+## Planning core
 
-A project-wide generated change should remain anchored to real repository
-topology. Neolit therefore models the plan itself as a **planned diff tree**:
+The deterministic TypeScript core provides:
 
-```text
-task: make retries bounded
+- linked README/SPEC/TODO discovery and Markdown parsing;
+- stable SPEC requirement and acceptance-criterion references;
+- TODO-to-SPEC traceability and diagnostics;
+- Git status, comparison-base, diff, rename, untracked-file, and hunk indexing;
+- conservative file/hunk candidate associations and derived task/requirement
+  states;
+- stale-checked file, hunk, and line-range anchors;
+- compact contextual question packets for an existing coding-agent session.
 
-repo/
-└─ src/auth/                    planned subtree
-   ├─ session.ts               planned hunks
-   └─ retry-policy.ts          new file candidate
-```
+It does not call an LLM, generate or apply patches, stage or commit files, or
+send messages to an agent. If an editor cannot address an existing agent
+session through a supported host API, it can copy the contextual packet for
+the user to send.
 
-At each node, the controller can:
-
-```text
-form a bounded candidate domain
-challenge the domain for omissions
-collapse to one candidate
-propagate consequences
-refine into directory/file/hunk children
-attach basis-bound patches
-mark the smallest overlapping subtree stale
-```
-
-Selection is a commitment, not a UI abbreviation. Sibling candidates become
-eliminated records with reasons, so rejected approaches cannot silently return.
-
-## Public seam
+Import the shared API from either the package root or its explicit subpath:
 
 ```ts
 import {
-  createPlanTask,
-  crystallizeNode,
-  planTree,
-  refineWithModel,
-  selectCandidate,
-  type ModelRuntime,
+  loadPlanningWorkspace,
+  derivePlanningStates,
+  buildDiffQuestionPacket,
 } from "neolit";
 
-const task = createPlanTask({
-  id: "task:1",
-  objective: "make retries bounded",
-  basisRevision: "commit:1",
-});
-
-const runtime: ModelRuntime = {
-  async call(request) {
-    // Route one bounded operation to OpenCode, Codex, a direct provider,
-    // or a deterministic test runtime. Return JSON matching request.operation.
-    return { value: hostCall(request) };
-  },
-};
-
-const domain = await crystallizeNode(runtime, task, {
-  taskId: task.id,
-  nodeId: task.rootNodeId,
-  temperature: "normal",
-  lod: "file",
-});
-
-const collapsed = selectCandidate(domain, {
-  taskId: domain.id,
-  expectedRevision: domain.revision,
-  nodeId: domain.rootNodeId,
-  candidateId: domain.nodes[domain.rootNodeId]!.candidateIds[0]!,
-});
-
-const refined = await refineWithModel(runtime, collapsed, {
-  taskId: collapsed.id,
-  nodeId: collapsed.rootNodeId,
-  temperature: "normal",
-  lod: "hunk",
-});
-
-const view = planTree(refined);
+// Equivalent explicit import:
+// import { ... } from "neolit/planning";
 ```
 
-Model operations are finite and typed:
+## Getting started
 
-```text
-generate-domain
-challenge-domain
-refine-node
-draft-patch
-draft-patches
-repair-patch
-explain-project
-route-message
-```
-
-The kernel builds a bounded context packet, parses output with Zod, validates
-scope and lifecycle, and merges only legal deltas. Invalid model output leaves
-task state unchanged. Draft and repair replies may be the raw unified diff
-itself (assumptions as trailing `Assumption:` lines) instead of a JSON
-envelope, and the same operations are exposed as MCP agent tools with
-`augmentd` as the tool provider — see below and
-[`src/augment/SPEC.md`](./src/augment/SPEC.md).
-
-## `augmentd`
-
-`src/augmentd/` implements newline-delimited JSON-RPC 2.0 over standard I/O:
+Build the shared core with Node.js 22.12 or newer:
 
 ```sh
-npx augmentd <<'JSON'
-{"jsonrpc":"2.0","id":1,"method":"initialize"}
-{"jsonrpc":"2.0","id":2,"method":"task/start","params":{"objective":"make retries bounded","basisRevision":"commit:1"}}
-JSON
-```
-
-The executable uses an unavailable model runtime by default so pure task/tree
-operations work without provider credentials. A host that needs
-`crystallize`/`refine` embeds `new AugmentServer({ runtime })` and injects
-its own OpenCode, Codex, or direct-provider adapter.
-
-Operations cover task and tree lifecycle (including `task/restore` and
-`explain`), node selection and constraints, message routing
-(`message/route`), staleness and refresh, the deterministic domain seams, and
-patch attach/draft/repair/set; the canonical method list lives in
-[`src/augmentd/README.md`](./src/augmentd/README.md).
-
-Mutating requests carry `expectedRevision`; stale requests are rejected before
-state changes, and mutating dispatch is serialized per task so concurrent
-clients cannot lose updates. The `domain/propose`, `domain/challenge`,
-`node/refine`, and `patch/attach` seams apply one typed proposal
-deterministically — they back the MCP tool layer, where
-`augmentd --mcp [--directory DIR] [--connect SOCK]` serves the planned-diff
-operations as MCP agent tools (`plan_start`, `plan_status`, `read_diff`,
-`propose_approaches`, `challenge_approaches`, `select_approach`,
-`refine_plan`, `draft_file`, `repair_patch`): one small validated call per
-operation, exact controller and git-apply diagnostics returned to the agent,
-and deterministic per-operation call caps. With `--connect` the bridge
-attaches to a served socket — for example the running TUI's — so tool calls
-mutate the task the TUI renders. See
-[`src/augmentd/README.md`](./src/augmentd/README.md).
-
-## TUI
-
-The standalone `augment` executable embeds `AugmentServer`, renders the full
-repository tree with integrated plan state, and (when `opencode` is available)
-routes bounded model operations through the OpenCode CLI:
-
-```sh
+npm install
 npm run build
-./dist/bin/augment setup                                     # pick agent + default/draft/challenge models, interactively
-
-# browse without model calls
-AUGMENT_TUI_NO_MODEL=1 ./dist/bin/augment.js
 ```
 
-A change task starts into a marking window — nothing generates on its own.
-The previous task's restriction plain carries over, `L`/`W` adjust it, and
-`D` (or `Enter` with an empty submission) generates approaches (`Esc`
-cancels any running operation). A single viable approach is adopted
-automatically, multiple approaches ask for `1-7`, and lower nodes receive
-candidates only when explicitly opened. `Enter` is the single message entry point: one bounded
-`message/route` classification sends the message into the selected node's
-develop flow, an explanation, or an offered set of interpretations — and `x`
-bypasses routing entirely, sending one raw message straight into the task's
-agent session with the reply streaming into the SESSION pane. `t` switches
-between the repository's stored tasks; `m` picks the agent backend first,
-then role and model, switching live. `D` develops
-a selected path and its whole subtree —
-expand, crystallize, refine, draft every undrafted file — stopping only where
-an approach choice needs a human. Drafted patches touch the working tree only
-on request: `A` preflights each selected patch with `git apply --check`
-(uncommitted edits included) and applies them as one unit, and `C` commits
-exactly the session-applied paths. While it runs, the TUI serves its embedded
-server on a Unix socket, so an external agent (`augmentd --mcp --connect`)
-drives the same task store and every tool-driven mutation renders in the panes
-as it lands. When the backend can carry MCP tools into non-interactive runs,
-the TUI keeps one tool-using agent session per task — bound to the task's
-repository directory, revived on restart, and never shared across projects —
-and its own operations become short pointing prompts against that socket;
-`AUGMENT_TUI_NO_TOOLS=1` falls back to one-shot prompts. The full keymap,
-layout, and interaction conventions are canonical in
-[`src/tui/README.md`](./src/tui/README.md).
+The Neovim companion requires this checkout's generated `dist/index.js` and
+`dist/planning/` files. Install `1suo/neolit.nvim` with your plugin manager
+and point `neolit_dir` at this checkout:
 
-## Documentation
+```lua
+{
+  "1suo/neolit.nvim",
+  opts = { neolit_dir = "/absolute/path/to/neolit" },
+  cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
+}
+```
 
-- [`src/augment/README.md`](./src/augment/README.md) — current planned-diff
-  core architecture and invariants.
-- [`src/augment/SPEC.md`](./src/augment/SPEC.md) — desired planned-diff behavior.
-- [`src/augmentd/README.md`](./src/augmentd/README.md) — current protocol and
-  server responsibilities.
-- [`src/tui/README.md`](./src/tui/README.md) — standalone TUI layout,
-  operations, and OpenCode CLI runtime.
-- `TODO-augment.md` — known gaps between shipped behavior and
-  `src/augment/SPEC.md`.
-- `SOTA-GAPS.md` — external gap analysis: what the tool and protocol lack
-  to reach the state of the art.
+Run `:Neolit` from the target repository. Press `<CR>` on a task or
+requirement to open its Markdown source, on a planned file to open the file or
+its actual diff, and on a changed file/hunk to open a native diff against the
+configured comparison base. Press `x` on a task, requirement, file, or hunk
+to copy a bounded context packet; in a native diff, `<leader>nx` copies
+context for the current line or visual line selection. Paste the packet into
+your existing agent session yourself. Press `r` to refresh and `q` to close.
 
-The former LangGraph/OpenCode solution graph lives in the sibling
-[`opencode-langgraph`](https://github.com/1suo/opencode-langgraph) repository.
+Set `comparison_base` to another commit/ref when needed; it defaults to
+`HEAD`. The workspace is read-only. File hints are candidates, not proof of
+implementation, and TODO checkboxes are not verification evidence.
 
-## Acceptance smoke
+See [the Neovim companion README](https://github.com/1suo/neolit.nvim) for
+configuration details and [the planning core reference](./src/planning/README.md)
+for the shared API.
 
-See [`docs/ACCEPTANCE-SMOKE.md`](./docs/ACCEPTANCE-SMOKE.md) for the manual acceptance path across the daemon, TUI, and Neovim host.
+## Editor integrations
+
+- [Neovim companion](https://github.com/1suo/neolit.nvim)
+  — the Git-native workspace, opened by `:Neolit` (`:NeolitPlan` remains an
+  explicit alias).
+- [VS Code companion](./editors/vscode/README.md) — Explorer task/requirement navigation, documentation diagnostics,
+  planned-file annotations, changed-file/hunk review, and contextual handoff
+  using the same core.
+
+Both adapters consume the shared planning API and leave native file, Git, and
+diff interfaces in control.
+
+## Repository contract
+
+- [REWRITE-SPEC.md](./REWRITE-SPEC.md) is the normative product contract.
+- [TODO-rewrite.md](./TODO-rewrite.md) tracks implementation and outstanding
+  host/validation work.
+- [AGENTS.md](./AGENTS.md) defines the documentation-first agent workflow.
+
+Existing README/SPEC/TODO files are repository data and are not rewritten or
+migrated by Neolit. The former planned-diff implementation and its `augment`/`augmentd` commands
+have been retired. Older gap ledgers remain in the repository as archive
+material, not active product contracts.
 
 ## Development
 
 ```sh
-npm run check   # TypeScript + Vitest
-npm run build   # emit dist/
+npm install
+npm run build
 ```
 
-## Validation
-
-```sh
-npx vitest run test/augment-state.test.ts
-npx vitest run test/augment-kernel.test.ts
-npx vitest run test/augment-server.test.ts
-npx vitest run test/augment-mcp.test.ts
-npx vitest run test/augment-socket.test.ts
-npx vitest run test/augment-tui.test.ts
-```
+The shared core is read-only with respect to the worktree and Git index. Opening
+a planning view does not execute repository scripts or modify files.

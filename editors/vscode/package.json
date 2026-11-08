@@ -1,0 +1,121 @@
+{
+  "name": "neolit-vscode",
+  "displayName": "Neolit Planning",
+  "description": "Git-native planning annotations and contextual diff navigation",
+  "version": "0.1.0",
+  "publisher": "1suo",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:README.md"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "views": {
+      "explorer": [
+        {
+          "id": "neolit.plan",
+          "name": "Neolit Plan",
+          "when": "workspaceFolderCount == 1"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "neolit.refresh",
+        "title": "Neolit: Refresh Planning View"
+      },
+      {
+        "command": "neolit.openTask",
+        "title": "Neolit: Open TODO Task"
+      },
+      {
+        "command": "neolit.openChangedFile",
+        "title": "Neolit: Open Changed File"
+      },
+      {
+        "command": "neolit.openHunkDiff",
+        "title": "Neolit: Open Native Hunk Diff"
+      },
+      {
+        "command": "neolit.copyHunkContext",
+        "title": "Neolit: Copy Hunk Context"
+      },
+      {
+        "command": "neolit.openRequirement",
+        "title": "Neolit: Open SPEC Requirement"
+      },
+      {
+        "command": "neolit.openPlanFile",
+        "title": "Neolit: Open Planned File or Diff"
+      },
+      {
+        "command": "neolit.openDiagnostic",
+        "title": "Neolit: Open Documentation Diagnostic"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "neolit.refresh",
+          "when": "view == neolit.plan",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "neolit.openTask",
+          "when": "view == neolit.plan && viewItem == task",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.openHunkDiff",
+          "when": "view == neolit.plan && viewItem == hunk",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.openChangedFile",
+          "when": "view == neolit.plan && (viewItem == hunk || viewItem == changedFile)",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.copyHunkContext",
+          "when": "view == neolit.plan && viewItem == hunk",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.openRequirement",
+          "when": "view == neolit.plan && viewItem == requirement",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.openPlanFile",
+          "when": "view == neolit.plan && viewItem == plannedFile",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.openDiagnostic",
+          "when": "view == neolit.plan && viewItem == diagnostic",
+          "group": "inline"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js",
+    "watch": "npm run compile -- --watch",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.9.3",
+    "neolit": "file:../.."
+  },
+  "license": "MIT"
+}

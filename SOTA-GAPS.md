@@ -44,43 +44,32 @@ Current code and tests ship, among others:
 
 Ordered by user-visible impact; the owning record tracks each gap.
 
-1. **Durability.** Standalone JSON-RPC and MCP servers now atomically persist
-   task snapshots and expose `task/list` / `plan_list`; the TUI separately
-   persists task state, agent-session bindings, and bounded session output.
-   Cross-machine synchronization and multi-process coordination over one
-   shared store remain open ([TODO-augment.md](./TODO-augment.md)).
-2. **Verification-gated apply.** The core now records `drafted` → `applied` →
-   `verified`/`failed`; JSON-RPC and MCP expose host-injected transactional
-   `patch/apply` and `patch/verify`, including filesystem rollback when apply
-   or durable state recording fails. The built-in verifier checks whitespace
-   and reversibility; arbitrary test
-   suites and CI checks are not run automatically by the host.
-3. **Repository awareness.** The standalone TUI now polls tracked and non-ignored
-   untracked paths plus HEAD, and turns external edits, creates, deletes, and
-   basis movement into `node/stale` operations. Changes queue behind active
-   controller work; Neolit-owned apply operations re-baseline the watcher, while commits trigger basis staleness.
-   A bounded path index now resolves common source imports and supplies
-   scope-specific related-file hints to model calls.
+1. **Durability.** Tasks and protocol sessions live in memory and do not
+   survive daemon restarts; TUI tasks do not persist across process
+   restarts ([TODO-augment.md](./TODO-augment.md)). Resumable planning
+   across days and machines is table stakes.
+2. **Verification-gated apply.** Apply/verify lifecycle is absent from core
+   state and there is no `patch/apply` over JSON-RPC with rollback; the TUI
+   applies host-side via a preflighted atomic `git apply` (`src/tui/apply.ts`),
+   and check or test outcomes never gate plan completion.
+3. **Repository awareness.** No watcher turns path or basis changes into
+   `node/stale` operations (staleness is marked manually), and there is no
+   path-aware filesystem indexing to prioritize context.
 4. **Granular multi-client sync.** Change notifications carry only the task
    id and revision, so multi-client tree views must refetch; finer-grained
    notifications remain open, and coordination stops at per-task
    serialization — no plan diff or merge across concurrent tasks.
-5. **Host adapter breadth and efficiency.** CLI model runtimes ship for
-   OpenCode, Claude, and Codex; Claude and Codex tool-session adapters now
-   use their respective MCP configuration and session-resume paths. Live-host
-   verification of those paths and the OpenCode warm tool-step transport
-   remains open. Provider-specific plugin SDK adapters are intentionally
-   not added: OpenCode's warm serve transport and Codex's JSONL CLI backend
-   already satisfy the shared `ModelRuntime` contract. Equivalent warm
-   transports for Claude and Codex remain open.
+5. **Host adapter breadth and efficiency.** Model access ships as
+   CLI-spawning backends (opencode, claude, codex) in the standalone TUI;
+   native OpenCode-plugin and Codex runtimes and the Claude and Codex
+   tool-session adapters remain open, and per-call CLI spawns are not yet
+   routed through the kept-alive `PersistentAgentServer`.
 6. **Telemetry and evaluation.** Nothing measures plan quality, retry rates,
    or apply success over time, so improvement claims cannot be evidenced —
    the repository's telemetry-before-optimization rule is unmet.
-7. **Practice overlays.** Global and repository overlays plus scoped
-   `AGENTS.md` / contribution / architecture / README rules now become typed
-   task constraints before planning begins. A full Spec-Kit constitution and
-   standards lifecycle (versioning, explicit acceptance, and project-wide
-   governance) remains outside the current overlay loader.
+7. **Practice overlays.** No user or practice overlays and no
+   documentation-derived constraints: spec-kit-style standards cannot
+   constrain candidate domains yet.
 
 ## Maintenance
 
