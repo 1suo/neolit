@@ -49,9 +49,10 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - SPEC: `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-41`
   - File: `src/planning/context.ts`
   - Description: Added `selectRelatedTaskContexts`: select tasks only through explicit file hints (including rename source paths), preserve all shared candidates, and include their resolved requirements and acceptance criteria in contextual packets.
-- [ ] Navigate the documentation graph for a selected task/requirement
+- [x] Navigate the documentation graph for a selected task/requirement
   - SPEC: `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-11`
-  - Description: Follow only the selected component's README links and keep shipped README facts separate from desired SPEC behavior; do not dump the entire graph into every context packet.
+  - File: `src/planning/context.ts`, `src/planning/workspace.ts`
+  - Description: Added task-scoped documentation resolution from explicit file/SPEC locations. It selects the deepest matching component README (root README fallback only when no scoped README matches), preserves equally specific matches with diagnostics, bounds README text, and returns README facts separately from only the selected task's resolved SPEC requirements and acceptance criteria. Workspace exposes discovered README source text.
 
 ## Phase 3 — Git evidence and derived states
 
