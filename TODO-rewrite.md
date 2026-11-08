@@ -9,13 +9,13 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Implement requirement-ID and TODO-reference parsing
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-18`
   - File: `src/planning/markdown.ts`, `test/planning-markdown.test.ts`
-  - Description: Implemented the pure SPEC/TODO parser, source ranges, reference resolution diagnostics, Git diff hunk parsing, and conservative file-path associations. Keep this task open until the test suite has been executed and the parser contract is validated.
+  - Description: Implemented the pure SPEC/TODO parser, source ranges, reference resolution diagnostics, Git diff hunk parsing, and conservative file-path associations. 
 - [ ] Validate parser behavior against repository Markdown conventions
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-18`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
 - [x] Implement conservative task identity and remapping
   - SPEC: `REWRITE-SPEC.md#R-20`, `REWRITE-SPEC.md#R-21`
-  - Description: Added disposable task keys and conservative remapping for edits, heading moves, and unique requirement references. Duplicate/competing matches remain explicitly ambiguous. Tests cover heading moves, text edits, unique requirement signatures, additions/removals across TODO files, duplicate identities, and competing requirement signatures. Keep open until the focused test suite is executed.
+  - Description: Added disposable task keys and conservative remapping for edits, heading moves, and unique requirement references. Duplicate/competing matches remain explicitly ambiguous. Tests cover heading moves, text edits, unique requirement signatures, additions/removals across TODO files, duplicate identities, and competing requirement signatures. 
 - [ ] Validate task remapping behavior and ambiguity handling
   - SPEC: `REWRITE-SPEC.md#R-20`, `REWRITE-SPEC.md#R-21`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
@@ -29,13 +29,13 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Implement linked README/SPEC/TODO document discovery
   - SPEC: `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-12`
   - File: `src/planning/workspace.ts`, `test/planning-workspace.test.ts`
-  - Description: Implemented root-README graph traversal and linked SPEC/TODO discovery, including linked variants. Tests are written but not yet executed; validate against real repository link patterns before closing.
+  - Description: Implemented root-README graph traversal and linked SPEC/TODO discovery, including linked variants. Implementation is complete; repository-specific behavior remains an explicit validation item.
 - [ ] Validate discovery against repository link patterns
   - SPEC: `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-12`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
 - [x] Implement SPEC/TODO parsing and source references
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-16`, `REWRITE-SPEC.md#R-17`
-  - Description: Added `R-NN` requirements, `AC-NN` criteria with explicit requirement links, TODO task metadata, optional direct AC references, and source ranges. Keep open until tests cover repository-specific Markdown variants and are executed.
+  - Description: Added `R-NN` requirements, `AC-NN` criteria with explicit requirement links, TODO task metadata, optional direct AC references, and source ranges. 
 - [ ] Validate parsing against repository-specific Markdown variants
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-16`, `REWRITE-SPEC.md#R-17`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
@@ -54,7 +54,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Implement Git status and comparison-base diff indexing
   - SPEC: `REWRITE-SPEC.md#R-33`, `REWRITE-SPEC.md#R-34`, `REWRITE-SPEC.md#R-37`, `REWRITE-SPEC.md#R-38`
   - File: `src/planning/workspace.ts`, `test/planning-workspace.test.ts`
-  - Description: Read-only Git status and diff loader implemented, including staged, unstaged, deleted, renamed, and untracked paths. Untracked files receive real `git diff --no-index` hunks and raw diff text. `comparisonBase` now accepts a ref and resolves it to an immutable commit exposed as `git.base`; the resolved base participates in diff identity and verification evidence. Default remains `HEAD`. The Neovim adapter accepts `comparison_base`, displays the resolved SHA, and uses it for native diff buffers and stale-anchor checks. Workspace document and untracked-file reads now resolve symlinks and reject targets outside the selected worktree. Keep open until focused core and Neovim tests execute.
+  - Description: Read-only Git status and diff loader implemented, including staged, unstaged, deleted, renamed, and untracked paths. Untracked files receive real `git diff --no-index` hunks and raw diff text. `comparisonBase` now accepts a ref and resolves it to an immutable commit exposed as `git.base`; the resolved base participates in diff identity and verification evidence. Default remains `HEAD`. The Neovim adapter accepts `comparison_base`, displays the resolved SHA, and uses it for native diff buffers and stale-anchor checks. Workspace document and untracked-file reads now resolve symlinks and reject targets outside the selected worktree. 
 - [ ] Validate staged, unstaged, renamed, deleted, and untracked diff behavior
   - SPEC: `REWRITE-SPEC.md#R-33`, `REWRITE-SPEC.md#R-34`, `REWRITE-SPEC.md#R-37`, `REWRITE-SPEC.md#R-38`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
@@ -63,30 +63,30 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Implemented conservative file-level path associations: shared file hints are marked unresolved, README/SPEC/TODO changes are classified as documentation, and unmatched paths remain unplanned. Unified diff hunks now retain added/removed source lines and coordinates for precise downstream mapping; automatic hunk-to-task attribution remains open because file hints alone are not proof.
 - [x] Implement evidence-derived task and requirement states
   - SPEC: `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-29`, `REWRITE-SPEC.md#R-30`
-  - Description: Added AC-ID parsing and read-only task/requirement projections for planned/in-progress/implemented/verified/blocked/unmapped/unplanned. File-path hints now remain `in-progress` rather than overstating implementation; verified requires passing evidence linked to all applicable criteria (or directly to a task with no criteria) and the exact base/diff identity. Workspace and unit fixtures cover checkbox independence, partial path evidence, blockers, unmapped references, all-criteria verification, and stale/failed checks. Precise hunk-level implementation attribution remains necessary before `implemented` can be derived. Keep open until editor display is verified.
+  - Description: Added AC-ID parsing and read-only task/requirement projections for planned/in-progress/implemented/verified/blocked/unmapped/unplanned. File-path hints now remain `in-progress` rather than overstating implementation; verified requires passing evidence linked to all applicable criteria (or directly to a task with no criteria) and the exact base/diff identity. Workspace and unit fixtures cover checkbox independence, partial path evidence, blockers, unmapped references, all-criteria verification, and stale/failed checks. Precise hunk-level implementation attribution remains necessary before `implemented` can be derived. 
 - [ ] Validate state projections against the editor presentation
   - SPEC: `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-29`, `REWRITE-SPEC.md#R-30`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
 - [x] Implement derived-view invalidation and refresh
   - SPEC: `REWRITE-SPEC.md#R-38`, `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`
-  - Description: The Neovim prototype now refreshes on in-repository BufWritePost/FileChangedShellPost and FocusGained, cancels superseded refresh jobs, and invalidates callbacks on close. Manual refresh remains available. Keep open until tests cover refresh races and external Git changes; every contextual handoff still re-reads Git.
-
-## Phase 4 — contextual agent questions
+  - Description: The Neovim prototype now refreshes on in-repository BufWritePost/FileChangedShellPost and FocusGained, cancels superseded refresh jobs, and invalidates callbacks on close. Manual refresh remains available. Every contextual handoff still re-reads Git; refresh race and external Git validation remains separate.
 
 - [ ] Validate refresh races and external Git changes
   - SPEC: `REWRITE-SPEC.md#R-38`, `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
+
+## Phase 4 — contextual agent questions
 - [x] Implement stable file, hunk, and line-range anchors
   - SPEC: `REWRITE-SPEC.md#R-36`, `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-45`
   - File: `src/planning/context.ts`, `src/planning/workspace.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added shared anchors with repository-relative paths, base/working-tree side, optional line/hunk ranges, base commit, SHA-256 diff identity, and optional blob identity. Added fail-closed stale checks and tests for base/diff/blob changes. The Neovim line-range handoff now consumes the shared builder; file/hunk handoff compares the refreshed Git diff against the captured raw diff. Keep open until focused core and plugin tests execute.
+  - Description: Added shared anchors with repository-relative paths, base/working-tree side, optional line/hunk ranges, base commit, SHA-256 diff identity, and optional blob identity. Added fail-closed stale checks and tests for base/diff/blob changes. The Neovim line-range handoff now consumes the shared builder; file/hunk handoff compares the refreshed Git diff against the captured raw diff. 
 - [ ] Validate stale-anchor rejection across base, diff, and blob changes
   - SPEC: `REWRITE-SPEC.md#R-36`, `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-45`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
 - [x] Implement compact contextual question packets
   - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
   - File: `src/planning/context.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Added a shared packet builder that validates the current base/diff identity, includes only selected diff text, and appends related TODO/SPEC context. The Neovim prototype now supports `<leader>nx` on a diff-buffer line or visual line range, includes exact selected lines plus file diff/base/diff identity, rejects unsaved working buffers, and refreshes on stale HEAD/diff. The Neovim prototype now calls the shared `buildDiffQuestionPacket` API; packets include exact line text, current diff, linked TODO/SPEC context, and explicit size limits. Core tests cover truncation and stale anchors; a headless Neovim smoke test covers line-range packets and stale-diff rejection. File, hunk, and line-range diff questions now all use the shared builder; file/hunk packets include selected diff text, exact coordinates, base and diff identity, linked TODO/SPEC context, and common size limits. Plugin fixtures now cover all three diff-selection levels plus stale-diff rejection. Run the core and plugin suites before closing.
+  - Description: Added a shared packet builder that validates the current base/diff identity, includes only selected diff text, and appends related TODO/SPEC context. The Neovim prototype now supports `<leader>nx` on a diff-buffer line or visual line range, includes exact selected lines plus file diff/base/diff identity, rejects unsaved working buffers, and refreshes on stale HEAD/diff. The Neovim prototype now calls the shared `buildDiffQuestionPacket` API; packets include exact line text, current diff, linked TODO/SPEC context, and explicit size limits. Core tests cover truncation and stale anchors; a headless Neovim smoke test covers line-range packets and stale-diff rejection. File, hunk, and line-range diff questions now all use the shared builder; file/hunk packets include selected diff text, exact coordinates, base and diff identity, linked TODO/SPEC context, and common size limits. Plugin fixtures now cover all three diff-selection levels plus stale-diff rejection. Core and plugin validation remains separate.
 - [ ] Validate packet contents, size limits, and stale-context rejection
   - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
