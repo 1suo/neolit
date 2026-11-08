@@ -537,7 +537,7 @@ export function mapDiffHunksToTasks(
             path: file.path, hunkIndex, hunk, granularity: "hunk" as const,
             candidateTaskKeys: matchedTasks.map((task) => task.key),
             candidateRequirementIds: [...new Set(matchedTasks.flatMap((task) => task.specReferences.flatMap((reference) => reference.ids.filter((id) => /^R-\d{2,}$/u.test(id)))))],
-            candidateRequirementRefs: [...new Set(matchedTasks.flatMap((task) => task.specReferences.flatMap((reference) => reference.ids.filter((id) => /^R-\d{2,}$/u.test(id)).map((id) => \`\${reference.path}#\${id}\`))))],
+            candidateRequirementRefs: [...new Set(matchedTasks.flatMap((task) => task.specReferences.flatMap((reference) => reference.ids.filter((id) => /^R-\d{2,}$/u.test(id)).map((id) => `${reference.path}#${id}`))))],
             state: "attributed" as const, reason: "todo-task-source-range" as const,
           };
         }
@@ -567,7 +567,7 @@ export function mapDiffHunksToTasks(
         ])];
         if (requirementRefs.length > 0) {
           const matchingTasks = tasks.filter((task) => task.resolvedRequirements.some((requirement) =>
-            requirementRefs.includes(\`\${requirement.specPath}#\${requirement.id}\`),
+            requirementRefs.includes(`${requirement.specPath}#${requirement.id}`),
           ));
           return {
             path: file.path, hunkIndex, hunk, granularity: "hunk" as const,
@@ -588,7 +588,7 @@ export function mapDiffHunksToTasks(
         granularity: "hunk" as const,
         candidateTaskKeys: matching.map((task) => task.key),
         candidateRequirementIds: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => requirement.id)))],
-        candidateRequirementRefs: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => \`\${requirement.specPath}#\${requirement.id}\`)))],
+        candidateRequirementRefs: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => `${requirement.specPath}#${requirement.id}`)))],
         state: documentation ? "documentation" as const : matching.length === 0 ? "unplanned" as const : "unresolved" as const,
         reason: documentation ? "documentation-change" as const : matching.length === 0 ? "no-task-path-match" as const : "file-hint-is-not-hunk-evidence" as const,
       };
