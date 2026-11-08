@@ -1,5 +1,6 @@
-- [x] Add repository instructions and a reusable workflow skill for the planned-diff contract: `AGENTS.md` links to `.agents/skills/neolit-planned-diff-workflow/SKILL.md`, which defines the current reducer, scope, revision, patch lifecycle, host boundaries, and implementation/handoff workflow.
 # Augment planned-diff roadmap
+
+- [x] Add repository instructions and a reusable workflow skill for the planned-diff contract: `AGENTS.md` links to `.agents/skills/neolit-planned-diff-workflow/SKILL.md`, which defines the current reducer, scope, revision, patch lifecycle, host boundaries, and implementation/handoff workflow.
 
 Known gaps between shipped behavior and `src/augment/SPEC.md`.
 
