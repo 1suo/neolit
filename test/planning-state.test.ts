@@ -48,16 +48,17 @@ function projection(paths: string[], evidence: VerificationEvidence[] = []) {
 }
 
 describe("derived planning states", () => {
-  it("keeps documentation changes distinct from implementation evidence", () => {
-    const file = { path: "src/auth/SPEC.md", status: "modified" as const, hunks: [] };
-    expect(mapDiffToTasks([file], resolved.tasks)).toEqual([
+  it("keeps README, named SPEC, and TODO variants distinct from implementation evidence", () => {
+    const files = ["src/auth/SPEC.md", "src/auth/auth-SPEC.md", "src/auth/TODO-augment.md"]
+      .map((path) => ({ path, status: "modified" as const, hunks: [] }));
+    expect(mapDiffToTasks(files, resolved.tasks)).toEqual(files.map((file) =>
       expect.objectContaining({
-        path: "src/auth/SPEC.md",
+        path: file.path,
         taskKeys: [],
         requirementIds: [],
         state: "documentation",
       }),
-    ]);
+    ));
   });
 
   it("marks shared file hints unresolved instead of assigning the change to every task", () => {
