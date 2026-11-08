@@ -3,12 +3,14 @@ import path from "node:path";
 export type SourceRange = { startLine: number; endLine: number };
 export type SpecRequirement = {
   id: string;
+  sourcePath?: string;
   text: string;
   headingPath: string[];
   range: SourceRange;
 };
 export type SpecAcceptanceCriterion = {
   id: string;
+  sourcePath?: string;
   text: string;
   headingPath: string[];
   range: SourceRange;
@@ -111,6 +113,7 @@ export function parseSpecDocument(documentPath: string, content: string): SpecDo
     if (match) {
       requirements.push({
         id: match[1]!,
+        sourcePath: normalizeRepoPath(documentPath),
         text: match[2]!,
         headingPath: [...headings],
         range: { startLine: index + 1, endLine: index + 1 },
@@ -121,6 +124,7 @@ export function parseSpecDocument(documentPath: string, content: string): SpecDo
     if (criterion) {
       acceptanceCriteria.push({
         id: criterion[1]!,
+        sourcePath: normalizeRepoPath(documentPath),
         text: criterion[2]!,
         headingPath: [...headings],
         range: { startLine: index + 1, endLine: index + 1 },
@@ -217,7 +221,17 @@ export function resolvePlanningDocuments(input: {
   specs: SpecDocument[];
   todos: TodoDocument[];
 }): { tasks: ResolvedTask[]; diagnostics: PlanningDiagnostic[] } {
-  const specs = new Map(input.specs.map((spec) => [spec.referencePath ?? spec.path, spec]));
+  const specs = new Map<string, SpecDocument>();
+  for (const spec of input.specs) {
+    const key = spec.referencePath ?? spec.path;
+    const existing = specs.get(key);
+    if (existing) {
+      existing.requirements.push(...spec.requirements);
+      existing.acceptanceCriteria.push(...spec.acceptanceCriteria);
+    } else {
+      specs.set(key, { ...spec, requirements: [...spec.requirements], acceptanceCriteria: [...spec.acceptanceCriteria] });
+    }
+  }
   const tasks: ResolvedTask[] = [];
   const diagnostics: PlanningDiagnostic[] = [];
 
@@ -257,7 +271,7 @@ export function resolvePlanningDocuments(input: {
             const criteria = spec.acceptanceCriteria.filter((candidate) => candidate.id === id);
             if (criteria.length === 1) {
               if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === id)) {
-                resolvedAcceptanceCriteria.push({ ...criteria[0]!, specPath: reference.path, sourcePath: spec.path });
+                resolvedAcceptanceCriteria.push({ ...criteria[0]!, specPath: reference.path, sourcePath: criteria[0]!.sourcePath ?? spec.path });
               }
             } else {
               unresolvedReferences.push({ path: reference.path, ids: [id] });
@@ -277,7 +291,7 @@ export function resolvePlanningDocuments(input: {
           const matches = spec.requirements.filter((candidate) => candidate.id === id);
           if (matches.length === 1) {
             if (!resolvedRequirements.some((item) => item.specPath === reference.path && item.id === id)) {
-              resolvedRequirements.push({ ...matches[0]!, specPath: reference.path, sourcePath: spec.path });
+              resolvedRequirements.push({ ...matches[0]!, specPath: reference.path, sourcePath: matches[0]!.sourcePath ?? spec.path });
             }
             for (const criterion of spec.acceptanceCriteria.filter((item) => item.requirementIds.includes(id))) {
               const duplicates = spec.acceptanceCriteria.filter((item) => item.id === criterion.id).length;
@@ -293,7 +307,7 @@ export function resolvePlanningDocuments(input: {
                   });
                 }
               } else if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === criterion.id)) {
-                resolvedAcceptanceCriteria.push({ ...criterion, specPath: reference.path, sourcePath: spec.path });
+                resolvedAcceptanceCriteria.push({ ...criterion, specPath: reference.path, sourcePath: criterion.sourcePath ?? spec.path });
               }
             }
           } else {
