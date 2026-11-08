@@ -359,3 +359,16 @@ Implementation is staged to prove the smallest useful end-to-end workflow before
 8. Add end-to-end fixtures and verify documentation synchronization.
 
 No stage may reintroduce a parallel patch model or a Neolit-owned conversation system to make the demo easier.
+
+
+## 16. Archive documents and implementation notes
+
+**R-74** A linked planning document may have an adjacent archive file named by inserting `.archive` before `.md`: `TODO.archive.md`, `TODO-auth.archive.md`, `SPEC.archive.md`, or `auth-SPEC.archive.md`. The archive is ordinary Markdown, not a database or a Neolit-owned state store.
+
+**R-75** The workspace discovers an existing archive file whenever its active TODO/SPEC document is discovered. Archived TODO tasks and SPEC requirements remain parseable and referenceable; moving a requirement into an archive must not invalidate active TODO references to its original SPEC path and stable ID. Duplicate IDs across active and archive content remain diagnostics, not silently resolved collisions.
+
+**R-76** Editor views keep archive documents separate from active planning documents and collapsed/hidden from the default active-work view. Users can deliberately expand or open an archive document to inspect historical tasks and requirements. Archived status is not an implementation, completion, or verification state.
+
+**R-77** TODO task metadata distinguishes `Description:` (intent and expected outcome) from `Agent notes:` (implementation summary, rationale, deviations, and remaining caveats). Agent notes may span indented Markdown lines and are rendered with the task's related changes. They are explanatory statements, never verification evidence.
+
+**R-78** Archiving is an explicit Markdown edit performed by the user or their existing coding agent: move the complete task/requirement block into the matching archive file, preserving its text, IDs, nested metadata, and references. Neolit must not silently move or rewrite planning documents as a side effect of viewing or refreshing the workspace.
