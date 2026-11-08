@@ -2,7 +2,7 @@
 
 Known gaps between shipped behavior and `src/augment/SPEC.md`.
 
-- [ ] Persist tasks and protocol sessions across daemon restarts.
+- [x] Persist task and protocol-session state across daemon restarts: standalone JSON-RPC and MCP servers atomically snapshot every accepted mutation (0600 temp file, fsync, rename), validate entries on recovery, expose `task/list` and MCP `plan_list`, and use repository-scoped default storage or `--state-file`; the TUI separately persists task snapshots, agent-session bindings, and bounded session output.
 - [x] Add a repository watcher that turns worktree path changes and HEAD movement into `node/stale` operations: `src/tui/repository-watch.ts` polls tracked and non-ignored untracked paths, detects edits/creates/deletes/renames and basis changes, queues events during controller operations, and re-baselines after Neolit-owned apply writes while allowing commit-driven HEAD movement to stale remaining planned paths. The controller closes the watcher on dispose.
 - [ ] Track apply/verify lifecycle in planned-diff core state and expose `patch/apply` over JSON-RPC with rollback; the standalone TUI already applies drafted patches host-side through a preflighted, atomic `git apply` transaction (`src/tui/apply.ts`).
 - [x] Add an OpenCode CLI `ModelRuntime` for the standalone TUI.
@@ -12,7 +12,7 @@ Known gaps between shipped behavior and `src/augment/SPEC.md`.
 - [ ] Add native OpenCode-plugin and Codex `ModelRuntime` adapters.
 - [x] Persist and reload TUI tasks across process restarts.
 - [x] Add a stable transport address (Unix socket) alongside stdio: the TUI (and any embedding host) serves its embedded server on `$XDG_RUNTIME_DIR/neolit/augment-<basename>-<hash>.sock` keyed to the repository directory (TUIs in different projects serve side by side; one owner per directory), mutation notifications broadcast to attached clients, and per-task serialization of mutating dispatch keeps concurrent writers from losing updates (a racing writer fails the optimistic-concurrency check instead of being overwritten by a stale-snapshot result).
-- [ ] Add protocol change notifications for multi-client tree views.
+- [x] Add protocol change notifications for multi-client tree views: `AugmentServer.onChange` emits task id/revision after durable mutation, stdio forwards `augment/taskChanged`, and the Unix socket broadcasts the same notification to all connected clients.
 - [ ] Add path-aware filesystem indexing.
 - [x] Validate patch content scope and locks: patch headers are parsed, one patch stays inside one file node, virtual patches project at their real path, and `task/restore` payloads pass the boundary schema plus referential integrity.
 - [ ] Add user/practice overlays and documentation-derived constraints.
