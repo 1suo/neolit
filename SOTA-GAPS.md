@@ -70,8 +70,10 @@ Ordered by user-visible impact; the owning record tracks each gap.
    OpenCode, Claude, and Codex; Claude and Codex tool-session adapters now
    use their respective MCP configuration and session-resume paths. Live-host
    verification of those paths and the OpenCode warm tool-step transport
-   remains open. Native OpenCode-plugin and non-CLI Codex runtime adapters
-   are still absent; equivalent warm transports for Claude and Codex remain open.
+   remains open. Provider-specific plugin SDK adapters are intentionally
+   not added: OpenCode's warm serve transport and Codex's JSONL CLI backend
+   already satisfy the shared `ModelRuntime` contract. Equivalent warm
+   transports for Claude and Codex remain open.
 6. **Telemetry and evaluation.** Nothing measures plan quality, retry rates,
    or apply success over time, so improvement claims cannot be evidenced —
    the repository's telemetry-before-optimization rule is unmet.
