@@ -15,7 +15,8 @@ type TaskNode = { kind: "task"; key: string; label: string };
 type RequirementNode = { kind: "requirement"; key: string; specPath: string; id: string; label: string };
 type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; label: string };
 type GroupNode = { kind: "group"; label: string };
-type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode;
+type PlanFileNode = { kind: "file"; path: string; taskKey: string; label: string };
+type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode;
 const execFileAsync = promisify(execFile);
 const BASE_SCHEME = "neolit-base";
 
@@ -54,10 +55,20 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       item.iconPath = new vscode.ThemeIcon("git-compare");
       return item;
     }
+    if (node.kind === "file") {
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      item.contextValue = "plannedFile";
+      item.iconPath = new vscode.ThemeIcon("file");
+      const task = this.workspace?.tasks.find((entry) => entry.key === node.taskKey);
+      item.tooltip = task?.description.join("\n") || "File referenced by this TODO task.";
+      item.command = { command: "neolit.openPlanFile", title: "Open planned file or diff", arguments: [node] };
+      return item;
+    }
     if (node.kind === "task") {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.contextValue = "task";
       item.description = this.workspace?.derived.tasks[node.key]?.state;
+      item.tooltip = [node.label, ...(this.workspace?.tasks.find((entry) => entry.key === node.key)?.description ?? [])].join("\n");
       item.iconPath = new vscode.ThemeIcon("tasklist");
       item.command = { command: "neolit.openTask", title: "Open TODO task", arguments: [node] };
       return item;
@@ -103,6 +114,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     if (node.kind !== "task") return [];
     const task = workspace.tasks.find((item) => item.key === node.key);
     if (!task) return [];
+    const files: PlanFileNode[] = task.filePaths.map((file) => ({ kind: "file", path: file, taskKey: task.key, label: file }));
     const requirements: RequirementNode[] = task.resolvedRequirements.map((item) => ({
       kind: "requirement", key: node.key, specPath: item.specPath, id: item.id,
       label: `${item.id} — ${item.text}`,
@@ -111,7 +123,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       kind: "hunk", path: review.path, hunkIndex: review.hunkIndex,
       label: `${review.state === "documentation" ? "DOC" : review.state === "unplanned" ? "?" : "~"} ${review.path} · hunk ${review.hunkIndex + 1}`,
     }));
-    return [...requirements, ...hunks];
+    return [...files, ...requirements, ...hunks];
   }
 }
 
@@ -119,16 +131,23 @@ class PlanningDecorationProvider implements vscode.FileDecorationProvider {
   private readonly emitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
   readonly onDidChangeFileDecorations = this.emitter.event;
   private paths = new Set<string>();
+  private plannedPaths = new Set<string>();
   refresh(workspace: PlanningWorkspace): void {
     this.paths = new Set(workspace.git.changedFiles.map((file) => path.normalize(file.path)));
+    this.plannedPaths = new Set(workspace.tasks.flatMap((task) => task.filePaths.map((file) => path.normalize(file))));
     this.emitter.fire(undefined);
   }
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
     const relative = path.relative(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "", uri.fsPath);
-    if (!this.paths.has(path.normalize(relative))) return undefined;
-    return new vscode.FileDecoration(
+    if (this.paths.has(path.normalize(relative))) return new vscode.FileDecoration(
       "N",
-      "Neolit review annotation; actual Git status remains in Source Control.",
+      "Neolit changed-file review annotation; actual Git status remains in Source Control.",
+      new vscode.ThemeColor("charts.blue"),
+    );
+    if (!this.plannedPaths.has(path.normalize(relative))) return undefined;
+    return new vscode.FileDecoration(
+      "P",
+      "Neolit planned-file annotation; this does not mean the file is modified or untracked.",
       new vscode.ThemeColor("charts.blue"),
     );
   }
@@ -177,6 +196,18 @@ export function activate(context: vscode.ExtensionContext): void {
       const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, node.specPath));
       const position = new vscode.Position(Math.max(0, requirement.range.startLine - 1), 0);
       await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
+    }),
+    vscode.commands.registerCommand("neolit.openPlanFile", async (node?: PlanFileNode) => {
+      if (!node || node.kind !== "file" || !current) return;
+      const changed = current.git.changedFiles.find((item) => item.path === node.path);
+      if (changed) {
+        const base = vscode.Uri.from({ scheme: BASE_SCHEME, path: `/${node.path}`, query: current.git.base });
+        const working = vscode.Uri.joinPath(folder.uri, node.path);
+        await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${node.path} · ${current.git.base.slice(0, 8)}`);
+        return;
+      }
+      const uri = vscode.Uri.joinPath(folder.uri, node.path);
+      await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
     }),
     vscode.commands.registerCommand("neolit.openChangedFile", async (node?: HunkNode) => {
       if (!node || node.kind !== "hunk") return;
