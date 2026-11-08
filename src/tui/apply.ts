@@ -11,9 +11,45 @@ import type { PlannedDiff } from "../augment/types.js";
  * conflict anywhere leaves the working tree untouched. Only the working tree
  * changes; nothing is staged or committed.
  */
+function safePatchPaths(directory: string, patches: string[]): string[] {
+  const root = path.resolve(directory);
+  const targets = [...new Set(patches.flatMap((patch) => patchPaths(patch)))].sort();
+  for (const target of targets) {
+    if (!target || target.split("/").includes("..") || path.isAbsolute(target)) throw new Error("Unsafe patch path: " + target);
+    const absolute = path.resolve(root, target);
+    const relative = path.relative(root, absolute);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Patch path escapes repository: " + target);
+    const components = target.split("/");
+    let parent = root;
+    let missingParent = false;
+    for (const component of components.slice(0, -1)) {
+      parent = path.join(parent, component);
+      if (missingParent) continue;
+      try {
+        const stat = lstatSync(parent);
+        if (stat.isSymbolicLink()) throw new Error("Patch path traverses a symlink directory: " + target);
+        if (!stat.isDirectory()) throw new Error("Patch parent is not a directory: " + parent);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") missingParent = true;
+        else throw error;
+      }
+    }
+    try {
+      const stat = lstatSync(absolute);
+      if (stat.isSymbolicLink()) throw new Error("Patch target is a symlink: " + target);
+      if (!stat.isFile()) throw new Error("Patch target is not a regular file: " + target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return targets;
+}
+
 export function preflightPatches(directory: string, patches: string[]): string | undefined {
   const nonEmpty = patches.filter((patch) => patch.trim().length > 0);
   if (!nonEmpty.length) return undefined;
+  try { safePatchPaths(directory, nonEmpty); }
+  catch (error) { return error instanceof Error ? error.message : String(error); }
   const staging = mkdtempSync(path.join(tmpdir(), "augment-preflight-"));
   const worktree = path.join(staging, "wt");
   try {
@@ -88,9 +124,9 @@ type FileSnapshot =
 export function applyPlannedDiffsTransaction(directory: string, diffs: PlannedDiff[]): PatchApplyTransaction {
   const patches = diffs.filter((diff) => diff.patch.trim().length > 0);
   if (!patches.length) throw new Error("The selected path has no drafted patch content. Press D to draft it first.");
+  const paths = safePatchPaths(directory, patches.map((diff) => diff.patch));
   const failure = preflightPatches(directory, patches.map((diff) => diff.patch));
   if (failure) throw new Error(failure);
-  const paths = [...new Set(patches.flatMap((diff) => patchPaths(diff.patch)))].sort();
   const snapshots = new Map<string, FileSnapshot>();
   const createdDirectories = new Set<string>();
   for (const target of paths) {
