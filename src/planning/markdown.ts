@@ -442,11 +442,11 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
         currentNewLine = currentHunk.newStart;
         current.hunks.push(currentHunk);
       }
-    } else if (currentHunk && line.startsWith("+") && !line.startsWith("+++")) {
+    } else if (currentHunk && line.startsWith("+")) {
       currentHunk.addedLines.push(line.slice(1));
       currentHunk.addedLineNumbers!.push(currentNewLine);
       currentNewLine += 1;
-    } else if (currentHunk && line.startsWith("-") && !line.startsWith("---")) {
+    } else if (currentHunk && line.startsWith("-")) {
       currentHunk.removedLines.push(line.slice(1));
     } else if (currentHunk && line.startsWith(" ")) {
       currentNewLine += 1;
