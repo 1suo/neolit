@@ -150,9 +150,10 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Add end-to-end fixtures for the full acceptance workflow
   - SPEC: `REWRITE-SPEC.md#R-22`, `REWRITE-SPEC.md#R-23`, `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-32`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-45`, `REWRITE-SPEC.md#R-66`, `REWRITE-SPEC.md#R-67`, `REWRITE-SPEC.md#R-68`, `REWRITE-SPEC.md#R-69`
   - Description: Prove exact traceability, stale-anchor rejection, verification gating, worktree isolation, and preservation of unrelated staged/dirty files.
-- [ ] Reconcile root/component READMEs and retire superseded roadmap references
+- [x] Reconcile root/component READMEs and retire superseded roadmap references
   - SPEC: `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-11`, `REWRITE-SPEC.md#R-73`
-  - Description: Update READMEs only as the new behavior ships; remove obsolete planned-diff claims and historical TODO links when their owning code is actually retired.
+  - File: `README.md`, `src/planning/README.md`, `editors/vscode/README.md`, `1suo/neolit.nvim/README.md`, `AGENTS.md`, `.agents/skills/neolit-doc-workflow/SKILL.md`
+  - Description: Replaced the root and Neovim onboarding docs with the shipped Git-native workflow, retained current planning/VS Code component contracts, removed obsolete links to retired planned-diff roadmaps, and aligned repository/skill instructions with the new package and implementation-vs-validation ledger. Archived gap files remain unlinked and are not active contracts.
 
 ## Verification
 
