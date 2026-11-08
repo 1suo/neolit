@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { DiffHunk, SourceRange, SpecRequirement, TodoTask } from "./markdown.js";
+import { parseUnifiedDiff, type DiffHunk, type SourceRange, type SpecRequirement, type TodoTask } from "./markdown.js";
 
 export type DiffSide = "base" | "working-tree";
 
@@ -122,7 +122,28 @@ const DEFAULT_PACKET_LIMITS: Required<DiffQuestionPacketLimits> = {
 
 function boundedText(value: string, maxChars: number, label: string): string {
   if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars)}\n...[ ${label} truncated ]`;
+  const marker = `...[ ${label} truncated ]`;
+  if (marker.length >= maxChars) return marker.slice(0, maxChars);
+  return `${value.slice(0, maxChars - marker.length - 1)}\n${marker}`;
+}
+
+function selectHunkDiff(rawDiff: string, expected: DiffHunk): string | undefined {
+  const lines = rawDiff.split(/\r?\n/u);
+  const start = lines.findIndex((line) => {
+    const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/u.exec(line);
+    return match
+      && Number(match[1]) === expected.oldStart
+      && Number(match[2] ?? 1) === expected.oldLines
+      && Number(match[3]) === expected.newStart
+      && Number(match[4] ?? 1) === expected.newLines;
+  });
+  if (start < 0) return undefined;
+  let end = start + 1;
+  while (end < lines.length && !lines[end]!.startsWith("@@ ")) end += 1;
+  const headers = lines.slice(0, start).filter((line) =>
+    line.startsWith("diff --git ") || line.startsWith("index ")
+    || line.startsWith("--- ") || line.startsWith("+++ "));
+  return [...headers, ...lines.slice(start, end)].join("\n");
 }
 
 /**
@@ -158,11 +179,21 @@ export function buildDiffQuestionPacket(input: {
     ...(input.currentBlobOid ? { blobOid: input.currentBlobOid } : {}),
   });
   if (!currentness.current) return { status: "stale", reason: currentness.reason };
-  if (input.selectedDiffText && !input.currentDiffText.includes(input.selectedDiffText)) {
+  const anchor = input.anchor;
+  const changedFile = parseUnifiedDiff(input.currentDiffText).find((file) =>
+    file.path === anchor.path || file.previousPath === anchor.path,
+  );
+  if (!changedFile?.rawDiff) return { status: "stale", reason: "diff-changed" };
+
+  const selectedHunk = anchor.hunk ? selectHunkDiff(changedFile.rawDiff, anchor.hunk) : undefined;
+  if (anchor.hunk && !selectedHunk) return { status: "stale", reason: "diff-changed" };
+  if (input.selectedDiffText && !changedFile.rawDiff.includes(input.selectedDiffText)) {
     return { status: "stale", reason: "diff-changed" };
   }
-
-  const anchor = input.anchor;
+  if (input.selectedDiffText && anchor.hunk && !selectedHunk.includes(input.selectedDiffText)) {
+    return { status: "stale", reason: "diff-changed" };
+  }
+  const selectedDiffText = input.selectedDiffText ?? selectedHunk ?? changedFile.rawDiff;
   const location = anchor.lineRange
     ? ` lines ${anchor.lineRange.startLine}-${anchor.lineRange.endLine}`
     : anchor.hunk
@@ -177,7 +208,7 @@ export function buildDiffQuestionPacket(input: {
       `Diff identity (sha256): ${anchor.diffIdentity}`,
       ...(anchor.blobOid ? [`Blob identity: ${anchor.blobOid}`] : []),
     ].join("\n"),
-    `~~~diff\n${boundedText(input.selectedDiffText ?? input.currentDiffText, limits.maxDiffChars, "diff")}\n~~~`,
+    `~~~diff\n${boundedText(selectedDiffText, limits.maxDiffChars, "diff")}\n~~~`,
   ];
   if (input.selectedLinesText !== undefined) {
     sections.push(`Selected source lines:\n~~~text\n${boundedText(input.selectedLinesText, limits.maxSelectedLinesChars, "selected lines")}\n~~~`);
