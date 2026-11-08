@@ -18,7 +18,7 @@ This component parses the repository's ordinary Markdown planning documents and 
 
 ## Markdown contract
 
-A SPEC requirement is a list item with a bold stable ID, for example `- **R-01** The client refreshes expired sessions.`
+A SPEC requirement is a bold stable ID, either on its own paragraph or in a Markdown list item, for example `**R-01** The client refreshes expired sessions.` or `- **R-01** The client refreshes expired sessions.` Acceptance criteria use the same form with `AC-NN` IDs.
 
 A TODO task uses ordinary checkbox syntax and nested metadata:
 
