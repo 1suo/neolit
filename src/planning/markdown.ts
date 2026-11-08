@@ -141,6 +141,7 @@ export function parseTodoDocument(documentPath: string, content: string): TodoDo
   const headings: string[] = [];
   const tasks: TodoTask[] = [];
   let current: TodoTask | undefined;
+  let currentDetail: "description" | "agentNotes" = "description";
   let taskIndent = -1;
 
   const finish = (endLine: number) => {
@@ -153,6 +154,7 @@ export function parseTodoDocument(documentPath: string, content: string): TodoDo
     if (heading) {
       finish(index);
       current = undefined;
+      currentDetail = "description";
       taskIndent = -1;
       headings.length = heading.level - 1;
       headings[heading.level - 1] = heading.text;
@@ -163,6 +165,7 @@ export function parseTodoDocument(documentPath: string, content: string): TodoDo
     if (taskMatch) {
       const indent = taskMatch[1]!.length;
       if (current && indent <= taskIndent) finish(index);
+      currentDetail = "description";
       current = {
         key: `${normalizeRepoPath(documentPath)}::${[...headings, taskMatch[3]!].join(" / ")}`,
         text: taskMatch[3]!,
@@ -207,15 +210,17 @@ export function parseTodoDocument(documentPath: string, content: string): TodoDo
     }
     const descriptionLine = /^\s*(?:[-*+]\s+)?Description:\s*(.+?)\s*$/iu.exec(line);
     if (descriptionLine) {
+      currentDetail = "description";
       current.description.push(descriptionLine[1]!);
       continue;
     }
     const agentNotesLine = /^\\s*(?:[-*+]\\s+)?Agent notes?:\\s*(.+?)\\s*$/iu.exec(line);
     if (agentNotesLine) {
+      currentDetail = "agentNotes";
       current.agentNotes.push(agentNotesLine[1]!);
       continue;
     }
-    current.description.push(line.trim());
+    current[currentDetail].push(line.trim());
   }
 
   finish(lines.length);
