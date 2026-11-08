@@ -53,8 +53,7 @@ Ordered by user-visible impact; the owning record tracks each gap.
    `verified`/`failed`; JSON-RPC and MCP expose host-injected transactional
    `patch/apply` and `patch/verify`, including filesystem rollback when apply
    or durable state recording fails. The built-in verifier checks whitespace
-   and reverse-applies the full patch series in a disposable worktree.
-   The built-in verifier checks whitespace and reversibility; arbitrary test
+   and reversibility; arbitrary test
    suites and CI checks are not run automatically by the host.
 3. **Repository awareness.** The standalone TUI now polls tracked and non-ignored
    untracked paths plus HEAD, and turns external edits, creates, deletes, and
