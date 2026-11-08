@@ -1705,6 +1705,11 @@ export class AugmentTuiController {
       this.error = "Nothing applied this session. Press [A] to apply a drafted patch first.";
       return;
     }
+    const unverified = applied.filter((diff) => diff.lifecycle !== "verified");
+    if (unverified.length) {
+      this.error = String(unverified.length) + " applied change(s) are not verified. Select their folder or paths and press [G] before committing.";
+      return;
+    }
     const paths = [...new Set(applied.map((diff) => diff.path).filter((path) => path && path !== "."))];
     await this.dispatch("Committing applied changes", async () => {
       const sha = commitAppliedPaths(this.directory, paths, `augment: ${task.objective}`);
