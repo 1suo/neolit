@@ -113,7 +113,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Include resolved task and SPEC context in task/requirement questions
   - SPEC: `REWRITE-SPEC.md#R-39`, `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-43`
   - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
-  - Description: Task and planned-file questions now include their descriptions, file hints, resolved requirements, linked acceptance criteria, and unresolved references. Requirement questions include every explicitly linked TODO task and its resolved SPEC context. These copyable packets are capped at 16,000 characters and use real line breaks; no agent session is created or contacted.
+  - Description: Task and planned-file questions now include their descriptions, file hints, resolved requirements, linked acceptance criteria, unresolved references, and task-scoped current-behavior excerpts selected through the shared README context resolver. Requirement questions include every explicitly linked TODO task and its resolved SPEC/README context. These copyable packets are capped at 16,000 characters and use real line breaks; no agent session is created or contacted.
 
 - [x] Implement copyable contextual handoff to the existing agent
   - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-50`
