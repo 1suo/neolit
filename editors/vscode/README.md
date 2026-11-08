@@ -15,7 +15,7 @@ npm install
 npm run compile
 ```
 
-Open the repository in VS Code and launch the extension from an Extension Development Host (F5). The **Neolit Plan** view appears in Explorer.
+Open the repository in VS Code and launch the extension from an Extension Development Host (F5). The **Neolit Plan** view appears in Explorer. The `vscode:prepublish` lifecycle script builds the bundled extension entry point before VSIX packaging; the shared core is a development-time dependency and is bundled into the extension.
 
 ## Behavior
 
