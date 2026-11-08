@@ -721,6 +721,17 @@ export class AugmentTuiController {
     }
   }
 
+  private syncAppliedDiffIds(task: PlanTask): void {
+    for (const id of [...this.appliedDiffIds]) {
+      if (task.diffs[id]?.lifecycle === "drafted") this.appliedDiffIds.delete(id);
+    }
+    for (const diff of Object.values(task.diffs)) {
+      if (diff.lifecycle === "applied" || diff.lifecycle === "verified" || diff.lifecycle === "failed") {
+        this.appliedDiffIds.add(diff.id);
+      }
+    }
+  }
+
   private async adoptExternalTask(): Promise<void> {
     const active = this.task;
     if (!active || (this.busy && !this.toolFlow)) return;
@@ -729,6 +740,7 @@ export class AugmentTuiController {
     const fetched = response.result as PlanTask;
     if (fetched.revision <= this.task.revision) return;
     this.task = fetched;
+    this.syncAppliedDiffIds(fetched);
     if (!this.error && !this.toolFlow) this.message = `Agent update rendered (r${fetched.revision}).`;
     this.refresh();
   }
@@ -740,6 +752,7 @@ export class AugmentTuiController {
     const response = await this.server.handle({ jsonrpc: "2.0", id: 32, method: "task/get", params: { taskId: id } });
     if (response && "result" in response && this.task?.id === id) {
       this.task = response.result as PlanTask;
+      this.syncAppliedDiffIds(this.task);
       this.refresh();
     }
   }
@@ -1216,6 +1229,7 @@ export class AugmentTuiController {
         params: { taskId: task.id, expectedRevision: this.requireTask().revision, diffIds: diffs.map((diff) => diff.id) },
       });
       this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+      this.syncAppliedDiffIds(this.task);
       this.repositoryWatcher?.rebaseline();
       for (const diff of diffs) this.appliedDiffIds.add(diff.id);
       this.repository = repositoryTree(this.directory);
