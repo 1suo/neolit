@@ -327,7 +327,9 @@ export function activate(context: vscode.ExtensionContext): void {
         ? vscode.Uri.from({ scheme: EMPTY_SCHEME, path: `/${node.path}` })
         : fileUri;
       await vscode.commands.executeCommand("vscode.diff", base, working, `Neolit: ${node.path} · ${current.git.base.slice(0, 8)}`);
-      await vscode.commands.executeCommand("workbench.action.compareEditor.focusSecondarySide");
+      await vscode.commands.executeCommand(file.status === "deleted"
+        ? "workbench.action.compareEditor.focusPrimarySide"
+        : "workbench.action.compareEditor.focusSecondarySide");
       for (let index = 0; index <= node.hunkIndex; index += 1) {
         await vscode.commands.executeCommand("workbench.action.compareEditor.nextChange");
       }
