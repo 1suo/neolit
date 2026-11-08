@@ -28,6 +28,8 @@ export type McpToolName =
   | "select_approach"
   | "refine_plan"
   | "draft_file"
+  | "apply_patches"
+  | "verify_patches"
   | "repair_patch";
 
 /** Deterministic per-operation call caps; reads (`plan_status`, `read_diff`) are uncapped. */
@@ -39,6 +41,8 @@ export const MCP_TOOL_CAPS: Record<McpToolName, number> = {
   select_approach: 32,
   refine_plan: 48,
   draft_file: 96,
+  apply_patches: 16,
+  verify_patches: 16,
   repair_patch: 96,
   plan_status: Number.POSITIVE_INFINITY,
   read_diff: Number.POSITIVE_INFINITY,
@@ -226,6 +230,32 @@ const TOOLS: ToolSpec[] = [
     },
   },
   {
+    name: "apply_patches",
+    description: "Apply selected drafted diffs as one host transaction. The host preflights the group and rolls back filesystem changes if application or durable state recording fails.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: { type: "string" },
+        expectedRevision: revisionField,
+        diffIds: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } },
+      },
+      required: required("taskId", "expectedRevision", "diffIds"),
+    },
+  },
+  {
+    name: "verify_patches",
+    description: "Run the host's configured verification against selected applied diffs. This is not a model self-attestation; the host returns the actual result and records verified/failed lifecycle state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: { type: "string" },
+        expectedRevision: revisionField,
+        diffIds: { type: "array", minItems: 1, maxItems: 64, items: { type: "string" } },
+      },
+      required: required("taskId", "expectedRevision", "diffIds"),
+    },
+  },
+  {
     name: "repair_patch",
     description: "Replace one drafted patch with a corrected diff after a failed check. Same scope, lock, and applicability contract as draft_file; read the current patch with read_diff first so the correction stays grounded, and pass the diagnostic you are fixing in failedCheck.",
     inputSchema: {
@@ -396,6 +426,10 @@ export class McpAugmentServer {
         return this.refinePlan(input);
       case "draft_file":
         return this.draftFile(input);
+      case "apply_patches":
+        return this.applyPatches(input);
+      case "verify_patches":
+        return this.verifyPatches(input);
       case "repair_patch":
         return this.repairPatch(input);
     }
@@ -553,6 +587,36 @@ export class McpAugmentServer {
     return {
       text: `Drafted ${diff.path || node.path || node.id} as ${diff.id} (revision ${updated.revision}). It is not applied to the repository.${notes.length ? ` Assumptions: ${notes.join("; ")}.` : ""}`,
       structured: { taskId: updated.id, revision: updated.revision, nodeId: node.id, diffId: diff.id, path: diff.path, kind: diff.kind, notes, nextStep: nextDevelopmentStep(updated, updated.rootNodeId) },
+    };
+  }
+
+  private async applyPatches(input: Record<string, unknown>): Promise<ToolOutcome> {
+    const base = taskMutation(input);
+    const diffIds = input.diffIds;
+    if (!Array.isArray(diffIds) || !diffIds.length || diffIds.some((id) => typeof id !== "string" || !id.trim())) {
+      throw new ProtocolError(-32602, "diffIds must be a non-empty array of diff ids");
+    }
+    const updated = await this.native("patch/apply", { ...base, diffIds: [...new Set(diffIds)] }) as PlanTask;
+    return {
+      text: `Applied ${diffIds.length} diff(s) to the repository (revision ${updated.revision}). Verify with verify_patches.`,
+      structured: { taskId: updated.id, revision: updated.revision, diffIds, paths: [...new Set(diffIds.map((id) => updated.diffs[String(id)]?.path).filter(Boolean))], lifecycle: "applied" },
+    };
+  }
+
+  private async verifyPatches(input: Record<string, unknown>): Promise<ToolOutcome> {
+    const base = taskMutation(input);
+    const diffIds = input.diffIds;
+    if (!Array.isArray(diffIds) || !diffIds.length || diffIds.some((id) => typeof id !== "string" || !id.trim())) {
+      throw new ProtocolError(-32602, "diffIds must be a non-empty array of diff ids");
+    }
+    const updated = await this.native("patch/verify", { ...base, diffIds: [...new Set(diffIds)] }) as PlanTask;
+    const results = [...new Set(diffIds)].map((id) => updated.diffs[String(id)]).filter(Boolean);
+    const passed = results.length === diffIds.length && results.every((diff) => diff!.lifecycle === "verified");
+    const summary = results.map((diff) => diff!.verification).filter(Boolean).join("; ");
+    return {
+      text: passed ? `Host verification passed: ${summary}` : `Host verification failed: ${summary}`,
+      structured: { taskId: updated.id, revision: updated.revision, diffIds, passed, summary },
+      isError: !passed,
     };
   }
 
