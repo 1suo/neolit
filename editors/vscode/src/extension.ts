@@ -14,7 +14,7 @@ import {
 
 type TaskNode = { kind: "task"; key: string; label: string };
 type RequirementNode = { kind: "requirement"; key: string; specPath: string; id: string; label: string };
-type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; candidateTaskKeys: string[]; label: string };
+type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; candidateTaskKeys: string[]; candidateRequirementRefs: string[]; label: string };
 type GroupNode = { kind: "group"; label: string };
 type PlanFileNode = { kind: "file"; path: string; taskKey: string; label: string };
 type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode;
@@ -136,7 +136,8 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       return {
         kind: "hunk" as const, path: association.path, previousPath: file?.previousPath,
         hunkIndex: association.hunkIndex, candidateTaskKeys: association.candidateTaskKeys,
-        label: `${association.state === "attributed" ? "DOC↳" : association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} ${association.path} · hunk ${association.hunkIndex + 1}`,
+        candidateRequirementRefs: association.candidateRequirementRefs,
+        label: `${association.state === "attributed" ? "DOC↳" : association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} ${association.path} · hunk ${association.hunkIndex + 1} · ${association.candidateTaskKeys.length} task / ${association.candidateRequirementRefs.length} req`,
       };
     });
     if (node.kind === "requirement") {
@@ -153,7 +154,8 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     }));
     const hunks: HunkNode[] = (workspace.derived.tasks[node.key]?.hunkReviews ?? []).map((review) => ({
       kind: "hunk", path: review.path, hunkIndex: review.hunkIndex, candidateTaskKeys: review.candidateTaskKeys,
-      label: `${review.state === "attributed" ? "DOC↳" : review.state === "documentation" ? "DOC" : review.state === "unplanned" ? "?" : "~"} ${review.path} · hunk ${review.hunkIndex + 1}`,
+      candidateRequirementRefs: review.candidateRequirementRefs,
+      label: `${review.state === "attributed" ? "DOC↳" : review.state === "documentation" ? "DOC" : review.state === "unplanned" ? "?" : "~"} ${review.path} · hunk ${review.hunkIndex + 1} · ${review.candidateTaskKeys.length} task / ${review.candidateRequirementRefs.length} req`,
     }));
     return [...files, ...requirements, ...hunks];
   }
