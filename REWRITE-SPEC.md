@@ -219,23 +219,23 @@ For every changed path, Neolit should present one of:
 
 **R-38** Repository state changes must invalidate derived Git views. A file watcher may improve responsiveness, but Git status/diff remains the authority and must be re-read before consequential actions.
 
-## 8. Contextual questions about code and diffs
+## 8. Literal copying and source navigation
 
-The user must be able to ask the existing coding agent about the exact code currently under inspection.
+Neolit is a planning and review surface, not a prompt composer or agent chat interface. The user works with their existing agent independently.
 
-**R-39** Context may be anchored to a repository path, selected diff hunk, selected line/range, or selected TODO task/SPEC requirement.
+**R-39** Neolit must provide direct copy actions for selected task text, requirement text, acceptance-criterion text, repository-relative source paths, and source path plus line.
 
-**R-40** A diff anchor must include enough information to avoid ambiguity: repository-relative path, side (base/working tree), selected line or range, and the current diff/base identity. Where available, include blob/commit identity and hunk boundaries. Line numbers alone are not durable anchors.
+**R-40** A selected changed file must support copying its actual diff. A selected hunk must support copying that exact hunk in Git patch order, including context lines when present.
 
-**R-41** Neolit must construct a compact context packet containing the user's question, anchor, relevant diff text, and the linked task/requirement text when available. It should not dump the whole repository or full document graph into every question.
+**R-41** Copy actions must preserve the selected source text or Git diff literally. They must not generate questions, instructions, summaries, wrappers, or artificial context packets.
 
-**R-42** The context packet is sent as a contextual user message to the coding agent's existing conversation/session when the host exposes a supported way to do so. The agent remains responsible for answering, editing, permissions, and follow-up conversation.
+**R-42** Copying must not open a question dialog, send a message, or require an agent/session connection. Clipboard access is the only side effect; repository files, index, and history remain untouched.
 
-**R-43** The initial implementation must not create a Neolit-owned chat UI, message store, session manager, model router, provider abstraction, or agent protocol. If a host cannot address an existing agent session, provide a copyable prompt/context packet and native file/diff navigation instead of inventing a second chat.
+**R-43** The implementation must not create a Neolit-owned chat UI, message store, session manager, model router, provider abstraction, or agent protocol.
 
-**R-44** Contextual questions are read-only by default. A follow-up implementation request is an ordinary message to the existing agent and follows that agent's normal permission flow.
+**R-44** Native source and diff navigation remains available independently of copying. Selecting a task or requirement opens its Markdown source; selecting a changed file or hunk opens the corresponding native diff.
 
-**R-45** If the anchored diff changes or disappears before the question is sent, Neolit must refresh the anchor or warn that it is stale. It must never silently send a different line/hunk as context.
+**R-45** A hunk copy must use the hunk selected in the current Git diff view. It must never silently substitute another hunk or copy a generated approximation when the exact patch text is available.
 
 ## 9. Agent integration
 
@@ -247,7 +247,7 @@ The user must be able to ask the existing coding agent about the exact code curr
 
 **R-49** Do not require MCP for the core workflow. Do not implement ACP or another session protocol unless Neolit later takes ownership of the conversation experience and a concrete host integration requires it.
 
-**R-50** Agent integration must be optional. Without an agent connection, browsing documentation, Git status, diffs, task mappings, and copyable context packets must still work.
+**R-50** Agent integration is outside the required workflow. Browsing documentation, Git status, diffs, task mappings, and literal text/path/diff copying must work without an agent connection.
 
 ## 10. Architecture
 
@@ -260,7 +260,7 @@ The shared core is a small TypeScript library responsible for:
 - resolving TODO-to-SPEC links;
 - reading Git status, diff metadata, hunks, and comparison bases;
 - deriving task/requirement/diff associations and presentation states;
-- producing host-neutral view models and contextual question packets;
+- producing host-neutral view models and source-aware literal copy values;
 - watching relevant filesystem/Git changes and invalidating derived views.
 
 **R-51** The core must be deterministic and must not call an LLM. Parsing, link resolution, Git interpretation, state derivation, and context assembly are controller responsibilities.
@@ -352,8 +352,8 @@ Implementation is staged to prove the smallest useful end-to-end workflow before
 1. Freeze the target contract and task/requirement Markdown conventions.
 2. Build the deterministic Markdown/document graph parser and traceability checks.
 3. Build Git status/diff/hunk indexing and derived state projection.
-4. Prototype one vertical slice in Neovim: TODO selection → requirement detail → actual diff mapping → contextual question packet.
-5. Add existing-agent session handoff only where a host exposes a stable supported API; retain copyable context fallback.
+4. Prototype one vertical slice in Neovim: TODO selection → requirement detail → actual diff mapping → literal task/path/hunk copying.
+5. Keep agent conversations outside Neolit; do not add prompt composition or session handoff.
 6. Build the VS Code adapter over the same core.
 7. Replace or retire the old TUI/daemon/kernel surfaces and update package/plugin contracts.
 8. Add end-to-end fixtures and verify documentation synchronization.
