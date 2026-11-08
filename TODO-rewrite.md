@@ -67,6 +67,11 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - SPEC: `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-04`, `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`
   - File: `src/planning/markdown.ts`
   - Description: Parse changed paths, quoted Git paths, renames, hunk coordinates, and added/removed source lines. File-level associations remain conservative: shared hints are unresolved, documentation changes are classified separately, and unmatched paths remain unplanned.
+- [x] Preserve source order of added and removed lines in parsed hunks
+  - SPEC: `REWRITE-SPEC.md#R-34`, `REWRITE-SPEC.md#R-35`, `REWRITE-SPEC.md#R-36`
+  - File: `src/planning/markdown.ts`, `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: Each parsed hunk now retains its ordered added/removed line sequence alongside side-specific coordinates. The Neovim diff tree and hunk details render that sequence in the same order as Git's patch instead of grouping additions before removals.
+  
 - [x] Map individual diff hunks to TODO tasks and SPEC requirements where evidence permits
   - SPEC: `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-04`, `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`
   - File: `src/planning/markdown.ts`
@@ -169,7 +174,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 - [x] Every TODO task resolves to one or more existing SPEC requirement IDs.
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-18`
-  - Description: Static audit of all 47 TODO checkbox tasks found at least one `REWRITE-SPEC.md` reference per task and no referenced IDs missing from the current SPEC. This was a document audit, not a test run.
+  - Description: Static audit of all 48 TODO checkbox tasks found at least one `REWRITE-SPEC.md` reference per task and no referenced IDs missing from the current SPEC. This was a document audit, not a test run.
 - [ ] Derived states are tested independently from Markdown checkbox values.
   - SPEC: `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-29`, `REWRITE-SPEC.md#R-30`
 - [ ] Diff mapping tests include ambiguous, partial, and unplanned changes.
