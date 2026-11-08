@@ -32,6 +32,11 @@ export type RelatedTaskContext = {
   acceptanceCriteria?: Array<{ specPath: string; criterion: SpecAcceptanceCriterion }>;
 };
 
+export type RelatedRequirementContext = {
+  specPath: string;
+  requirement: SpecRequirement;
+};
+
 /**
  * Select only TODO tasks that explicitly name the anchored file. A rename
  * matches either side of the path; shared file hints remain multiple
@@ -249,6 +254,7 @@ export function buildDiffQuestionPacket(input: {
   selectedDiffText?: string;
   selectedLinesText?: string;
   relatedTasks?: RelatedTaskContext[];
+  relatedRequirements?: RelatedRequirementContext[];
   documentationContext?: TaskDocumentationContext;
   limits?: DiffQuestionPacketLimits;
 }): DiffQuestionPacketResult {
@@ -321,6 +327,21 @@ export function buildDiffQuestionPacket(input: {
       plan.push(`- ... ${omitted} additional related task${omitted === 1 ? "" : "s"} omitted`);
     }
     sections.push(`Related plan:\n${boundedText(plan.join("\n"), limits.maxRelatedChars, "related plan")}`);
+  }
+
+  if (input.relatedRequirements?.length) {
+    const includedByTasks = new Set((input.relatedTasks ?? []).flatMap((item) =>
+      item.requirements.map(({ specPath, requirement }) => `${specPath}#${requirement.id}`),
+    ));
+    const requirements = input.relatedRequirements.filter(({ specPath, requirement }) =>
+      !includedByTasks.has(`${specPath}#${requirement.id}`),
+    );
+    if (requirements.length) {
+      const lines = requirements.map(({ specPath, requirement }) =>
+        `- ${specPath}#${requirement.id}: ${requirement.text}`,
+      );
+      sections.push(`Candidate SPEC requirements:\n${boundedText(lines.join("\n"), limits.maxRelatedChars, "candidate requirements")}`);
+    }
   }
 
   if (input.documentationContext) {
