@@ -44,10 +44,12 @@ Current code and tests ship, among others:
 
 Ordered by user-visible impact; the owning record tracks each gap.
 
-1. **Durability.** Tasks and protocol sessions live in memory and do not
-   survive daemon restarts; TUI tasks do not persist across process
-   restarts ([TODO-augment.md](./TODO-augment.md)). Resumable planning
-   across days and machines is table stakes.
+1. **Durability.** Core daemon tasks and protocol sessions live in memory and do not
+   survive daemon restarts. The standalone TUI separately persists its
+   active task and per-task agent-session bindings across process restarts;
+   that does not make the daemon's in-memory store durable
+   ([TODO-augment.md](./TODO-augment.md)). Resumable planning across
+   independent daemon instances and machines is still table stakes.
 2. **Verification-gated apply.** Apply/verify lifecycle is absent from core
    state and there is no `patch/apply` over JSON-RPC with rollback; the TUI
    applies host-side via a preflighted atomic `git apply` (`src/tui/apply.ts`),
@@ -60,10 +62,12 @@ Ordered by user-visible impact; the owning record tracks each gap.
    notifications remain open, and coordination stops at per-task
    serialization — no plan diff or merge across concurrent tasks.
 5. **Host adapter breadth and efficiency.** Model access ships as
-   CLI-spawning backends (opencode, claude, codex) in the standalone TUI;
+   CLI backends (opencode, claude, codex) in the standalone TUI;
    native OpenCode-plugin and Codex runtimes and the Claude and Codex
-   tool-session adapters remain open, and per-call CLI spawns are not yet
-   routed through the kept-alive `PersistentAgentServer`.
+   tool-session adapters remain open. OpenCode model calls and tool-session
+   steps already use the kept-alive `PersistentAgentServer` warm transport,
+   with CLI fallback; equivalent warm transports for the other backends
+   remain open.
 6. **Telemetry and evaluation.** Nothing measures plan quality, retry rates,
    or apply success over time, so improvement claims cannot be evidenced —
    the repository's telemetry-before-optimization rule is unmet.
