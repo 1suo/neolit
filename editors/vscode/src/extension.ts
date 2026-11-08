@@ -25,7 +25,8 @@ const BASE_SCHEME = "neolit-base";
 const EMPTY_SCHEME = "neolit-empty";
 
 function workspaceFileUri(folder: vscode.WorkspaceFolder, relativePath: string): vscode.Uri | undefined {
-  if (!relativePath || path.isAbsolute(relativePath)) return undefined;
+  if (!relativePath || path.isAbsolute(relativePath)
+    || relativePath.replaceAll("\\\\", "/").split("/").some((segment) => segment === ".." || segment === "." || segment === "")) return undefined;
   const absolute = path.resolve(folder.uri.fsPath, relativePath);
   const relative = path.relative(folder.uri.fsPath, absolute);
   if (!relative || relative === ".." || relative.startsWith(".." + path.sep) || path.isAbsolute(relative)) return undefined;
@@ -54,6 +55,7 @@ class BaseDocumentProvider implements vscode.TextDocumentContentProvider {
   constructor(private readonly root: string, private readonly getWorkspace: () => PlanningWorkspace | undefined) {}
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const relative = uri.path.replace(/^\\//u, "");
+    if (!relative || relative.split("/").some((segment) => segment === ".." || segment === "." || segment === "")) return "";
     const absolute = path.resolve(this.root, relative);
     const withinRoot = path.relative(this.root, absolute);
     const workspace = this.getWorkspace();
@@ -61,6 +63,7 @@ class BaseDocumentProvider implements vscode.TextDocumentContentProvider {
     if (!workspace || !/^[0-9a-f]{40,64}$/iu.test(baseCommit) || !relative || withinRoot === ".." || withinRoot.startsWith(".." + path.sep) || path.isAbsolute(withinRoot)) return "";
     const file = workspace.git.changedFiles.find((item) => item.path === relative);
     const sourcePath = file?.previousPath ?? relative;
+    if (sourcePath.split("/").some((segment) => segment === ".." || segment === "." || segment === "")) return "";
     const sourceAbsolute = path.resolve(this.root, sourcePath);
     const sourceRelative = path.relative(this.root, sourceAbsolute);
     if (sourceRelative === ".." || sourceRelative.startsWith(".." + path.sep) || path.isAbsolute(sourceRelative)) return "";
