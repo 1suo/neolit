@@ -157,6 +157,23 @@ sessions resume via `--resume`; codex sessions are not continued yet. Vendor
 flags drift — when one does, the fix is one object in that file. Adding an
 agent is the same: implement the `CliAgentBackend` interface and register it.
 
+## Repository change tracking
+
+The controller starts a one-second repository watcher and stops it from
+`dispose()`. It snapshots tracked and non-ignored untracked paths (including
+symlink targets) and watches the Git `HEAD` revision. External edits,
+creations, deletions, and renames are translated into the protocol's
+`node/stale` operation for overlapping planned paths. A HEAD move marks all
+planned paths stale because their shared basis may have changed. Events that
+arrive during a controller operation are queued and applied against the
+latest task revision afterward. The controller re-baselines after its own
+patch application so those intended writes are not mistaken for outside
+changes; a commit deliberately is not re-baselined, because its HEAD movement
+must invalidate remaining drafts. Persisted tasks are also compared with the
+current HEAD when resumed, catching commits made while the TUI was closed.
+Ignored files and `node_modules` are excluded consistently with the
+repository tree.
+
 ## Agent socket
 
 While the TUI runs it serves its embedded `AugmentServer` on a Unix socket.
