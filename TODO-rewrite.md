@@ -18,7 +18,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Added disposable task keys and conservative remapping for edits, heading moves, and unique requirement references. Duplicate/competing matches remain explicitly ambiguous. Tests cover heading moves, text edits, unique requirement signatures, additions/removals across TODO files, duplicate identities, and competing requirement signatures. 
 - [ ] Validate task remapping behavior and ambiguity handling
   - SPEC: `REWRITE-SPEC.md#R-20`, `REWRITE-SPEC.md#R-21`
-  - Description: Manually reviewed task checkboxes, nested SPEC/File/Description metadata, multi-ID references, optional file hints, standalone/list-form requirement IDs, acceptance-criterion IDs, and unresolved-reference behavior against the current repository conventions. This is a source review only; no tests were added or run.
+  - Description: Implementation is present; this remains open until task-identity remapping and ambiguity handling are independently reviewed. No tests are added or represented as passing by this ledger.
 - [x] Add repository instruction and reusable workflow skill for the new contract
   - SPEC: `REWRITE-SPEC.md#R-02`, `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-11`, `REWRITE-SPEC.md#R-47`
   - File: `AGENTS.md`
@@ -38,7 +38,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Added `R-NN` requirements, `AC-NN` criteria with explicit requirement links, TODO task metadata, optional direct AC references, and source ranges. 
 - [x] Validate parsing against repository-specific Markdown variants
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-16`, `REWRITE-SPEC.md#R-17`
-  - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
+  - Description: Manually reviewed task checkboxes, nested SPEC/File/Description metadata, multi-ID references, optional file hints, standalone/list-form requirement IDs, acceptance-criterion IDs, and unresolved-reference behavior against the current repository conventions. This is a source review only; no tests were added or run.
 - [x] Implement TODO-to-SPEC traceability and diagnostics
   - SPEC: `REWRITE-SPEC.md#R-18`, `REWRITE-SPEC.md#R-19`, `REWRITE-SPEC.md#R-29`
   - Description: Resolve every task's SPEC references, report missing/ambiguous targets, and never interpret checkbox state as implementation or verification evidence.
