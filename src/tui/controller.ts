@@ -428,8 +428,14 @@ export class AugmentTuiController {
       const ranked = loadStoredTasks().sort((left, right) => right.savedAt - left.savedAt);
       const stored = ranked.find((entry) => path.resolve(entry.directory) === directoryKey);
       if (stored) {
-        this.task = stored.task;
+        this.task = structuredClone(stored.task);
         this.appliedDiffIds = new Set(stored.appliedDiffIds);
+        // Migrate the pre-core-lifecycle TUI store: its applied id set is the
+        // authoritative record that these diffs already changed the worktree.
+        for (const id of this.appliedDiffIds) {
+          const diff = this.task.diffs[id];
+          if (diff && diff.lifecycle === undefined) diff.lifecycle = "applied";
+        }
         // The session stream tail travels with the task, so a restart (or a
         // host respawn) shows what the agent was doing instead of an empty pane.
         this.sessionLines = [...(stored.sessionLines ?? [])].slice(-MAX_SESSION_LINES);
