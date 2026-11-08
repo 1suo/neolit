@@ -306,6 +306,7 @@ interface StatusRow {
   status: PlanTreeEntry["status"];
   nodeIds: string[];
   diffIds: string[];
+  diffLifecycle: Array<{ id: string; lifecycle: string; verification?: string }>;
   drafted: boolean;
   candidates?: Array<{ id: string; label: string }>;
 }
@@ -493,6 +494,8 @@ export class McpAugmentServer {
         id: diff.id,
         path: diff.path,
         kind: diff.kind,
+        lifecycle: diff.lifecycle ?? "drafted",
+        verification: diff.verification,
         patch: diff.patch,
         ...(diff.failedCheck ? { failedCheck: diff.failedCheck } : {}),
       })),
@@ -744,6 +747,7 @@ function statusRows(task: PlanTask): StatusRow[] {
       status: entry.status,
       nodeIds: entry.nodeIds,
       diffIds: entry.diffIds,
+      diffLifecycle: entry.diffIds.map((id) => ({ id, lifecycle: task.diffs[id]?.lifecycle ?? "drafted", verification: task.diffs[id]?.verification })),
       drafted: entry.diffIds.length > 0,
       candidates: candidates.length ? candidates : undefined,
     });
