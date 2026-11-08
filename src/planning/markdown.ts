@@ -50,6 +50,8 @@ export type DiffHunk = {
   newStart: number;
   newLines: number;
   header: string;
+  addedLines: string[];
+  removedLines: string[];
 };
 export type ChangedFile = {
   path: string;
@@ -318,6 +320,7 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
   const files: ChangedFile[] = [];
   let current: ChangedFile | undefined;
   let currentLines: string[] = [];
+  let currentHunk: DiffHunk | undefined;
 
   const finish = () => {
     if (current) {
@@ -326,6 +329,7 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
     }
     current = undefined;
     currentLines = [];
+    currentHunk = undefined;
   };
 
   for (const line of diff.split(/\r?\n/u)) {
@@ -352,13 +356,22 @@ export function parseUnifiedDiff(diff: string): ChangedFile[] {
     else if (line.startsWith("+++ /dev/null")) current.status = "deleted";
     else if (line.startsWith("@@ ")) {
       const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/u.exec(line);
-      if (match) current.hunks.push({
-        oldStart: Number(match[1]),
-        oldLines: Number(match[2] ?? 1),
-        newStart: Number(match[3]),
-        newLines: Number(match[4] ?? 1),
-        header: match[5]!.trim(),
-      });
+      if (match) {
+        currentHunk = {
+          oldStart: Number(match[1]),
+          oldLines: Number(match[2] ?? 1),
+          newStart: Number(match[3]),
+          newLines: Number(match[4] ?? 1),
+          header: match[5]!.trim(),
+          addedLines: [],
+          removedLines: [],
+        };
+        current.hunks.push(currentHunk);
+      }
+    } else if (currentHunk && line.startsWith("+") && !line.startsWith("+++")) {
+      currentHunk.addedLines.push(line.slice(1));
+    } else if (currentHunk && line.startsWith("-") && !line.startsWith("---")) {
+      currentHunk.removedLines.push(line.slice(1));
     }
   }
   finish();
