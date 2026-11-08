@@ -18,7 +18,6 @@ export type SpecAcceptanceCriterion = {
 };
 export type SpecDocument = {
   path: string;
-  referencePath?: string;
   requirements: SpecRequirement[];
   acceptanceCriteria: SpecAcceptanceCriterion[];
 };
@@ -242,17 +241,7 @@ export function resolvePlanningDocuments(input: {
   specs: SpecDocument[];
   todos: TodoDocument[];
 }): { tasks: ResolvedTask[]; diagnostics: PlanningDiagnostic[] } {
-  const specs = new Map<string, SpecDocument>();
-  for (const spec of input.specs) {
-    const key = spec.referencePath ?? spec.path;
-    const existing = specs.get(key);
-    if (existing) {
-      existing.requirements.push(...spec.requirements);
-      existing.acceptanceCriteria.push(...spec.acceptanceCriteria);
-    } else {
-      specs.set(key, { ...spec, requirements: [...spec.requirements], acceptanceCriteria: [...spec.acceptanceCriteria] });
-    }
-  }
+  const specs = new Map(input.specs.map((spec) => [spec.path, spec]));
   const tasks: ResolvedTask[] = [];
   const diagnostics: PlanningDiagnostic[] = [];
 
@@ -593,7 +582,7 @@ export function mapDiffHunksToTasks(
         }
       }
       if (spec) {
-        const referencePath = spec.referencePath ?? spec.path;
+        const referencePath = spec.path;
         const matchedRequirements = spec.requirements.filter((requirement) => hunkAddsLineInRange(hunk, requirement.range));
         const matchedCriteria = spec.acceptanceCriteria.filter((criterion) => hunkAddsLineInRange(hunk, criterion.range));
         const criterionRequirementIds = matchedCriteria.flatMap((criterion) => {
