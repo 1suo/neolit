@@ -157,6 +157,27 @@ export function applyPlannedDiffs(directory: string, diffs: PlannedDiff[]): stri
   return applyPlannedDiffsTransaction(directory, diffs).paths;
 }
 
+/** Verify that applied diffs remain reverse-applicable and pass git's whitespace checks. */
+export function verifyAppliedDiffs(directory: string, diffs: PlannedDiff[]): { passed: boolean; summary: string } {
+  const patches = diffs.filter((diff) => diff.patch.trim().length > 0);
+  if (!patches.length) return { passed: false, summary: "No applied patches were supplied for verification." };
+  const staging = mkdtempSync(path.join(tmpdir(), "augment-verify-"));
+  try {
+    const paths = [...new Set(patches.flatMap((diff) => patchPaths(diff.patch)))];
+    git(directory, ["diff", "--check", "--", ...paths]);
+    for (const [index, diff] of patches.entries()) {
+      const file = path.join(staging, `patch-${index}.diff`);
+      writeFileSync(file, diff.patch.endsWith("\\n") ? diff.patch : `${diff.patch}\\n`, "utf8");
+      git(directory, ["apply", "--reverse", "--check", "--", file]);
+    }
+    return { passed: true, summary: `Verified ${patches.length} applied patch(es): reverse-applicable and clean under git diff --check.` };
+  } catch (error) {
+    return { passed: false, summary: error instanceof Error ? error.message : String(error) };
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
 /**
  * Commits exactly the session-applied paths: -A stages their deletions and
  * additions, and the commit pathspec keeps unrelated staged or dirty files
