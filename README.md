@@ -40,11 +40,11 @@ import {
 // import { ... } from "neolit/planning";
 ```
 
-See [the planning core reference](./src/planning/README.md) for API details.
+Start with the [usage guide](./USAGE.md) for setup and the Neovim workflow. See [the planning core reference](./src/planning/README.md) for API details.
 
 ## Editor integrations
 
-- [Neovim companion](https://github.com/1suo/neolit.nvim/tree/rewrite/planning-workspace)
+- [Neovim companion](https://github.com/1suo/neolit.nvim)
   — the Git-native workspace, opened by `:Neolit` (`:NeolitPlan` remains an
   explicit alias).
 - [VS Code companion](./editors/vscode/README.md) — Explorer task/requirement navigation, documentation diagnostics,
