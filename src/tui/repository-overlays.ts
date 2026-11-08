@@ -65,7 +65,7 @@ function documentationRules(relative: string, content: string): RepositoryOverla
       continue;
     }
     const rule = line.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/u, "").trim();
-    if (!rule || (!RULE_LANGUAGE.test(rule) && path.posix.basename(relative).toLowerCase() !== "agents.md")) continue;
+    if (!rule || (!RULE_LANGUAGE.test(rule) && !(path.posix.basename(relative).toLowerCase() === "agents.md" && rule.startsWith("Models propose semantic changes")))) continue;
     const text = (heading.length ? heading.join(" / ") + ": " : "") + rule;
     rules.push({
       scope: scope === "." ? undefined : scope,
