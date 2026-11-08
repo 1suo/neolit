@@ -68,6 +68,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       item.contextValue = "requirement";
       item.description = projection?.state;
       item.iconPath = new vscode.ThemeIcon("symbol-interface");
+      item.command = { command: "neolit.openRequirement", title: "Open SPEC requirement", arguments: [node] };
       return item;
     }
     const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
@@ -95,6 +96,10 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
         label: `${association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} ${association.path} · hunk ${association.hunkIndex + 1}`,
       };
     });
+    if (node.kind === "requirement") {
+      return workspace.tasks.filter((task) => task.resolvedRequirements.some((item) => item.specPath === node.specPath && item.id === node.id))
+        .map((task) => ({ kind: "task" as const, key: task.key, label: task.text }));
+    }
     if (node.kind !== "task") return [];
     const task = workspace.tasks.find((item) => item.key === node.key);
     if (!task) return [];
@@ -162,6 +167,15 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!task) return;
       const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, task.key.slice(0, task.key.indexOf("::"))));
       const position = new vscode.Position(Math.max(0, task.range.startLine - 1), 0);
+      await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
+    }),
+    vscode.commands.registerCommand("neolit.openRequirement", async (node?: RequirementNode) => {
+      if (!node || node.kind !== "requirement" || !current) return;
+      const spec = current.specs.find((item) => item.path === node.specPath);
+      const requirement = spec?.requirements.find((item) => item.id === node.id);
+      if (!spec || !requirement) return;
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, node.specPath));
+      const position = new vscode.Position(Math.max(0, requirement.range.startLine - 1), 0);
       await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
     }),
     vscode.commands.registerCommand("neolit.openChangedFile", async (node?: HunkNode) => {
