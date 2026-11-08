@@ -70,8 +70,8 @@ export type TaskDiffAssociation = {
   state: "planned" | "partially-mapped" | "unplanned" | "unresolved" | "documentation";
 };
 
-const REQUIREMENT = /^\s*[-*+]\s+\*\*(R-\d{2,})\*\*\s+(.+?)\s*$/u;
-const ACCEPTANCE_CRITERION = /^\s*[-*+]\s+\*\*(AC-\d{2,})\*\*\s+(.+?)\s*$/u;
+const REQUIREMENT = /^\\s*(?:[-*+]\\s+)?\\*\\*(R-\\d{2,})\\*\\*\\s+(.+?)\\s*$/u;
+const ACCEPTANCE_CRITERION = /^\\s*(?:[-*+]\\s+)?\\*\\*(AC-\\d{2,})\\*\\*\\s+(.+?)\\s*$/u;
 const HEADING = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/u;
 const TASK = /^(\s*)[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/u;
 const SPEC_REF = /([^\s\x60<>]+\.md)#((?:R|AC)-\d{2,}(?:\s*,\s*(?:R|AC)-\d{2,})*)/gu;
