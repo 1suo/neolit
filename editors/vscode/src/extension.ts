@@ -223,9 +223,11 @@ class PlanningDecorationProvider implements vscode.FileDecorationProvider {
   readonly onDidChangeFileDecorations = this.emitter.event;
   private paths = new Set<string>();
   private plannedPaths = new Set<string>();
-  refresh(workspace: PlanningWorkspace): void {
+  refresh(workspace: PlanningWorkspace, folder: vscode.WorkspaceFolder): void {
     this.paths = new Set(workspace.git.changedFiles.map((file) => path.normalize(file.path)));
-    this.plannedPaths = new Set(workspace.tasks.flatMap((task) => task.filePaths.map((file) => path.normalize(file))));
+    this.plannedPaths = new Set(workspace.tasks.flatMap((task) => task.filePaths
+      .filter((file) => workspaceFileUri(folder, file) !== undefined)
+      .map((file) => path.normalize(file))));
     this.emitter.fire(undefined);
   }
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
@@ -271,7 +273,7 @@ export function activate(context: vscode.ExtensionContext): void {
     try {
       current = await load(root);
       tree.refresh(current);
-      decorations.refresh(current);
+      decorations.refresh(current, folder);
     } catch (error) {
       vscode.window.showErrorMessage(`Neolit planning refresh failed: ${String(error)}`);
     }
@@ -286,7 +288,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const fresh = await load(root);
       current = fresh;
       tree.refresh(fresh);
-      decorations.refresh(fresh);
+      decorations.refresh(fresh, folder);
       if (!previous || previous.git.base !== fresh.git.base || previous.git.diffIdentity !== fresh.git.diffIdentity) {
         vscode.window.showWarningMessage("Git state changed since this hunk was selected. Neolit refreshed; select the hunk again.");
         return false;
