@@ -138,4 +138,22 @@ describe("loadPlanningWorkspace", () => {
     ]));
   });
 
+
+  it("uses an explicit comparison base and binds derived evidence to its resolved commit", async () => {
+    const root = await fixture();
+    const head = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+    await writeFile(path.join(root, "src/auth/session.ts"), "export const refresh = () => false;\\n");
+
+    const defaultWorkspace = await loadPlanningWorkspace(root);
+    expect(defaultWorkspace.git.base).toBe(head);
+
+    const selectedWorkspace = await loadPlanningWorkspace(root, { comparisonBase: "HEAD~0" });
+    expect(selectedWorkspace.git.base).toBe(head);
+    expect(selectedWorkspace.git.diff).toContain("-export const refresh = () => true;");
+    expect(selectedWorkspace.git.diff).toContain("+export const refresh = () => false;");
+    expect(selectedWorkspace.derived.tasks[selectedWorkspace.tasks[0]!.key]!.state).toBe("implemented");
+
+    await expect(loadPlanningWorkspace(root, { comparisonBase: "does-not-exist" })).rejects.toThrow();
+  });
+
 });
