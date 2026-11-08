@@ -106,6 +106,16 @@ When creating or changing a README:
 - Add telemetry before adding optimization machinery, and require measured
   evidence that the machinery improves its target.
 
+## Planned-diff contract
+
+For changes to the planned-diff kernel, JSON-RPC/MCP protocol, standalone TUI,
+agent integrations, or Neovim host, follow the reusable
+[Neolit planned-diff workflow skill](.agents/skills/neolit-planned-diff-workflow/SKILL.md).
+It defines the current lifecycle from task creation through candidate
+commitment, refinement, basis-bound patching, transactional apply, host
+verification, and path-scoped commit. Keep the kernel as the single source of
+plan truth across every host.
+
 ## Task workflow
 
 ### Phase 0: verify documentation
