@@ -94,9 +94,9 @@ function linkedMarkdown(content: string): string[] {
   for (const match of content.matchAll(definitionPattern)) {
     definitions.set(normalizeLabel(match[1]!), match[2] ?? match[3]!);
   }
-  const referencePattern = /\[(?:[^\]]+)\]\s*\[\s*([^\]]*)\s*\]|\[([^\]]+)\]/gu;
+  const referencePattern = /\[([^\]]+)\]\s*\[\s*([^\]]*)\s*\]|\[([^\]]+)\]/gu;
   for (const match of content.matchAll(referencePattern)) {
-    const label = normalizeLabel(match[1] || match[2] || "");
+    const label = normalizeLabel(match[2] || match[1] || match[3] || "");
     const target = definitions.get(label);
     if (target) add(target);
   }
