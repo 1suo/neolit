@@ -55,21 +55,13 @@ Work from observable acceptance criteria, not from a speculative architecture.
 - Make state derivation independent of TODO checkbox values.
 - Keep editor integrations thin and reuse the shared core.
 
-## 4. Keep tests meaningful
+## 4. Respect the requested test scope
 
-Add tests for the behavior and failure modes introduced by the change.
-
-Prefer tests for:
-- stable requirement and acceptance-criterion resolution;
-- missing, duplicate, or ambiguous references;
-- task identity remapping without guessing;
-- staged, unstaged, deleted, renamed, binary, and untracked Git paths;
-- exact base/diff anchor validation and stale-anchor rejection;
-- derived states with partial evidence, blockers, and stale verification;
-- editor navigation and copyable context handoff.
-
-A test must fail if the production behavior regresses. Do not assert only
-hand-constructed expected values or hide failures with broad catches.
+Do not create or modify tests unless the task owner explicitly requests test
+work. When test work is requested, cover observable behavior and failure modes;
+prefer stable IDs and exact semantic outcomes over broad snapshots. Never hide
+failures with broad catches or assertions that cannot fail based on production
+behavior.
 
 ## 5. Synchronize documentation
 
