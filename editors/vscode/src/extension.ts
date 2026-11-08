@@ -64,7 +64,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     }
     if (node.kind === "requirement") {
       const projection = this.workspace?.derived.requirements.find((item) => item.specPath === node.specPath && item.requirementId === node.id);
-      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.contextValue = "requirement";
       item.description = projection?.state;
       item.iconPath = new vscode.ThemeIcon("symbol-interface");
