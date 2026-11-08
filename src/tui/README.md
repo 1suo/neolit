@@ -106,7 +106,7 @@ M  switch agent, then role, then model — the picker starts at the backend (`au
 T  switch task: arrow-key picker over this repository's stored tasks (newest first, the active one marked); choosing one resumes it — plan, applied set, and session-stream tail travel with it
 X  send one raw message straight into the task's agent session: no routing, no plan mutation; the operator message and the reply stream into the SESSION pane like every other turn (needs a tool session)
 O  reopen selected node with a reason
-S  mark a real path changed outside the plan
+S  manually mark the selected path stale (automatic repository watching also detects worktree and HEAD changes)
 Esc  cancel the running operation: the model call or agent-session child is killed at once, nothing is retried automatically, and no failure is recorded — a cancelled run is a deliberate stop
 Tab  switch pane
 Q  quit
