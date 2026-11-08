@@ -55,6 +55,8 @@ export interface AugmentServerOptions {
   persistencePath?: string;
   /** Host-owned transactional filesystem apply. The returned rollback runs if core persistence fails. */
   applyPatches?: (diffs: PlannedDiff[]) => Promise<{ paths: string[]; rollback(): void }> | { paths: string[]; rollback(): void };
+  /** Host-owned verification of already-applied patches. */
+  verifyPatches?: (diffs: PlannedDiff[]) => Promise<{ passed: boolean; summary: string }> | { passed: boolean; summary: string };
 }
 
 export class UnavailableModelRuntime implements ModelRuntime {
@@ -137,11 +139,13 @@ export class AugmentServer {
   private nextTaskId = 1;
   private readonly persistencePath?: string;
   private readonly applyPatches?: AugmentServerOptions["applyPatches"];
+  private readonly verifyPatches?: AugmentServerOptions["verifyPatches"];
 
   constructor(options: AugmentServerOptions = {}) {
     this.runtime = options.runtime ?? new UnavailableModelRuntime();
     this.persistencePath = options.persistencePath;
     this.applyPatches = options.applyPatches;
+    this.verifyPatches = options.verifyPatches;
     if (this.persistencePath) this.restoreSnapshot();
   }
 
@@ -562,12 +566,19 @@ export class AugmentServer {
         if (!Array.isArray(input.diffIds) || !input.diffIds.length || input.diffIds.some((id) => typeof id !== "string" || !id.trim())) {
           throw new ProtocolError(-32602, "diffIds must be a non-empty array of diff ids");
         }
-        if (typeof input.passed !== "boolean") throw new ProtocolError(-32602, "passed must be a boolean");
-        const updated = setDiffLifecycle(this.requireTask(base.taskId), {
+        if (!this.verifyPatches) throw new ProtocolError(-32023, "This host has not configured patch verification");
+        const task = this.requireTask(base.taskId);
+        const diffs = [...new Set(input.diffIds as string[])].map((id) => {
+          const diff = task.diffs[id];
+          if (!diff) throw new ProtocolError(-32004, `Unknown planned diff: ${id}`);
+          return diff;
+        });
+        const result = await this.verifyPatches(diffs);
+        const updated = setDiffLifecycle(task, {
           ...base,
-          diffIds: input.diffIds as string[],
-          lifecycle: input.passed ? "verified" : "failed",
-          detail: string(input.summary, "summary"),
+          diffIds: diffs.map((diff) => diff.id),
+          lifecycle: result.passed ? "verified" : "failed",
+          detail: result.summary,
         });
         this.store(updated);
         return updated;
