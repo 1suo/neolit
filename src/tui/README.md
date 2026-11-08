@@ -182,6 +182,18 @@ current HEAD when resumed, catching commits made while the TUI was closed.
 Ignored files and `node_modules` are excluded consistently with the
 repository tree.
 
+## Path-aware repository index
+
+Every model operation receives a compact repository index from
+`src/tui/repository-index.ts`. It enumerates tracked and non-ignored
+untracked paths, indexes bounded source files, resolves common relative
+imports/requires/module references, and ranks imported, importing, and
+same-directory files around the selected path. Folder/root requests receive
+a bounded scope listing. The index refreshes when path metadata changes and
+never embeds indexed file bodies; the existing draft-file section remains the
+only automatic full-file content embed. These relationships are navigation
+hints only: node scope and restriction rules remain controller authority.
+
 ## Agent socket
 
 While the TUI runs it serves its embedded `AugmentServer` on a Unix socket.
