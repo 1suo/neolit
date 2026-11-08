@@ -64,7 +64,7 @@ export type TaskDiffAssociation = {
   granularity: "file";
   taskKeys: string[];
   requirementIds: string[];
-  state: "planned" | "partially-mapped" | "unplanned";
+  state: "planned" | "partially-mapped" | "unplanned" | "unresolved" | "documentation";
 };
 
 const REQUIREMENT = /^\s*[-*+]\s+\*\*(R-\d{2,})\*\*\s+(.+?)\s*$/u;
@@ -370,16 +370,37 @@ export function mapDiffToTasks(
   tasks: ResolvedTask[],
 ): TaskDiffAssociation[] {
   return changedFiles.map((file) => {
+    // Documentation changes are first-class review items, not implementation
+    // evidence for whichever task happens to mention the same path.
+    if (/(?:^|\\/)(?:README|SPEC|TODO(?:-[^/]*)?)\\.md$/iu.test(file.path)) {
+      return {
+        path: file.path,
+        granularity: "file" as const,
+        taskKeys: [],
+        requirementIds: [],
+        state: "documentation" as const,
+      };
+    }
+
     const matching = tasks.filter((task) => task.filePaths.some((filePath) =>
       filePath === file.path || filePath === file.previousPath,
     ));
     const unresolved = matching.some((task) => task.state === "unmapped");
+    const ambiguous = matching.length > 1;
     return {
       path: file.path,
-      granularity: "file",
+      granularity: "file" as const,
       taskKeys: matching.map((task) => task.key),
       requirementIds: [...new Set(matching.flatMap((task) => task.resolvedRequirements.map((requirement) => requirement.id)))],
-      state: matching.length === 0 ? "unplanned" : unresolved ? "partially-mapped" : "planned",
+      // A shared File: hint does not prove which task owns the change. Keep
+      // every candidate visible and require a more precise mapping.
+      state: matching.length === 0
+        ? "unplanned" as const
+        : ambiguous
+          ? "unresolved" as const
+          : unresolved
+            ? "partially-mapped" as const
+            : "planned" as const,
     };
   });
 }
