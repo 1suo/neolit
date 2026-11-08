@@ -207,6 +207,20 @@ The former LangGraph/OpenCode solution graph lives in the sibling
 
 The Git-native simplification rewrite is specified in [`REWRITE-SPEC.md`](./REWRITE-SPEC.md), with its requirement-linked implementation ledger in [`TODO-rewrite.md`](./TODO-rewrite.md). These documents describe the target architecture; the existing planned-diff implementation remains the current shipped behavior until the rewrite is implemented.
 
+## Planning core package entry point
+
+New editor integrations should import the deterministic Git-native core from the dedicated `neolit/planning` subpath:
+
+```ts
+import {
+  loadPlanningWorkspace,
+  buildDiffQuestionPacket,
+  derivePlanningStates,
+} from "neolit/planning";
+```
+
+This entry point exposes only Markdown parsing, read-only workspace/Git loading, derived planning state, and contextual question-packet helpers. The legacy package-root exports remain available during the migration and are not part of the new adapter contract.
+
 ## Planning documents (rewrite foundation)
 
 The Git-native rewrite foundation now includes a deterministic Markdown parser and a read-only Node workspace loader. It follows linked README documents, resolves TODO tasks to SPEC requirements, reads Git status/diffs, and associates changed paths with explicitly referenced tasks. It does not apply patches, stage files, commit, or communicate with agents. See [`src/planning/README.md`](./src/planning/README.md) and the target [`REWRITE-SPEC.md`](./REWRITE-SPEC.md).
