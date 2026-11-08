@@ -6,7 +6,7 @@ import { AugmentServer, type JsonRpcResponse } from "../augmentd/server.js";
 import { defaultSocketPath, serveAugmentSocket, type SocketService } from "../augmentd/socket.js";
 import { nextDevelopmentStep, undraftedFileTargets } from "../augment/kernel.js";
 import { pathIsLocked, planTree } from "../augment/state.js";
-import { applyPlannedDiffsTransaction, commitAppliedPaths } from "./apply.js";
+import { applyPlannedDiffsTransaction, commitAppliedPaths, verifyAppliedDiffs } from "./apply.js";
 import type { SessionStreamLine, ToolSessionDriver } from "./tool-session.js";
 import { sessionBindingFor } from "./session-store.js";
 import { RepositoryWatcher, type RepositoryChange } from "./repository-watch.js";
@@ -399,7 +399,7 @@ export class AugmentTuiController {
     this.directory = options.directory;
     this.branch = currentBranch(options.directory);
     this.runtime = options.runtime;
-    this.server = new AugmentServer({ runtime: options.runtime, applyPatches: (diffs) => applyPlannedDiffsTransaction(this.directory, diffs) });
+    this.server = new AugmentServer({ runtime: options.runtime, applyPatches: (diffs) => applyPlannedDiffsTransaction(this.directory, diffs), verifyPatches: (diffs) => verifyAppliedDiffs(this.directory, diffs) });
     this.defaultLod = options.defaultLod ?? "file";
     const rounds = options.challengeRounds ?? Number(process.env.AUGMENT_CHALLENGE_ROUNDS);
     this.challengeRounds = Number.isInteger(rounds) && rounds >= 0 && rounds <= 2 ? rounds : undefined;
@@ -1207,6 +1207,33 @@ export class AugmentTuiController {
       this.repository = repositoryTree(this.directory);
       this.refresh();
       this.message = `Applied ${diffs.length} drafted ${diffs.length === 1 ? "change" : "changes"} to the working tree. Nothing is committed.`;
+    });
+  }
+
+  async verifySelected(): Promise<void> {
+    const task = this.requireTask();
+    const row = this.selectedRow();
+    const diffs = (row?.entry.diffIds ?? []).flatMap((id) => {
+      const diff = task.diffs[id];
+      return diff && diff.lifecycle === "applied" ? [diff] : [];
+    });
+    if (!diffs.length) {
+      this.error = "Select an applied path to verify.";
+      return;
+    }
+    await this.dispatch("Verifying applied changes", async () => {
+      const response = await this.server.handle({
+        jsonrpc: "2.0",
+        id: 52,
+        method: "patch/verify",
+        params: { taskId: task.id, expectedRevision: this.requireTask().revision, diffIds: diffs.map((diff) => diff.id) },
+      });
+      this.task = expectResult(response, PlanTaskLike.is) as PlanTask;
+      const passed = diffs.every((diff) => this.task?.diffs[diff.id]?.lifecycle === "verified");
+      this.refresh();
+      this.message = passed
+        ? `Verified ${diffs.length} applied ${diffs.length === 1 ? "change" : "changes"}.`
+        : `Verification failed: ${diffs.map((diff) => this.task?.diffs[diff.id]?.verification).filter(Boolean).join("; ")}`;
     });
   }
 
