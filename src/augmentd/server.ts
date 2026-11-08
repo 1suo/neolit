@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { assertTaskIntegrity, createPlanTask, addConstraint, attachPatch, markPathStale, planTree, PlanStateError, refineNode, refreshNode, rejectCandidate, reopenNode, replacePatch, setPathRestriction } from "../augment/state.js";
 import { applyChallenge, applyDomainProposal, AugmentModelError, crystallizeNode, draftPatchesWithModel, draftPatchWithModel, explainProjectWithModel, refineWithModel, repairPatchWithModel, routeMessageWithModel, selectCandidate } from "../augment/kernel.js";
 import { ChallengeDomainSchema, DomainProposalSchema, PatchProposalSchema, PlanTaskSchema, RefinementProposalSchema } from "../augment/schemas.js";
@@ -49,6 +51,8 @@ export type JsonRpcResponse =
 
 export interface AugmentServerOptions {
   runtime?: ModelRuntime;
+  /** Optional atomic task snapshot path; when set, every accepted mutation is durable before notification. */
+  persistencePath?: string;
 }
 
 export class UnavailableModelRuntime implements ModelRuntime {
@@ -129,9 +133,54 @@ export class AugmentServer {
   private readonly changeListeners = new Set<(change: TaskChange) => void>();
   private readonly taskLocks = new Map<string, Promise<void>>();
   private nextTaskId = 1;
+  private readonly persistencePath?: string;
 
   constructor(options: AugmentServerOptions = {}) {
     this.runtime = options.runtime ?? new UnavailableModelRuntime();
+    this.persistencePath = options.persistencePath;
+    if (this.persistencePath) this.restoreSnapshot();
+  }
+
+  /** Load only individually valid tasks; one damaged entry cannot discard the rest. */
+  private restoreSnapshot(): void {
+    try {
+      const parsed: unknown = JSON.parse(fs.readFileSync(this.persistencePath!, "utf8"));
+      if (!Array.isArray(parsed)) return;
+      for (const value of parsed) {
+        try {
+          const task = PlanTaskSchema.parse(value) as unknown as PlanTask;
+          assertTaskIntegrity(task);
+          if (!this.tasks.has(task.id)) this.tasks.set(task.id, task);
+        } catch {
+          // Ignore an invalid entry without sacrificing other recoverable tasks.
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw new Error(`Cannot load augment task store ${this.persistencePath}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  /** Persist a complete snapshot by rename, never exposing a partially written JSON file. */
+  private persistSnapshot(): void {
+    if (!this.persistencePath) return;
+    const target = this.persistencePath;
+    const temporary = `${target}.${process.pid}.tmp`;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    try {
+      const fd = fs.openSync(temporary, "w", 0o600);
+      try {
+        fs.writeFileSync(fd, `${JSON.stringify([...this.tasks.values()])}\\n`, "utf8");
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      fs.renameSync(temporary, target);
+    } catch (error) {
+      try { fs.unlinkSync(temporary); } catch { /* no temporary file */ }
+      throw new Error(`Cannot persist augment task store ${target}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
@@ -155,7 +204,15 @@ export class AugmentServer {
   }
 
   private store(task: PlanTask): void {
+    const previous = this.tasks.get(task.id);
     this.tasks.set(task.id, task);
+    try {
+      this.persistSnapshot();
+    } catch (error) {
+      if (previous) this.tasks.set(task.id, previous);
+      else this.tasks.delete(task.id);
+      throw error;
+    }
     const change: TaskChange = { taskId: task.id, revision: task.revision };
     for (const listener of this.changeListeners) {
       try {
