@@ -11,7 +11,7 @@ process.on("uncaughtException", (error) => {
 });
 
 function usage(): never {
-  process.stderr.write("usage: augmentd [--mcp] [--connect SOCK] [--directory DIR] [--state-file FILE]\n  --mcp        serve the planned-diff operations as MCP agent tools over stdio\n  --connect    with --mcp: attach to the augment server at SOCK (for example the running TUI)\n               instead of owning task state; mutations land in that server\n  --directory  with --mcp: repository root for git apply diagnostics (optional)\n");
+  process.stderr.write("usage: augmentd [--mcp] [--connect SOCK] [--directory DIR] [--state-file FILE]\n  --mcp        serve the planned-diff operations as MCP agent tools over stdio\n  --connect    with --mcp: attach to the augment server at SOCK (for example the running TUI)\n               instead of owning task state; mutations land in that server\n  --directory  repository root; scopes default storage and enables Git apply/verify (optional)\n  --state-file  override the durable task snapshot path\n");
   process.exit(2);
 }
 
