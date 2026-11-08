@@ -682,6 +682,11 @@ export class AugmentTuiController {
     this.pendingRepositoryBasis ||= change.basisChanged;
     this.repository = repositoryTree(this.directory);
     this.refresh();
+    if (!this.task) {
+      this.pendingRepositoryPaths.clear();
+      this.pendingRepositoryBasis = false;
+      return;
+    }
     if (this.busy || this.processingRepositoryChanges) return;
     void this.processRepositoryChanges();
   }
@@ -692,7 +697,12 @@ export class AugmentTuiController {
    * then applied against the newest task revision in one serialized dispatch.
    */
   private async processRepositoryChanges(): Promise<void> {
-    if (this.busy || this.processingRepositoryChanges || !this.task) return;
+    if (this.busy || this.processingRepositoryChanges) return;
+    if (!this.task) {
+      this.pendingRepositoryPaths.clear();
+      this.pendingRepositoryBasis = false;
+      return;
+    }
     const paths = new Set(this.pendingRepositoryPaths);
     const basisChanged = this.pendingRepositoryBasis;
     this.pendingRepositoryPaths.clear();
@@ -702,11 +712,15 @@ export class AugmentTuiController {
         if (node.path && node.kind !== "root") paths.add(node.path);
       }
     }
-    if (!paths.size) return;
+    // One ancestor path stales its entire planned subtree; avoid one revision
+    // bump per descendant when HEAD moves.
+    const ordered = [...paths].sort().filter((candidate) => ![...paths].some((parent) => parent !== candidate && candidate.startsWith(parent + "/")));
+    if (!ordered.length) return;
     this.processingRepositoryChanges = true;
-    await this.dispatch("Refreshing changed repository paths", async () => {
+    try {
+      await this.dispatch("Refreshing changed repository paths", async () => {
       let current = this.requireTask();
-      for (const changedPath of [...paths].sort()) {
+      for (const changedPath of ordered) {
         const response = await this.server.handle({
           jsonrpc: "2.0",
           id: 41,
@@ -719,10 +733,12 @@ export class AugmentTuiController {
       this.repository = repositoryTree(this.directory);
       this.refresh();
       this.message = basisChanged
-        ? `Repository basis changed; checked ${paths.size} planned path(s) for stale work.`
-        : `Repository changed; checked ${paths.size} path(s) for stale work.`;
-    });
-    this.processingRepositoryChanges = false;
+        ? `Repository basis changed; checked ${ordered.length} planned path(s) for stale work.`
+        : `Repository changed; checked ${ordered.length} path(s) for stale work.`;
+      });
+    } finally {
+      this.processingRepositoryChanges = false;
+    }
     if ((this.pendingRepositoryPaths.size || this.pendingRepositoryBasis) && !this.busy) {
       void this.processRepositoryChanges();
     }
