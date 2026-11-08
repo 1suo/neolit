@@ -29,6 +29,7 @@ export type TodoTask = {
   specReferences: SpecReference[];
   filePaths: string[];
   description: string[];
+  agentNotes: string[];
 };
 export type TodoDocument = { path: string; tasks: TodoTask[] };
 export type PlanningDiagnostic = {
@@ -166,6 +167,7 @@ export function parseTodoDocument(documentPath: string, content: string): TodoDo
         specReferences: [],
         filePaths: [],
         description: [],
+        agentNotes: [],
       };
       tasks.push(current);
       taskIndent = indent;
