@@ -418,7 +418,7 @@ export class McpAugmentServer {
     }>;
     return {
       text: tasks.length
-        ? tasks.map((task) => `${task.id} · r${task.revision} · ${task.mode} · ${task.objective}`).join("\\n")
+        ? tasks.map((task) => `${task.id} · r${task.revision} · ${task.mode} · ${task.objective}`).join("\n")
         : "No saved tasks are available.",
       structured: { tasks },
     };
