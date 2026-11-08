@@ -44,8 +44,8 @@ function readMarkdown(directory: string, relative: string): string | undefined {
 function wholeFileOverlay(directory: string, relative: string, source: RepositoryOverlay["source"], title: string): RepositoryOverlay | undefined {
   const text = readMarkdown(directory, relative)?.trim();
   if (!text) return undefined;
-  const scope = path.posix.dirname(relative);
-  return { scope: scope === "." ? undefined : scope, source, title, text };
+  // Explicit overlays are repository-wide policies, not scoped to their storage directory.
+  return { source, title, text };
 }
 
 function documentationRules(relative: string, content: string): RepositoryOverlay[] {
@@ -67,7 +67,7 @@ function documentationRules(relative: string, content: string): RepositoryOverla
       continue;
     }
     const rule = line.replace(/^(?:[-*+]\\s+|\\d+[.)]\\s+)/u, "").trim();
-    if (!rule || (!RULE_LANGUAGE.test(rule) && !relative.endsWith("AGENTS.md"))) continue;
+    if (!rule || (!RULE_LANGUAGE.test(rule) && path.posix.basename(relative).toLowerCase() !== "agents.md")) continue;
     const text = (heading.length ? heading.join(" / ") + ": " : "") + rule;
     rules.push({
       scope: scope === "." ? undefined : scope,
