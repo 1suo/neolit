@@ -14,25 +14,25 @@ Read the root README first, then the smallest relevant canonical docs:
 | Git-native target behavior and invariants | REWRITE-SPEC.md |
 | Ordered implementation gaps | TODO-rewrite.md |
 | Shared Markdown/Git core contract | src/planning/README.md |
-| Current legacy planned-diff implementation | src/augment/README.md, src/augment/SPEC.md |
-| Legacy daemon and TUI behavior | src/augmentd/README.md, src/tui/README.md |
-| Legacy planned-diff gaps during migration | TODO-augment.md, SOTA-GAPS.md |
+| Historical planned-diff records | TODO-augment.md, SOTA-GAPS.md (archive only; not active product contracts) |
 
-The rewrite spec is the target for new Git-native work. Legacy docs remain
-authoritative only for maintaining the legacy implementation until it is
-retired. Do not infer the new architecture from the legacy SPEC.
+REWRITE-SPEC.md is the normative product contract. The former planned-diff
+implementation has been retired; historical gap documents are archive material
+only and must not guide current implementation.
 
 ## Documentation contract
 
 Keep three layers distinct:
 
-- **README — what exists now.** Describe behavior implemented and validated by
-  current code. Do not write future behavior as if shipped.
+- **README — what exists now.** Describe behavior implemented in current code.
+  Distinguish implementation from host/CI validation; do not write future
+  behavior as if shipped.
 - **SPEC — what must be true.** State observable behavior, invariants, edge
   cases, and acceptance criteria using stable requirement IDs.
 - **TODO — what remains.** Each actionable task must link to exact SPEC
   requirement IDs and name concrete files or components. Update the task ledger
-  when work lands; never mark work complete before its validation passes.
+  when implementation lands. Keep paired validation tasks open until the
+  corresponding host/CI validation is actually performed.
 
 Use the smallest documentation owner. Keep one canonical explanation for each
 contract and link to it rather than duplicating it. Update the nearest component
