@@ -13,6 +13,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./planning": {
+      "types": "./dist/planning/index.d.ts",
+      "default": "./dist/planning/index.js"
     }
   },
   "files": [
@@ -23,7 +27,8 @@
     "src/augment/SPEC.md",
     "src/augmentd/README.md",
     "src/tui/README.md",
-    "src/planning/README.md"
+    "src/planning/README.md",
+    "src/planning/"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
