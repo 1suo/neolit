@@ -157,8 +157,9 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 
 ## Verification
 
-- [ ] Every TODO task resolves to one or more existing SPEC requirement IDs.
+- [x] Every TODO task resolves to one or more existing SPEC requirement IDs.
   - SPEC: `REWRITE-SPEC.md#R-13`, `REWRITE-SPEC.md#R-15`, `REWRITE-SPEC.md#R-18`
+  - Description: Static audit of all 45 TODO checkbox tasks found at least one `REWRITE-SPEC.md` reference per task and no referenced IDs missing from the current SPEC. This was a document audit, not a test run.
 - [ ] Derived states are tested independently from Markdown checkbox values.
   - SPEC: `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-29`, `REWRITE-SPEC.md#R-30`
 - [ ] Diff mapping tests include ambiguous, partial, and unplanned changes.
