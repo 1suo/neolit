@@ -57,6 +57,17 @@ function repoPath(root: string, candidate: string): string | undefined {
   return undefined;
 }
 
+async function readRepoFile(root: string, candidate: string): Promise<string> {
+  const safePath = repoPath(root, candidate);
+  if (!safePath) throw new Error("Repository path escapes the selected worktree.");
+  const resolved = await realpath(path.join(root, safePath));
+  const relative = path.relative(root, resolved);
+  if (relative === ".." || relative.startsWith("../") || path.isAbsolute(relative)) {
+    throw new Error("Repository file resolves outside the selected worktree.");
+  }
+  return readFile(resolved, "utf8");
+}
+
 function linkedMarkdown(content: string): string[] {
   const result: string[] = [];
   for (const match of content.matchAll(MARKDOWN_LINK)) {
@@ -88,7 +99,7 @@ async function discoverDocuments(root: string): Promise<{ readmes: string[]; spe
     visited.add(safePath);
     let content: string;
     try {
-      content = await readFile(path.join(root, safePath), "utf8");
+      content = await readRepoFile(root, safePath);
     } catch {
       continue;
     }
@@ -112,7 +123,7 @@ async function discoverDocuments(root: string): Promise<{ readmes: string[]; spe
 async function readDocuments(root: string, files: string[], kind: "SPEC" | "TODO") {
   const contents = await Promise.all(files.map(async (file) => ({
     file,
-    content: await readFile(path.join(root, file), "utf8"),
+    content: await readRepoFile(root, file),
   })));
   return kind === "SPEC"
     ? contents.map(({ file, content }) => parseSpecDocument(file, content))
@@ -196,9 +207,11 @@ export async function loadPlanningWorkspace(
     .filter((entry) => entry.index === "?" && entry.worktree === "?")
     .map(async (entry) => {
       try {
-        const contents = await readFile(path.join(root, entry.path));
-        const contentIdentity = identifyDiff(contents.toString("base64"));
-        const rawDiff = await gitNoIndexDiff(root, entry.path);
+        const safePath = repoPath(root, entry.path);
+        if (!safePath) throw new Error("Untracked path escapes the selected worktree.");
+        const contents = await readRepoFile(root, safePath);
+        const contentIdentity = identifyDiff(Buffer.from(contents, "utf8").toString("base64"));
+        const rawDiff = await gitNoIndexDiff(root, safePath);
         const parsed = parseUnifiedDiff(rawDiff).find((file) => file.path === entry.path);
         return {
           identity: [entry.path, contentIdentity].join(":"),
