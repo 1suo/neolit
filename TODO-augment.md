@@ -9,7 +9,7 @@ Known gaps between shipped behavior and `src/augment/SPEC.md`.
 - [x] Project the planned tree onto the complete repository tree.
 - [x] Add task-local locked paths with mutation rejection.
 - [x] Keep candidate domains node-local and scope candidate paths to their owning node.
-- [ ] Add native OpenCode-plugin and Codex `ModelRuntime` adapters.
+- [x] Keep OpenCode and Codex on the host-neutral `CliAgentRuntime` instead of adding provider-specific plugin SDKs: OpenCode uses its kept-alive v2 serve transport with CLI fallback; Codex uses its JSONL CLI backend and resumable thread ids. Both implement the same `ModelRuntime` contract, and agent tool access stays on the shared MCP protocol.
 - [x] Persist and reload TUI tasks across process restarts.
 - [x] Add a stable transport address (Unix socket) alongside stdio: the TUI (and any embedding host) serves its embedded server on `$XDG_RUNTIME_DIR/neolit/augment-<basename>-<hash>.sock` keyed to the repository directory (TUIs in different projects serve side by side; one owner per directory), mutation notifications broadcast to attached clients, and per-task serialization of mutating dispatch keeps concurrent writers from losing updates (a racing writer fails the optimistic-concurrency check instead of being overwritten by a stale-snapshot result).
 - [x] Add protocol change notifications for multi-client tree views: `AugmentServer.onChange` emits task id/revision after durable mutation, stdio forwards `augment/taskChanged`, and the Unix socket broadcasts the same notification to all connected clients.
