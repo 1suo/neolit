@@ -508,7 +508,7 @@ export function mapDiffHunksToTasks(
   tasks: ResolvedTask[],
 ): TaskHunkAssociation[] {
   return changedFiles.flatMap((file) => {
-    const documentation = /(?:^|\\/)(?:README|(?:[^/]+-)?SPEC|TODO(?:-[^/]*)?)\\.md$/iu.test(file.path);
+    const documentation = /(?:^|\/)(?:README|(?:[^/]+-)?SPEC|TODO(?:-[^/]*)?)\.md$/iu.test(file.path);
     const matching = documentation ? [] : tasks.filter((task) => task.filePaths.some((filePath) =>
       filePath === file.path || filePath === file.previousPath,
     ));
