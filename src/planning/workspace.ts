@@ -113,11 +113,11 @@ function isArchiveDocument(file: string): boolean {
 }
 
 function archiveSibling(file: string): string {
-  return file.replace(/\\.md$/iu, ".archive.md");
+  return file.replace(/\.md$/iu, ".archive.md");
 }
 
 function isPlanningDocument(file: string, kind: "SPEC" | "TODO"): boolean {
-  const name = path.posix.basename(file).toUpperCase().replace(/\\.ARCHIVE\\.MD$/u, ".MD");
+  const name = path.posix.basename(file).toUpperCase().replace(/\.ARCHIVE\.MD$/u, ".MD");
   return kind === "SPEC"
     ? name === "SPEC.MD" || name.endsWith("-SPEC.MD")
     : name === "TODO.MD" || name.startsWith("TODO-") && name.endsWith(".MD");
