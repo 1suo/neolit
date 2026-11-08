@@ -30,3 +30,7 @@ Open the repository in VS Code and launch the extension from an Extension Develo
 - Refresh runs on demand, after in-workspace saves, and when the window regains focus.
 
 Git status remains owned by VS Code's native Git integration. Neolit does not register competing Git decorations or disguise planned paths as actual Git changes.
+
+## Trivial changes
+
+The companion does not intercept prompts, create planning documents, or require a TODO/SPEC before a user edits code. For a small change, use the existing coding agent directly and review the ordinary Git diff; the planning view is optional and remains empty when no linked planning documents exist.
