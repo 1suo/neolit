@@ -207,7 +207,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Discover adjacent TODO/SPEC archive files and resolve archived requirement IDs
   - SPEC: `REWRITE-SPEC.md#R-74`, `REWRITE-SPEC.md#R-75`, `REWRITE-SPEC.md#R-78`
   - File: `src/planning/workspace.ts`, `src/planning/markdown.ts`
-  - Description: Discover `.archive.md` siblings of linked TODO/SPEC documents. Archived SPEC entries resolve through their original document path while retaining the archive source path for navigation. Active and archived entries are merged for duplicate-ID detection; no document is moved or rewritten by the core.
+  - Description: Discover `.archive.md` siblings of linked TODO/SPEC documents. Archived SPEC entries resolve through their original document path while retaining the archive source path for navigation. Active and archived entries are merged for duplicate-ID detection; the shared core remains read-only.
 - [x] Parse task agent notes separately from intent descriptions
   - SPEC: `REWRITE-SPEC.md#R-77`
   - File: `src/planning/markdown.ts`
@@ -219,7 +219,16 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Document the archive and agent-note conventions
   - SPEC: `REWRITE-SPEC.md#R-74`, `REWRITE-SPEC.md#R-75`, `REWRITE-SPEC.md#R-76`, `REWRITE-SPEC.md#R-77`, `REWRITE-SPEC.md#R-78`
   - File: `README.md`, `src/planning/README.md`, `1suo/neolit.nvim/README.md`
-  - Description: Documented archive sibling naming, reference preservation, explicit agent/user-owned moves, collapsed archive browsing, and the distinction between intent descriptions and implementation notes.
+  - Description: Documented archive sibling naming, reference preservation, the Neovim confirmed archive/restore action, collapsed archive browsing, and the distinction between intent descriptions and implementation notes.
 - [ ] Review archive discovery and rendering in the supported hosts
   - SPEC: `REWRITE-SPEC.md#R-74`, `REWRITE-SPEC.md#R-75`, `REWRITE-SPEC.md#R-76`, `REWRITE-SPEC.md#R-77`
   - Description: Inspect active and archive documents together, verify navigation into archived SPEC entries and multiline agent-note rendering, and check the VS Code presentation. No tests are added or run as part of this task.
+
+- [x] Add confirmed Neovim archive and restore action for TODO tasks and SPEC requirements
+  - SPEC: `REWRITE-SPEC.md#R-08`, `REWRITE-SPEC.md#R-74`, `REWRITE-SPEC.md#R-75`, `REWRITE-SPEC.md#R-76`, `REWRITE-SPEC.md#R-78`
+  - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: The `a` action moves the selected complete TODO task or SPEC requirement paragraph into its adjacent archive file and restores it when selected from the archive. It confirms the operation, validates source identity/range, rejects modified buffers and duplicate destination blocks, and refreshes the workspace after the move.
+- [x] Preserve full SPEC paragraph source ranges for archive moves
+  - SPEC: `REWRITE-SPEC.md#R-14`, `REWRITE-SPEC.md#R-75`, `REWRITE-SPEC.md#R-78`
+  - File: `src/planning/markdown.ts`
+  - Description: Requirement and acceptance-criterion parsing now retains continuation lines and full source ranges, so the host moves the complete Markdown paragraph rather than only its ID line.
