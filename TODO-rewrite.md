@@ -124,9 +124,10 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Validate the VS Code adapter in an Extension Development Host
   - SPEC: `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-56`, `REWRITE-SPEC.md#R-57`, `REWRITE-SPEC.md#R-58`, `REWRITE-SPEC.md#R-61`, `REWRITE-SPEC.md#R-62`, `REWRITE-SPEC.md#R-63`, `REWRITE-SPEC.md#R-65`
   - Description: Exercise activation, TreeView expansion, Explorer decorations alongside Git status, task/requirement/file/hunk navigation, native diff rendering for tracked/added/renamed files, stale context rejection, refresh behavior, and host packaging.
-- [ ] Keep trivial changes on the direct prompt → Git diff path
+- [x] Keep trivial changes on the direct prompt → Git diff path
   - SPEC: `REWRITE-SPEC.md#R-07`, `REWRITE-SPEC.md#R-24`, `REWRITE-SPEC.md#R-25`
-  - Description: Verify that opening Neolit or using an existing agent never forces SPEC/TODO creation for small tasks.
+  - File: `editors/vscode/README.md`, `1suo/neolit.nvim/README.md`
+  - Description: The new VS Code companion activates as an optional Explorer view and never intercepts agent prompts or requires planning documents. The Neovim planning workspace is an explicit `:NeolitPlan` command separate from the legacy `:Neolit` workflow; its README directs small changes to the existing agent and ordinary Git diff. Formalization remains optional rather than an automatic transition.
 
 ## Phase 6 — retire old architecture and validate migration
 
