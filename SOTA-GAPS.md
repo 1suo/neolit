@@ -75,9 +75,11 @@ Ordered by user-visible impact; the owning record tracks each gap.
 6. **Telemetry and evaluation.** Nothing measures plan quality, retry rates,
    or apply success over time, so improvement claims cannot be evidenced —
    the repository's telemetry-before-optimization rule is unmet.
-7. **Practice overlays.** No user or practice overlays and no
-   documentation-derived constraints: spec-kit-style standards cannot
-   constrain candidate domains yet.
+7. **Practice overlays.** Global and repository overlays plus scoped
+   `AGENTS.md` / contribution / architecture / README rules now become typed
+   task constraints before planning begins. A full Spec-Kit constitution and
+   standards lifecycle (versioning, explicit acceptance, and project-wide
+   governance) remains outside the current overlay loader.
 
 ## Maintenance
 
