@@ -29,7 +29,7 @@ export type RelatedTaskContext = {
   todoPath: string;
   task: TodoTask;
   requirements: Array<{ specPath: string; requirement: SpecRequirement }>;
-  acceptanceCriteria: Array<{ specPath: string; criterion: SpecAcceptanceCriterion }>;
+  acceptanceCriteria?: Array<{ specPath: string; criterion: SpecAcceptanceCriterion }>;
 };
 
 /**
@@ -257,7 +257,7 @@ export function buildDiffQuestionPacket(input: {
       ...requirements.map(({ specPath, requirement }) =>
         `  - ${specPath}#${requirement.id}: ${requirement.text}`,
       ),
-      ...acceptanceCriteria.map(({ specPath, criterion }) =>
+      ...(acceptanceCriteria ?? []).map(({ specPath, criterion }) =>
         `  - ${specPath}#${criterion.id}: ${criterion.text}`,
       ),
     ]);
