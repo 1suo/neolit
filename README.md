@@ -5,9 +5,12 @@ inspectable, filesystem-shaped tree of candidate approaches, refinements,
 planned hunks, obligations, constraints, and stale basis ranges. A host-neutral
 JSON-RPC server exposes that state to editors and agent applications.
 
-Neolit is not an agent harness. It has no OpenCode, LangGraph, provider, or
-filesystem-mutation implementation. Hosts inject a model runtime and own
-repository access, permissions, patch application, checks, and UI.
+The planned-diff kernel is not an agent harness and has no provider-specific
+runtime or direct filesystem authority. This repository also ships a standalone
+TUI host: it injects OpenCode/Claude/Codex CLI runtimes, watches the worktree,
+and owns transactional Git apply/verification. External editors and agent
+applications use the same host-neutral JSON-RPC/MCP protocol and inject their
+own model, repository, and UI adapters.
 
 ## Core idea
 
