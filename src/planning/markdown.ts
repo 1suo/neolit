@@ -533,7 +533,7 @@ export function mapDiffHunksToTasks(
           return {
             path: file.path, hunkIndex, hunk, granularity: "hunk" as const,
             candidateTaskKeys: matchedTasks.map((task) => task.key),
-            candidateRequirementIds: [...new Set(matchedTasks.flatMap((task) => task.specReferences.flatMap((reference) => reference.ids)))],
+            candidateRequirementIds: [...new Set(matchedTasks.flatMap((task) => task.specReferences.flatMap((reference) => reference.ids.filter((id) => /^R-\\d{2,}$/u.test(id)))))],
             candidateRequirementRefs: [...new Set(matchedTasks.flatMap((task) => task.specReferences.flatMap((reference) => reference.ids.map((id) => \`\${reference.path}#\${id}\`))))],
             state: "attributed" as const, reason: "todo-task-source-range" as const,
           };
