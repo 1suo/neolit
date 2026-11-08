@@ -19,7 +19,7 @@ import {
 } from "./markdown.js";
 
 const execFileAsync = promisify(execFile);
-const MARKDOWN_LINK = /\[[^\]]*\]\(([^)]+)\)/gu;
+const MARKDOWN_LINK = /\[[^\]]*\]\(\s*(?:<([^>\n]+)>|((?:\\.|[^\s()])+))(?:\s+(?:"[^"]*"|\'[^\']*\'))?\s*\)/gu;
 
 export type GitStatusEntry = {
   path: string;
@@ -71,8 +71,14 @@ async function readRepoFile(root: string, candidate: string): Promise<string> {
 function linkedMarkdown(content: string): string[] {
   const result: string[] = [];
   for (const match of content.matchAll(MARKDOWN_LINK)) {
-    const target = match[1]!.split("#", 1)[0]!.trim();
-    if (!target || target.startsWith("<") || /^[a-z][a-z\d+.-]*:/iu.test(target) || !target.toLowerCase().endsWith(".md")) continue;
+    const rawTarget = (match[1] ?? match[2] ?? "").split(/[?#]/u, 1)[0]!;
+    let target: string;
+    try {
+      target = decodeURIComponent(rawTarget.replace(/\\([\\()])/gu, "$1")).trim();
+    } catch {
+      continue;
+    }
+    if (!target || /^[a-z][a-z\d+.-]*:/iu.test(target) || !target.toLowerCase().endsWith(".md")) continue;
     result.push(target);
   }
   return result;
