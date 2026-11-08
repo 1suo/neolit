@@ -9,6 +9,7 @@ import { pathIsLocked, planTree } from "../augment/state.js";
 import { applyPlannedDiffs, commitAppliedPaths } from "./apply.js";
 import type { SessionStreamLine, ToolSessionDriver } from "./tool-session.js";
 import { sessionBindingFor } from "./session-store.js";
+import { RepositoryWatcher, type RepositoryChange } from "./repository-watch.js";
 import type { LOD, ModelRuntime, PlanCandidate, PlanNode, PlanTask, PlanTreeEntry, RoutedMessage, RoutedOption, Temperature } from "../augment/types.js";
 
 export type PlannedTreeRow = {
@@ -384,6 +385,10 @@ export class AugmentTuiController {
   private fileContent?: string;
   private readonly listeners = new Set<() => void>();
   private socket?: SocketService;
+  private repositoryWatcher?: RepositoryWatcher;
+  private readonly pendingRepositoryPaths = new Set<string>();
+  private pendingRepositoryBasis = false;
+  private processingRepositoryChanges = false;
   private toolDriver?: ToolSessionDriver;
   private toolFlow = false;
   private sessionLines: SessionStreamLine[] = [];
@@ -422,6 +427,7 @@ export class AugmentTuiController {
       }
     }
     this.watchExternalMutations();
+    this.repositoryWatcher = new RepositoryWatcher(this.directory, (change) => this.onRepositoryChange(change));
     const socketEnv = process.env.AUGMENT_TUI_SOCKET?.trim();
     const explicitSocket = typeof options.serveSocket === "string" && options.serveSocket.trim()
       ? options.serveSocket.trim()
@@ -614,6 +620,8 @@ export class AugmentTuiController {
 
   /** Stops serving external agents; the TUI's own state is untouched. */
   async dispose(): Promise<void> {
+    this.repositoryWatcher?.close();
+    this.repositoryWatcher = undefined;
     await this.socket?.close();
     this.socket = undefined;
     this.refresh();
@@ -640,6 +648,59 @@ export class AugmentTuiController {
       }
       await this.adoptExternalTask();
     });
+  }
+
+  private onRepositoryChange(change: RepositoryChange): void {
+    for (const changedPath of change.paths) this.pendingRepositoryPaths.add(changedPath);
+    this.pendingRepositoryBasis ||= change.basisChanged;
+    this.repository = repositoryTree(this.directory);
+    this.refresh();
+    if (this.busy || this.processingRepositoryChanges) return;
+    void this.processRepositoryChanges();
+  }
+
+  /**
+   * Convert observed worktree and HEAD changes into the kernel's normal
+   * node/stale transitions. Changes are queued while an operation is active,
+   * then applied against the newest task revision in one serialized dispatch.
+   */
+  private async processRepositoryChanges(): Promise<void> {
+    if (this.busy || this.processingRepositoryChanges || !this.task) return;
+    const paths = new Set(this.pendingRepositoryPaths);
+    const basisChanged = this.pendingRepositoryBasis;
+    this.pendingRepositoryPaths.clear();
+    this.pendingRepositoryBasis = false;
+    if (basisChanged) {
+      for (const node of Object.values(this.task.nodes)) {
+        if (node.path && node.kind !== "root") paths.add(node.path);
+      }
+    }
+    if (!paths.size) return;
+    this.processingRepositoryChanges = true;
+    await this.dispatch("Refreshing changed repository paths", async () => {
+      let current = this.requireTask();
+      let staleCount = 0;
+      for (const changedPath of [...paths].sort()) {
+        const response = await this.server.handle({
+          jsonrpc: "2.0",
+          id: 41,
+          method: "node/stale",
+          params: { taskId: current.id, expectedRevision: current.revision, path: changedPath },
+        });
+        current = expectResult(response, PlanTaskLike.is) as PlanTask;
+        this.task = current;
+        staleCount += 1;
+      }
+      this.repository = repositoryTree(this.directory);
+      this.refresh();
+      this.message = basisChanged
+        ? `Repository basis changed; checked ${paths.size} planned path(s) for stale work.`
+        : `Repository changed; checked ${paths.size} path(s) for stale work.`;
+    });
+    this.processingRepositoryChanges = false;
+    if ((this.pendingRepositoryPaths.size || this.pendingRepositoryBasis) && !this.busy) {
+      void this.processRepositoryChanges();
+    }
   }
 
   private async adoptExternalTask(): Promise<void> {
@@ -1131,6 +1192,7 @@ export class AugmentTuiController {
     }
     await this.dispatch("Applying drafted changes", async () => {
       const applied = applyPlannedDiffs(this.directory, diffs);
+      this.repositoryWatcher?.rebaseline();
       for (const diff of diffs) if (diff.patch.trim().length > 0) this.appliedDiffIds.add(diff.id);
       this.repository = repositoryTree(this.directory);
       this.refresh();
@@ -1581,6 +1643,7 @@ export class AugmentTuiController {
     const paths = [...new Set(applied.map((diff) => diff.path).filter((path) => path && path !== "."))];
     await this.dispatch("Committing applied changes", async () => {
       const sha = commitAppliedPaths(this.directory, paths, `augment: ${task.objective}`);
+      this.repositoryWatcher?.rebaseline();
       this.repository = repositoryTree(this.directory);
       this.refresh();
       this.message = `Committed ${paths.length} applied ${paths.length === 1 ? "path" : "paths"} as ${sha}. The repository basis moved; press [S] on paths whose drafts need refresh.`;
