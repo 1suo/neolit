@@ -137,9 +137,10 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Update package exports, CLI commands, and Neovim host contract
   - SPEC: `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-59`, `REWRITE-SPEC.md#R-73`
   - Description: Added an additive `neolit/planning` package subpath and a planning-only public barrel so new adapters can depend on the deterministic shared core without importing the legacy kernel/TUI surface. The root export and old commands remain for compatibility; retiring them and completing the Neovim host-contract migration are still open.
-- [ ] Preserve repository documents and isolate legacy task handling
+- [x] Preserve repository documents and isolate legacy task handling
   - SPEC: `REWRITE-SPEC.md#R-71`, `REWRITE-SPEC.md#R-72`
-  - Description: Never rewrite existing README/SPEC/TODO files as a migration side effect. Legacy plan export, if implemented, must be explicit and read-only.
+  - File: `src/planning/workspace.ts`, `src/planning/README.md`, `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: The Git-native workspace reads linked README/SPEC/TODO files and Git metadata only; it has no document-write, task-import, or legacy-session migration path. The Neovim planning view is a separate read-only command and does not load or mutate the legacy planned-diff task/session store. No legacy export is offered.
 - [ ] Add end-to-end fixtures for the full acceptance workflow
   - SPEC: `REWRITE-SPEC.md#R-22`, `REWRITE-SPEC.md#R-23`, `REWRITE-SPEC.md#R-26`, `REWRITE-SPEC.md#R-27`, `REWRITE-SPEC.md#R-28`, `REWRITE-SPEC.md#R-32`, `REWRITE-SPEC.md#R-40`, `REWRITE-SPEC.md#R-45`, `REWRITE-SPEC.md#R-66`, `REWRITE-SPEC.md#R-67`, `REWRITE-SPEC.md#R-68`, `REWRITE-SPEC.md#R-69`
   - Description: Prove exact traceability, stale-anchor rejection, verification gating, worktree isolation, and preservation of unrelated staged/dirty files.
