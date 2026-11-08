@@ -52,6 +52,7 @@ export type PlanningWorkspace = {
 };
 
 function repoPath(root: string, candidate: string): string | undefined {
+  if (path.isAbsolute(candidate) || candidate.replaceAll("\\", "/").split("/").includes("..")) return undefined;
   const absolute = path.resolve(root, candidate);
   const relative = path.relative(root, absolute);
   if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
