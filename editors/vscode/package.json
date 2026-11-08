@@ -44,6 +44,10 @@
       {
         "command": "neolit.copyHunkContext",
         "title": "Neolit: Copy Hunk Context"
+      },
+      {
+        "command": "neolit.openRequirement",
+        "title": "Neolit: Open SPEC Requirement"
       }
     ],
     "menus": {
@@ -73,6 +77,11 @@
         {
           "command": "neolit.copyHunkContext",
           "when": "view == neolit.plan && viewItem == hunk",
+          "group": "inline"
+        },
+        {
+          "command": "neolit.openRequirement",
+          "when": "view == neolit.plan && viewItem == requirement",
           "group": "inline"
         }
       ]
