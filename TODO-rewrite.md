@@ -131,7 +131,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Remove candidate domains, challenge/collapse/refinement, planned patch storage/application, model operation routing, and agent tool orchestration. Retain only measured, reusable behavior that fits the target.
 - [ ] Update package exports, CLI commands, and Neovim host contract
   - SPEC: `REWRITE-SPEC.md#R-54`, `REWRITE-SPEC.md#R-55`, `REWRITE-SPEC.md#R-59`, `REWRITE-SPEC.md#R-73`
-  - Description: Remove stale public APIs and ensure `neolit.nvim` consumes the new shared core rather than the old TUI/controller contract.
+  - Description: Added an additive `neolit/planning` package subpath and a planning-only public barrel so new adapters can depend on the deterministic shared core without importing the legacy kernel/TUI surface. The root export and old commands remain for compatibility; retiring them and completing the Neovim host-contract migration are still open.
 - [ ] Preserve repository documents and isolate legacy task handling
   - SPEC: `REWRITE-SPEC.md#R-71`, `REWRITE-SPEC.md#R-72`
   - Description: Never rewrite existing README/SPEC/TODO files as a migration side effect. Legacy plan export, if implemented, must be explicit and read-only.
