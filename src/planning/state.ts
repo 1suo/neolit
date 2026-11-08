@@ -141,7 +141,7 @@ export function derivePlanningStates(input: {
 
   const requirements: RequirementStateProjection[] = [];
   for (const spec of input.specs) {
-    const referencePath = spec.referencePath ?? spec.path;
+    const referencePath = spec.path;
     for (const requirement of spec.requirements) {
       const taskMatches = input.tasks.filter((task) =>
         task.resolvedRequirements.some((item) => item.specPath === referencePath && item.id === requirement.id),
