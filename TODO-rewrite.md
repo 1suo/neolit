@@ -79,7 +79,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - Description: Manually reviewed checkbox-independent state derivation and its Neovim/VS Code presentation: file hints remain `in-progress`, blockers/unmapped states are preserved, verification is bound to base/diff identity and applicable criteria, and requirement states aggregate linked tasks. Source review only; neither editor host was launched.
 - [x] Implement derived-view invalidation and refresh
   - SPEC: `REWRITE-SPEC.md#R-38`, `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`
-  - Description: The Neovim prototype now refreshes on in-repository BufWritePost/FileChangedShellPost and FocusGained, cancels superseded refresh jobs, and invalidates callbacks on close. Manual refresh remains available. Every contextual handoff still re-reads Git; refresh race and external Git validation remains separate.
+  - Description: The Neovim prototype refreshes on in-repository BufWritePost/FileChangedShellPost and FocusGained, cancels superseded refresh jobs, and invalidates callbacks on close. The VS Code adapter refreshes on save/focus/manual commands and re-reads Git immediately before hunk navigation/context handoff. Manual refresh remains available. Runtime refresh-race and external Git validation remains separate.
 
 - [ ] Validate refresh races and external Git changes
   - SPEC: `REWRITE-SPEC.md#R-38`, `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`
