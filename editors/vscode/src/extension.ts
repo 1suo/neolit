@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import path from "node:path";
 import {
   buildDiffQuestionPacket,
   createDiffAnchor,
@@ -67,6 +68,24 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
   }
 }
 
+class PlanningDecorationProvider implements vscode.FileDecorationProvider {
+  private readonly emitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
+  readonly onDidChangeFileDecorations = this.emitter.event;
+  private paths = new Set<string>();
+  refresh(workspace: PlanningWorkspace): void {
+    this.paths = new Set(workspace.git.changedFiles.map((file) => path.normalize(file.path)));
+    this.emitter.fire(undefined);
+  }
+  provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+    const relative = path.relative(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "", uri.fsPath);
+    if (!this.paths.has(path.normalize(relative))) return undefined;
+    const decoration = new vscode.FileDecoration("N", "Neolit review annotation; actual Git status remains in Source Control.");
+    decoration.color = new vscode.ThemeColor("charts.blue");
+    return decoration;
+  }
+  dispose(): void { this.emitter.dispose(); }
+}
+
 async function load(root: string): Promise<PlanningWorkspace> {
   return loadPlanningWorkspace(root);
 }
@@ -76,14 +95,16 @@ export function activate(context: vscode.ExtensionContext): void {
   if (!folder) return;
   const root = folder.uri.fsPath;
   const tree = new PlanningTree();
+  const decorations = new PlanningDecorationProvider();
   const view = vscode.window.createTreeView("neolit.plan", { treeDataProvider: tree, showCollapseAll: true });
-  context.subscriptions.push(view, tree);
+  context.subscriptions.push(view, tree, decorations, vscode.window.registerFileDecorationProvider(decorations));
   let current: PlanningWorkspace | undefined;
 
   const refresh = async () => {
     try {
       current = await load(root);
       tree.refresh(current);
+      decorations.refresh(current);
     } catch (error) {
       vscode.window.showErrorMessage(`Neolit planning refresh failed: ${String(error)}`);
     }
@@ -109,6 +130,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const hunk = file?.hunks[node.hunkIndex];
       if (!file || !hunk) return;
       const currentFileDiff = file.rawDiff;
+      if (!currentFileDiff) return;
       const anchor = createDiffAnchor({
         path: node.path, side: "working-tree", baseCommit: current.git.base,
         diffText: currentFileDiff, hunk,
@@ -130,7 +152,8 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage("Neolit hunk context copied. Paste it into your existing coding-agent session.");
     }),
     vscode.workspace.onDidSaveTextDocument((document) => {
-      if (document.uri.fsPath.startsWith(root + "/")) void refresh();
+      const relative = path.relative(root, document.uri.fsPath);
+      if (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative)) void refresh();
     }),
     vscode.window.onDidChangeWindowState((state) => {
       if (state.focused) void refresh();
