@@ -48,6 +48,36 @@ function projection(paths: string[], evidence: VerificationEvidence[] = []) {
 }
 
 describe("derived planning states", () => {
+  it("keeps documentation changes distinct from implementation evidence", () => {
+    const file = { path: "src/auth/SPEC.md", status: "modified" as const, hunks: [] };
+    expect(mapDiffToTasks([file], resolved.tasks)).toEqual([
+      expect.objectContaining({
+        path: "src/auth/SPEC.md",
+        taskKeys: [],
+        requirementIds: [],
+        state: "documentation",
+      }),
+    ]);
+  });
+
+  it("marks shared file hints unresolved instead of assigning the change to every task", () => {
+    const shared = parseTodoDocument("src/auth/TODO.md", [
+      "- [ ] Implement refresh path",
+      "  - SPEC: `SPEC.md#R-01`",
+      "  - File: `src/auth/shared.ts`",
+      "- [ ] Implement audit path",
+      "  - SPEC: `SPEC.md#R-02`",
+      "  - File: `src/auth/shared.ts`",
+    ].join("\\n"));
+    const linked = resolvePlanningDocuments({ specs: [spec], todos: [shared] });
+    const file = { path: "src/auth/shared.ts", status: "modified" as const, hunks: [] };
+    const [association] = mapDiffToTasks([file], linked.tasks);
+    expect(association).toMatchObject({
+      state: "unresolved",
+      taskKeys: linked.tasks.map((task) => task.key),
+    });
+  });
+
   it("ignores TODO checkboxes and derives partial/full implementation from Git paths", () => {
     const result = projection([
       "src/auth/refresh.ts",
