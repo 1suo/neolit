@@ -19,7 +19,8 @@ Open the repository in VS Code and launch the extension from an Extension Develo
 
 ## Behavior
 
-- Task rows show the shared derived state and open the source TODO task.
+- Task rows show the shared derived state, expose the task description as a tooltip, and open the source TODO task.
+- Explicit task file hints appear beneath the task and receive a `P` Explorer annotation when unchanged. Opening one shows the real file; after it changes, the same row opens the native base-to-working diff. Changed files use a distinct `N` review annotation.
 - Requirement rows open the exact SPEC source location and expand to show every TODO task linked to that fully qualified SPEC path and requirement ID.
 - Expanding a task shows its linked SPEC requirements and its candidate hunk reviews.
 - A separate **Git changes** group shows every parsed hunk, including unplanned and documentation changes that have no task candidate.
