@@ -210,6 +210,11 @@ export function parseTodoDocument(documentPath: string, content: string): TodoDo
       current.description.push(descriptionLine[1]!);
       continue;
     }
+    const agentNotesLine = /^\\s*(?:[-*+]\\s+)?Agent notes?:\\s*(.+?)\\s*$/iu.exec(line);
+    if (agentNotesLine) {
+      current.agentNotes.push(agentNotesLine[1]!);
+      continue;
+    }
     current.description.push(line.trim());
   }
 
