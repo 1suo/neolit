@@ -94,9 +94,13 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Validate packet contents, size limits, and stale-context rejection
   - SPEC: `REWRITE-SPEC.md#R-41`, `REWRITE-SPEC.md#R-44`
   - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
-- [ ] Add existing-agent handoff with copyable fallback
-  - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-49`, `REWRITE-SPEC.md#R-50`
-  - Description: Use a supported host API/session integration only when available. Otherwise expose a copyable context prompt and native navigation; do not add a Neolit chat/session layer.
+- [x] Implement copyable contextual handoff to the existing agent
+  - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-46`, `REWRITE-SPEC.md#R-50`
+  - File: `1suo/neolit.nvim/lua/neolit/planning.lua`
+  - Description: The Neovim flow builds a bounded contextual packet, copies it through the editor clipboard, and preserves native file/diff navigation. No Neolit-owned chat or session protocol is introduced.
+- [ ] Add a supported existing-agent session handoff when a host API is available
+  - SPEC: `REWRITE-SPEC.md#R-05`, `REWRITE-SPEC.md#R-42`, `REWRITE-SPEC.md#R-43`, `REWRITE-SPEC.md#R-48`, `REWRITE-SPEC.md#R-49`
+  - Description: Integrate only a documented host API that can address the active agent session. Keep clipboard handoff as the fallback; do not invent a provider protocol or Neolit chat layer.
 
 ## Phase 5 — editor-native vertical slice and adapters
 
