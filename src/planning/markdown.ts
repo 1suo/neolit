@@ -16,6 +16,7 @@ export type SpecAcceptanceCriterion = {
 };
 export type SpecDocument = {
   path: string;
+  referencePath?: string;
   requirements: SpecRequirement[];
   acceptanceCriteria: SpecAcceptanceCriterion[];
 };
@@ -40,9 +41,9 @@ export type PlanningDiagnostic = {
   line?: number;
 };
 export type ResolvedTask = TodoTask & {
-  resolvedRequirements: Array<SpecRequirement & { specPath: string }>;
+  resolvedRequirements: Array<SpecRequirement & { specPath: string; sourcePath: string }>;
   unresolvedReferences: SpecReference[];
-  resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string }>;
+  resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string; sourcePath: string }>;
   state: "planned" | "unmapped";
 };
 export type DiffHunk = {
@@ -216,14 +217,14 @@ export function resolvePlanningDocuments(input: {
   specs: SpecDocument[];
   todos: TodoDocument[];
 }): { tasks: ResolvedTask[]; diagnostics: PlanningDiagnostic[] } {
-  const specs = new Map(input.specs.map((spec) => [spec.path, spec]));
+  const specs = new Map(input.specs.map((spec) => [spec.referencePath ?? spec.path, spec]));
   const tasks: ResolvedTask[] = [];
   const diagnostics: PlanningDiagnostic[] = [];
 
   for (const todo of input.todos) {
     for (const task of todo.tasks) {
-      const resolvedRequirements: Array<SpecRequirement & { specPath: string }> = [];
-      const resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string }> = [];
+      const resolvedRequirements: Array<SpecRequirement & { specPath: string; sourcePath: string }> = [];
+      const resolvedAcceptanceCriteria: Array<SpecAcceptanceCriterion & { specPath: string; sourcePath: string }> = [];
       const unresolvedReferences: SpecReference[] = [];
       const hasRequirementReference = task.specReferences.some((reference) =>
         reference.ids.some((id) => id.startsWith("R-")),
@@ -256,7 +257,7 @@ export function resolvePlanningDocuments(input: {
             const criteria = spec.acceptanceCriteria.filter((candidate) => candidate.id === id);
             if (criteria.length === 1) {
               if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === id)) {
-                resolvedAcceptanceCriteria.push({ ...criteria[0]!, specPath: reference.path });
+                resolvedAcceptanceCriteria.push({ ...criteria[0]!, specPath: reference.path, sourcePath: spec.path });
               }
             } else {
               unresolvedReferences.push({ path: reference.path, ids: [id] });
@@ -276,7 +277,7 @@ export function resolvePlanningDocuments(input: {
           const matches = spec.requirements.filter((candidate) => candidate.id === id);
           if (matches.length === 1) {
             if (!resolvedRequirements.some((item) => item.specPath === reference.path && item.id === id)) {
-              resolvedRequirements.push({ ...matches[0]!, specPath: reference.path });
+              resolvedRequirements.push({ ...matches[0]!, specPath: reference.path, sourcePath: spec.path });
             }
             for (const criterion of spec.acceptanceCriteria.filter((item) => item.requirementIds.includes(id))) {
               const duplicates = spec.acceptanceCriteria.filter((item) => item.id === criterion.id).length;
@@ -292,7 +293,7 @@ export function resolvePlanningDocuments(input: {
                   });
                 }
               } else if (!resolvedAcceptanceCriteria.some((item) => item.specPath === reference.path && item.id === criterion.id)) {
-                resolvedAcceptanceCriteria.push({ ...criterion, specPath: reference.path });
+                resolvedAcceptanceCriteria.push({ ...criterion, specPath: reference.path, sourcePath: spec.path });
               }
             }
           } else {
