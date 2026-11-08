@@ -136,7 +136,7 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
       return {
         kind: "hunk" as const, path: association.path, previousPath: file?.previousPath,
         hunkIndex: association.hunkIndex,
-        label: `${association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} ${association.path} · hunk ${association.hunkIndex + 1}`,
+        label: `${association.state === "attributed" ? "DOC↳" : association.state === "documentation" ? "DOC" : association.state === "unplanned" ? "?" : "~"} ${association.path} · hunk ${association.hunkIndex + 1}`,
       };
     });
     if (node.kind === "requirement") {
