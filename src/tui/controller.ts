@@ -679,7 +679,6 @@ export class AugmentTuiController {
     this.processingRepositoryChanges = true;
     await this.dispatch("Refreshing changed repository paths", async () => {
       let current = this.requireTask();
-      let staleCount = 0;
       for (const changedPath of [...paths].sort()) {
         const response = await this.server.handle({
           jsonrpc: "2.0",
@@ -689,7 +688,6 @@ export class AugmentTuiController {
         });
         current = expectResult(response, PlanTaskLike.is) as PlanTask;
         this.task = current;
-        staleCount += 1;
       }
       this.repository = repositoryTree(this.directory);
       this.refresh();
@@ -1778,6 +1776,9 @@ export class AugmentTuiController {
       if (this.externalPending) {
         this.externalPending = false;
         void this.adoptExternalTask();
+      }
+      if ((this.pendingRepositoryPaths.size || this.pendingRepositoryBasis) && !this.processingRepositoryChanges) {
+        void this.processRepositoryChanges();
       }
     }
   }
