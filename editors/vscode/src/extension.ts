@@ -143,6 +143,20 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     item.contextValue = "hunk";
     item.iconPath = new vscode.ThemeIcon("diff");
     item.description = node.path;
+    const candidateTasks = (this.workspace?.tasks ?? []).filter((task) => node.candidateTaskKeys.includes(task.key));
+    const candidateRequirements = node.candidateRequirementRefs.map((reference) => {
+      const separator = reference.lastIndexOf("#");
+      const specPath = reference.slice(0, separator);
+      const id = reference.slice(separator + 1);
+      const requirement = this.workspace?.specs.find((spec) => spec.path === specPath)?.requirements.find((item) => item.id === id);
+      return requirement ? `${reference}: ${requirement.text}` : reference;
+    });
+    item.tooltip = [
+      "Candidate tasks:",
+      ...(candidateTasks.length ? candidateTasks.map((task) => `- ${task.text}`) : ["- none"]),
+      "Candidate requirements:",
+      ...(candidateRequirements.length ? candidateRequirements.map((requirement) => `- ${requirement}`) : ["- none"]),
+    ].join("\n");
     item.command = { command: "neolit.openHunkDiff", title: "Open native hunk diff", arguments: [node] };
     return item;
   }
