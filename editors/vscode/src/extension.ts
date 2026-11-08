@@ -16,9 +16,10 @@ type TaskNode = { kind: "task"; key: string; label: string };
 type RequirementNode = { kind: "requirement"; key: string; specPath: string; id: string; label: string };
 type ChangedFileNode = { kind: "changedFile"; path: string; previousPath?: string; label: string };
 type HunkNode = { kind: "hunk"; path: string; previousPath?: string; hunkIndex: number; candidateTaskKeys: string[]; candidateRequirementRefs: string[]; label: string };
-type GroupNode = { kind: "group"; label: string };
+type GroupNode = { kind: "group"; group: "changes" | "diagnostics"; label: string };
+type DiagnosticNode = { kind: "diagnostic"; todoPath: string; line?: number; message: string; label: string };
 type PlanFileNode = { kind: "file"; path: string; taskKey: string; label: string };
-type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode | ChangedFileNode;
+type PlanNode = TaskNode | RequirementNode | HunkNode | GroupNode | PlanFileNode | ChangedFileNode | DiagnosticNode;
 const execFileAsync = promisify(execFile);
 const BASE_SCHEME = "neolit-base";
 const EMPTY_SCHEME = "neolit-empty";
@@ -89,8 +90,17 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
   getTreeItem(node: PlanNode): vscode.TreeItem {
     if (node.kind === "group") {
       const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
-      item.contextValue = "changeGroup";
-      item.iconPath = new vscode.ThemeIcon("git-compare");
+      item.contextValue = node.group === "changes" ? "changeGroup" : "diagnosticsGroup";
+      item.iconPath = new vscode.ThemeIcon(node.group === "changes" ? "git-compare" : "warning");
+      return item;
+    }
+    if (node.kind === "diagnostic") {
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      item.contextValue = "diagnostic";
+      item.description = `${node.todoPath}:${node.line ?? "?"}`;
+      item.tooltip = node.message;
+      item.iconPath = new vscode.ThemeIcon("warning");
+      item.command = { command: "neolit.openDiagnostic", title: "Open TODO diagnostic", arguments: [node] };
       return item;
     }
     if (node.kind === "changedFile") {
@@ -142,11 +152,21 @@ class PlanningTree implements vscode.TreeDataProvider<PlanNode> {
     if (!node) {
       const tasks: TaskNode[] = workspace.tasks.map((task) => ({ kind: "task", key: task.key, label: task.text }));
       const changes: GroupNode[] = workspace.git.changedFiles.length
-        ? [{ kind: "group", label: `Git changes · ${workspace.git.changedFiles.length} files · ${workspace.git.hunkAssociations.length} hunks` }]
+        ? [{ kind: "group", group: "changes", label: `Git changes · ${workspace.git.changedFiles.length} files · ${workspace.git.hunkAssociations.length} hunks` }]
         : [];
-      return [...tasks, ...changes];
+      const diagnostics: GroupNode[] = workspace.diagnostics.length
+        ? [{ kind: "group", group: "diagnostics", label: `Documentation diagnostics · ${workspace.diagnostics.length}` }]
+        : [];
+      return [...tasks, ...changes, ...diagnostics];
     }
-    if (node.kind === "group") return workspace.git.changedFiles.map((file) => ({
+    if (node.kind === "group" && node.group === "diagnostics") return workspace.diagnostics.map((diagnostic) => ({
+      kind: "diagnostic" as const,
+      todoPath: diagnostic.todoPath,
+      line: diagnostic.line,
+      message: diagnostic.message,
+      label: `${diagnostic.code}: ${diagnostic.message}`,
+    }));
+    if (node.kind === "group" && node.group === "changes") return workspace.git.changedFiles.map((file) => ({
       kind: "changedFile" as const,
       path: file.path,
       previousPath: file.previousPath,
@@ -270,6 +290,14 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!taskUri) return;
       const document = await vscode.workspace.openTextDocument(taskUri);
       const position = new vscode.Position(Math.max(0, task.range.startLine - 1), 0);
+      await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
+    }),
+    vscode.commands.registerCommand("neolit.openDiagnostic", async (node?: DiagnosticNode) => {
+      if (!node || node.kind !== "diagnostic") return;
+      const uri = workspaceFileUri(folder, node.todoPath);
+      if (!uri) return;
+      const document = await vscode.workspace.openTextDocument(uri);
+      const position = new vscode.Position(Math.max(0, (node.line ?? 1) - 1), 0);
       await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position) });
     }),
     vscode.commands.registerCommand("neolit.openRequirement", async (node?: RequirementNode) => {
