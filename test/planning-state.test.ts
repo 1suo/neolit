@@ -68,7 +68,7 @@ describe("derived planning states", () => {
       "- [ ] Implement audit path",
       "  - SPEC: `SPEC.md#R-02`",
       "  - File: `src/auth/shared.ts`",
-    ].join("\\n"));
+    ].join("\n"));
     const linked = resolvePlanningDocuments({ specs: [spec], todos: [shared] });
     const file = { path: "src/auth/shared.ts", status: "modified" as const, hunks: [] };
     const [association] = mapDiffToTasks([file], linked.tasks);
