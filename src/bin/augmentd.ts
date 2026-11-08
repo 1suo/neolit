@@ -31,7 +31,8 @@ for (let index = 0; index < args.length; index++) {
 }
 const directoryIndex = args.indexOf("--directory");
 const directory = directoryIndex >= 0 ? args[directoryIndex + 1] : undefined;
-const stateRoot = process.env.XDG_STATE_HOME?.trim() || path.join(os.homedir(), ".local", "state");\nconst stateKey = directory ? createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16) : "default";
+const stateRoot = process.env.XDG_STATE_HOME?.trim() || path.join(os.homedir(), ".local", "state");
+const stateKey = directory ? createHash("sha256").update(path.resolve(directory)).digest("hex").slice(0, 16) : "default";
 const persistencePath = stateFile ? path.resolve(stateFile) : path.join(stateRoot, "neolit", `augmentd-${stateKey}.json`);
 
 if (args.includes("--mcp")) {
