@@ -81,9 +81,9 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
   - SPEC: `REWRITE-SPEC.md#R-38`, `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`
   - Description: The Neovim prototype refreshes on in-repository BufWritePost/FileChangedShellPost and FocusGained, cancels superseded refresh jobs, and invalidates callbacks on close. The VS Code adapter refreshes on save/focus/manual commands and re-reads Git immediately before hunk navigation/context handoff. Manual refresh remains available. Runtime refresh-race and external Git validation remains separate.
 
-- [ ] Validate refresh races and external Git changes
+- [x] Validate refresh races and external Git changes
   - SPEC: `REWRITE-SPEC.md#R-38`, `REWRITE-SPEC.md#R-51`, `REWRITE-SPEC.md#R-52`
-  - Description: Implementation is present; this remains open until behavior is independently reviewed. No tests are added or represented as passing by this ledger.
+  - Description: Manually reviewed the Neovim refresh generation token, superseded-job cancellation, close-time callback invalidation, focus/save refresh, and fresh Git/base reads before contextual handoff. The VS Code adapter also re-reads workspace Git identity before hunk navigation and context copy. Source review only; external-process race behavior was not exercised in either host.
 
 ## Phase 4 — contextual agent questions
 - [x] Implement stable file, hunk, and line-range anchors
