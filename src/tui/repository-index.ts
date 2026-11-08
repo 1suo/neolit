@@ -54,16 +54,16 @@ function importSpecifiers(file: string, source: string): string[] {
   const extension = path.posix.extname(file);
   const patterns: RegExp[] = [];
   if ([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte"].includes(extension)) {
-    patterns.push(/(?:from\\s*|import\\s*\\(|require\\s*\\()\\s*["']([^"']+)["']/gu);
+    patterns.push(/(?:from\s*|import\s*\(|require\s*\()\s*["']([^"']+)["']/gu);
   } else if (extension === ".lua") {
-    patterns.push(/require\\s*\\(?\\s*["']([^"']+)["']/gu);
+    patterns.push(/require\s*\(?\s*["']([^"']+)["']/gu);
   } else if (extension === ".py") {
-    patterns.push(/^\\s*(?:from\\s+([\\w.]+)\\s+import|import\\s+([\\w.]+))/gmu);
+    patterns.push(/^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))/gmu);
   } else if (extension === ".rs") {
-    patterns.push(/^\\s*mod\\s+([a-zA-Z0-9_]+)\\s*;/gmu);
-    patterns.push(/^\\s*use\\s+crate::([a-zA-Z0-9_:]+)/gmu);
+    patterns.push(/^\s*mod\s+([a-zA-Z0-9_]+)\s*;/gmu);
+    patterns.push(/^\s*use\s+crate::([a-zA-Z0-9_:]+)/gmu);
   } else if (extension === ".go") {
-    patterns.push(/["'](\\.[^"']+)["']/gu);
+    patterns.push(/["'](\.[^"']+)["']/gu);
   }
   const found = new Set<string>();
   for (const pattern of patterns) {
@@ -131,7 +131,7 @@ export class RepositoryPathIndex {
   /** A compact, ranked path map for the selected scope; relationships are hints, not scope authority. */
   contextFor(target?: string): string {
     this.refresh();
-    const scope = target && target !== "." ? target.replace(/^\\.\\//u, "").replace(/\\/$/u, "") : "";
+    const scope = target && target !== "." ? target.replace(/^\.\//u, "").replace(/\/$/u, "") : "";
     const direct = this.paths.filter((entry) => {
       const parent = path.posix.dirname(entry);
       return scope ? parent === scope || entry.startsWith(scope + "/") : parent === ".";
