@@ -52,7 +52,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [x] Navigate the documentation graph for a selected task/requirement
   - SPEC: `REWRITE-SPEC.md#R-09`, `REWRITE-SPEC.md#R-10`, `REWRITE-SPEC.md#R-11`
   - File: `src/planning/context.ts`, `src/planning/workspace.ts`
-  - Description: Added task-scoped documentation resolution from explicit file/SPEC locations. It selects the deepest matching component README (root README fallback only when no scoped README matches), preserves equally specific matches with diagnostics, bounds README text, and returns README facts separately from only the selected task's resolved SPEC requirements and acceptance criteria. Workspace exposes discovered README source text.
+  - Description: Added task-scoped documentation resolution from explicit file/SPEC locations. It selects the deepest matching component README (root README fallback only when no scoped README matches), preserves equally specific matches with diagnostics, bounds README text, and returns README facts separately from only the selected task's resolved SPEC requirements and acceptance criteria. Workspace exposes discovered README source text; the shared packet builder can include this context as separate current-README and desired-SPEC sections.
 
 ## Phase 3 — Git evidence and derived states
 
