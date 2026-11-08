@@ -1,6 +1,6 @@
 # Neolit — Git-native simplification rewrite
 
-Status: normative target specification. This document describes the intended replacement for the current planned-diff product. The current shipped behavior remains described by the existing READMEs; implementation gaps belong in `TODO-rewrite.md` until the rewrite is complete.
+Status: normative product specification for Git-native Neolit. The former planned-diff product has been retired. Current shipped behavior is described by the root and component READMEs; remaining implementation and validation gaps are tracked in `TODO-rewrite.md`.
 
 ## 1. Product definition
 
