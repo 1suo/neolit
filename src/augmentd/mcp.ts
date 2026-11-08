@@ -257,6 +257,8 @@ export interface McpAugmentOptions {
   peer?: NativePeer;
   /** Optional host-injected `git apply` preflight for draft/repair diagnostics. */
   preflight?: PreflightPatches;
+  /** Durable task snapshot path when this MCP process owns its server. */
+  persistencePath?: string;
   /** Tighter per-operation call caps for tests and embedded hosts. */
   caps?: Partial<Record<McpToolName, number>>;
 }
@@ -281,7 +283,7 @@ export class McpAugmentServer {
 
   constructor(options: McpAugmentOptions = {}) {
     this.server = options.server;
-    this.peer = options.peer ?? options.server ?? new AugmentServer();
+    this.peer = options.peer ?? options.server ?? new AugmentServer({ persistencePath: options.persistencePath });
     this.preflight = options.preflight;
     this.caps = { ...MCP_TOOL_CAPS, ...options.caps };
   }
