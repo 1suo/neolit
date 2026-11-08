@@ -342,8 +342,8 @@ function readGitPathToken(value: string, start: number): { path: string; end: nu
         continue;
       }
       const escapes: Record<string, string> = {
-        a: "\\a", b: "\\b", f: "\\f", n: "\\n", r: "\\r", t: "\\t", v: "\\v",
-        "\\\\": "\\\\", '"': '"',
+        a: "\x07", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t", v: "\x0b",
+        "\\": "\\", '"': '"',
       };
       pathValue += escapes[escaped] ?? escaped;
       index += 1;
