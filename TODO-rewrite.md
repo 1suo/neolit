@@ -37,7 +37,7 @@ Implementation gaps against [REWRITE-SPEC.md](./REWRITE-SPEC.md). Tasks are orde
 - [ ] Index Git status and actual diff metadata for the selected comparison base
   - SPEC: `REWRITE-SPEC.md#R-33`, `REWRITE-SPEC.md#R-34`, `REWRITE-SPEC.md#R-37`, `REWRITE-SPEC.md#R-38`
   - File: `src/planning/workspace.ts`, `test/planning-workspace.test.ts`
-  - Description: Initial read-only HEAD-to-working-tree/index diff and porcelain status loader implemented, including untracked path enumeration. Workspace diff identity now includes HEAD, tracked diff, porcelain status, and hashes of untracked file contents. Untracked files now receive real `git diff --no-index` hunks and raw diff text, not just a path placeholder. Added a fixture covering staged-only, staged+unstaged, deleted, renamed, and untracked Unicode/space-containing paths. Keep open until the focused workspace tests execute; expose comparison-base selection later.
+  - Description: Read-only Git status and diff loader implemented, including staged, unstaged, deleted, renamed, and untracked paths. Untracked files receive real `git diff --no-index` hunks and raw diff text. `comparisonBase` now accepts a ref and resolves it to an immutable commit exposed as `git.base`; the resolved base participates in diff identity and verification evidence. Default remains `HEAD`. Keep open until focused workspace tests execute and the editor displays the selected base.
 - [ ] Parse diff hunks and map changed paths/hunks to TODO tasks and SPEC requirements
   - SPEC: `REWRITE-SPEC.md#R-03`, `REWRITE-SPEC.md#R-04`, `REWRITE-SPEC.md#R-31`, `REWRITE-SPEC.md#R-32`
   - Description: Start with explicit task file references and conservative path/hunk evidence. Surface ambiguity and unplanned changes instead of guessing.
