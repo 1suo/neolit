@@ -115,12 +115,27 @@ function isPlanningDocument(file: string, kind: "SPEC" | "TODO"): boolean {
     : name === "TODO.MD" || name.startsWith("TODO-") && name.endsWith(".MD");
 }
 
-async function discoverDocuments(root: string): Promise<{ readmes: string[]; specs: string[]; todos: string[] }> {
+async function discoverDocuments(
+  root: string,
+  configured: { specPaths?: string[]; todoPaths?: string[] } = {},
+): Promise<{ readmes: string[]; specs: string[]; todos: string[] }> {
   const readmes: string[] = [];
   const specs = new Set<string>();
   const todos = new Set<string>();
   const visited = new Set<string>();
   const queue = ["README.md"];
+  for (const candidate of configured.specPaths ?? ["SPEC.md"]) {
+    const safePath = repoPath(root, candidate);
+    if (safePath) {
+      try { await readRepoFile(root, safePath); specs.add(safePath); } catch { /* Optional configured document. */ }
+    }
+  }
+  for (const candidate of configured.todoPaths ?? ["TODO.md"]) {
+    const safePath = repoPath(root, candidate);
+    if (safePath) {
+      try { await readRepoFile(root, safePath); todos.add(safePath); } catch { /* Optional configured document. */ }
+    }
+  }
 
   while (queue.length) {
     const current = queue.shift()!;
@@ -204,7 +219,12 @@ async function gitNoIndexDiff(root: string, file: string): Promise<string> {
 
 export async function loadPlanningWorkspace(
   directory: string,
-  options: { verificationEvidence?: VerificationEvidence[]; comparisonBase?: string } = {},
+  options: {
+    verificationEvidence?: VerificationEvidence[];
+    comparisonBase?: string;
+    specPaths?: string[];
+    todoPaths?: string[];
+  } = {},
 ): Promise<PlanningWorkspace> {
   const root = await realpath(directory);
   const [branch, headOutput, statusOutput] = await Promise.all([
@@ -224,7 +244,7 @@ export async function loadPlanningWorkspace(
     ? await git(root, ["-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--find-renames", base, "--"])
     : "";
 
-  const documents = await discoverDocuments(root);
+  const documents = await discoverDocuments(root, options);
   const [readmeContents, specs, todos] = await Promise.all([
     Promise.all(documents.readmes.map(async (file) => ({ path: file, content: await readRepoFile(root, file) }))),
     readDocuments(root, documents.specs, "SPEC") as Promise<SpecDocument[]>,
