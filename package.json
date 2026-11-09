@@ -27,7 +27,8 @@
     "build": "npm run clean && tsc -p tsconfig.json",
     "test": "vitest run",
     "check": "tsc -p tsconfig.json --noEmit && vitest run",
-    "prepack": "npm run check && npm run build"
+    "prepack": "npm run check && npm run build",
+    "prepare": "npm run build"
   },
   "keywords": [
     "git",
